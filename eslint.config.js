@@ -19,6 +19,8 @@ export default tseslint.config(
     rules: {
       // Money and stock code must never compare loosely or float silently.
       eqeqeq: ['error', 'always'],
+      // Fastify handlers and plugins are async by contract even when they do not await.
+      '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
     },
   },

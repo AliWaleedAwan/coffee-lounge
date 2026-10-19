@@ -205,6 +205,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | 422 | `REFUND_EXCEEDS_PAID` | Includes `refundable` |
 | 422 | `CARD_NUMBER_NOT_ALLOWED` | Reference looks like a card number |
 | 429 | `RATE_LIMITED` | Wait `Retry-After` |
+| 500 | `INTERNAL_ERROR` | Unexpected failure; details are logged under the correlation ID, never sent to the client. Retry or report the correlation ID |
 | 503 | `SERVER_STARTING` | Show "Server starting…", retry automatically |
 
 ## 7. Realtime (Server-Sent Events)

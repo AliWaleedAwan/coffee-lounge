@@ -1,0 +1,101 @@
+/**
+ * The two HTTP listeners (02-architecture §2.7, API.md §1):
+ *  - customer (guest phones, plain HTTP on 8080): only /api/customer routes
+ *  - staff (registered devices, HTTPS/HTTP2 on 8443): only /api/staff routes
+ * Routes are registered per listener, so a staff route can never be reached on the
+ * customer port and vice versa. Both share the platform behaviour below.
+ */
+import { readFileSync } from 'node:fs';
+import Fastify, {
+  LogController,
+  type FastifyInstance,
+  type FastifyPluginAsync,
+  type FastifyServerOptions,
+} from 'fastify';
+import type pg from 'pg';
+import type { Config } from './config.ts';
+import { CORRELATION_HEADER, correlationIdFor } from './correlation.ts';
+import { problem, registerErrorHandling, sendProblem } from './errors.ts';
+import type { Readiness } from './readiness.ts';
+
+export interface PlatformDeps {
+  config: Pick<Config, 'LOG_LEVEL' | 'STAFF_TLS_CERT' | 'STAFF_TLS_KEY'>;
+  pool: pg.Pool;
+  readiness: Readiness;
+  /** false silences logs (tests). */
+  logging?: boolean;
+}
+
+export interface RouteRegistrations {
+  customer?: FastifyPluginAsync;
+  staff?: FastifyPluginAsync;
+}
+
+export const CUSTOMER_PREFIX = '/api/customer/v1';
+export const STAFF_PREFIX = '/api/staff/v1';
+const BODY_LIMIT = 64 * 1024;
+
+function createListener(
+  name: 'customer' | 'staff',
+  deps: PlatformDeps,
+  routes: FastifyPluginAsync | undefined,
+  prefix: string,
+): FastifyInstance {
+  const options: FastifyServerOptions & Record<string, unknown> = {
+    logger: deps.logging === false ? false : { level: deps.config.LOG_LEVEL, name },
+    genReqId: correlationIdFor,
+    logController: new LogController({ requestIdLogLabel: 'correlationId' }),
+    bodyLimit: BODY_LIMIT,
+    trustProxy: false,
+  };
+  if (name === 'staff' && deps.config.STAFF_TLS_CERT && deps.config.STAFF_TLS_KEY) {
+    options['http2'] = true;
+    options['https'] = {
+      allowHTTP1: true,
+      cert: readFileSync(deps.config.STAFF_TLS_CERT),
+      key: readFileSync(deps.config.STAFF_TLS_KEY),
+    };
+  }
+  const app = Fastify(options) as unknown as FastifyInstance;
+
+  registerErrorHandling(app);
+
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.url.startsWith('/health/') || deps.readiness.isReady()) return;
+    const { blockers } = deps.readiness.snapshot();
+    await sendProblem(
+      reply,
+      problem('SERVER_STARTING', Object.values(blockers).join(' '), request.id, { blockers }),
+    );
+  });
+
+  app.addHook('onSend', async (request, reply) => {
+    void reply.header(CORRELATION_HEADER, request.id);
+    void reply.header('X-Content-Type-Options', 'nosniff');
+    void reply.header('Referrer-Policy', 'no-referrer');
+    if (!reply.hasHeader('Cache-Control')) void reply.header('Cache-Control', 'no-store');
+  });
+
+  app.get('/health/live', async () => ({ status: 'live' }));
+  app.get('/health/ready', async (request, reply) => {
+    const state = deps.readiness.snapshot();
+    if (deps.readiness.isReady()) return { status: 'ready', warnings: state.warnings };
+    return sendProblem(
+      reply,
+      problem('SERVER_STARTING', Object.values(state.blockers).join(' '), request.id, state),
+    );
+  });
+
+  if (routes) void app.register(routes, { prefix });
+  return app;
+}
+
+export function buildApps(
+  deps: PlatformDeps,
+  routes: RouteRegistrations = {},
+): { customer: FastifyInstance; staff: FastifyInstance } {
+  return {
+    customer: createListener('customer', deps, routes.customer, CUSTOMER_PREFIX),
+    staff: createListener('staff', deps, routes.staff, STAFF_PREFIX),
+  };
+}
