@@ -1,0 +1,31 @@
+{
+  "name": "coffee-lounge",
+  "private": true,
+  "type": "module",
+  "description": "Coffee Lounge — offline-first coffee shop POS and management suite",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && corepack pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check:deps": "depcruise packages apps --config .dependency-cruiser.cjs",
+    "check:trace": "node scripts/check-traceability.mjs",
+    "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm check:deps && corepack pnpm check:trace && corepack pnpm test"
+  },
+  "packageManager": "pnpm@12.14.0+sha512.c18ba6d87993d3d164cb5e8948f32b2c06ee854487e06cd8d86781342fb3e5bb4634367034711e86802baa9c37bea906ce1929ad08d70884c97d801df13389a6",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "24.19.2",
+    "dependency-cruiser": "^18.6.0",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.4"
+  }
+}
