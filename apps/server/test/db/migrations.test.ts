@@ -21,15 +21,16 @@ describe('migration runner', () => {
   it('applies every migration to an empty database, then has nothing left to do', async () => {
     db = await createTestDatabase('empty');
     const migrations = await loadMigrations(MIGRATIONS_DIR);
-    expect(migrations.map((m) => m.version)).toEqual(['0001', '0002', '0003']);
+    const versions = migrations.map((m) => m.version);
+    expect(versions.slice(0, 4)).toEqual(['0001', '0002', '0003', '0004']);
 
-    expect(await migrate(db.client, migrations)).toEqual(['0001', '0002', '0003']);
+    expect(await migrate(db.client, migrations)).toEqual(versions);
     expect(await migrate(db.client, migrations)).toEqual([]);
 
     const { rows } = await db.client.query<{ n: string }>(
       'SELECT count(*)::text AS n FROM cl_meta.schema_migrations',
     );
-    expect(rows[0]?.n).toBe('3');
+    expect(rows[0]?.n).toBe(String(versions.length));
   });
 
   it('refuses to continue if an applied migration was edited afterwards', async () => {

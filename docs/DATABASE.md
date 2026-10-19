@@ -1254,6 +1254,7 @@ Transaction contents for submit, accept (with the D-07 scope check), Picked up, 
 | 20 Oct 2026 | 0001 | `ensure_active_owner` also fires on INSERT, so the first user must be an owner | The installer creates the owner first; prevents a shop with no owner |
 | 20 Oct 2026 | 0002, 0003 | Seeds: `0002_seed_access.sql` is generated from RBAC.md (72 permissions, 163 grants, 269 policies); `0003_seed_settings.sql` from DECISIONS.md §4 | Tests re-read both documents and compare them with the database |
 | 20 Oct 2026 | 0001 | Default privileges: later tables automatically get SELECT (cl_readonly) and SELECT/INSERT (cl_app); UPDATE/DELETE are granted per table in each migration | Append-only tables stay append-only by default |
+| 20 Oct 2026 | 0004 | Added `cl.device_registration_codes` (hashed one-time codes, 10 min), `cl.step_up_uses` (single use of an approval; `step_up_approvals` stays append-only) and `cl.owner_recovery_codes` (argon2id hash; hidden from `cl_readonly`) | Needed for device registration (API.md §4), single-use step-up approvals (RBAC.md §1.4) and owner recovery (SECURITY.md §2.2) |
 
 ## 16. Open points for review R1
 

@@ -4,6 +4,7 @@
  * and the checks are retried every few seconds (e.g. while PostgreSQL is still starting).
  */
 import { fileURLToPath } from 'node:url';
+import { registerStaffIdentity } from './modules/identity/index.ts';
 import { buildApps } from './platform/app.ts';
 import { ClockJumpDetector } from './platform/clock.ts';
 import { loadConfig } from './platform/config.ts';
@@ -24,7 +25,15 @@ const pool = createPool({
   },
 });
 const migrations = await loadMigrations(fileURLToPath(new URL('../migrations', import.meta.url)));
-const { customer, staff } = buildApps({ config, pool, readiness });
+const secureCookies = config.STAFF_TLS_CERT !== undefined;
+const { customer, staff } = buildApps(
+  { config, pool, readiness },
+  {
+    staff: async (app) => {
+      await registerStaffIdentity(app, { pool, secureCookies });
+    },
+  },
+);
 
 const check = async (): Promise<void> => {
   await runStartupChecks({
