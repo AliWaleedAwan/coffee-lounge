@@ -202,4 +202,14 @@ describe('GET /api/staff/v1/events (AT-73, staff stream part)', () => {
     while (hub.subscriberCount > 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
     expect(hub.subscriberCount).toBe(0);
   });
+  // Runs last: it closes the server.
+  it('ends open streams when the server shuts down, so a service stop never hangs', async () => {
+    const owner = await fx.loggedIn(OWNER.username, OWNER.password);
+    const stream = await open(owner);
+    await stream.waitFor(/^retry: 3000$/m);
+    const started = Date.now();
+    await fx.staff.close();
+    await stream.ended;
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
 });

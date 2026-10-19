@@ -14,6 +14,7 @@
     "test": "vitest run",
     "check:deps": "depcruise packages apps --config .dependency-cruiser.cjs",
     "check:trace": "node scripts/check-traceability.mjs",
+    "e2e": "corepack pnpm --filter @cl/web e2e",
     "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm check:deps && corepack pnpm check:trace && corepack pnpm test"
   },
   "packageManager": "pnpm@12.14.0+sha512.c18ba6d87993d3d164cb5e8948f32b2c06ee854487e06cd8d86781342fb3e5bb4634367034711e86802baa9c37bea906ce1929ad08d70884c97d801df13389a6",
@@ -22,6 +23,7 @@
     "@types/node": "24.19.2",
     "dependency-cruiser": "18.6.0",
     "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "prettier": "3.9.10",
     "typescript": "6.0.3",

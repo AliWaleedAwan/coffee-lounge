@@ -11,6 +11,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'web',
+          include: ['apps/web/src/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+        },
+      },
+      {
+        test: {
           name: 'server',
           include: ['apps/server/src/**/*.test.ts', 'apps/server/test/**/*.test.ts'],
           globalSetup: ['apps/server/test/global-setup.ts'],

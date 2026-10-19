@@ -20,6 +20,8 @@ import {
 
 export const DEVICE_COOKIE = 'cl_device';
 export const SESSION_COOKIE = 'cl_session';
+/** Sent by clients on reads the user did not trigger (refetch after a live hint). */
+export const BACKGROUND_HEADER = 'x-cl-background';
 export const CSRF_HEADER = 'x-cl-request';
 const DEVICE_COOKIE_MAX_AGE_S = 5 * 365 * 24 * 3600;
 
@@ -123,7 +125,11 @@ export async function registerStaffAuth(
     if (level === 'device') return;
 
     const sessionToken = request.cookies[SESSION_COOKIE];
-    const session = sessionToken ? await sessionForToken(options.pool, sessionToken, device) : null;
+    // Only reads may be background; any write is user activity.
+    const background = request.method === 'GET' && request.headers[BACKGROUND_HEADER] === '1';
+    const session = sessionToken
+      ? await sessionForToken(options.pool, sessionToken, device, { extend: !background })
+      : null;
     if (!session) throw new AppError('UNAUTHENTICATED', 'Please log in');
     const permissions = await loadEffectivePermissions(options.pool, session.user.id);
     request.auth = { ...session, device, permissions };

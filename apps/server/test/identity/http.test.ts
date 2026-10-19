@@ -515,3 +515,61 @@ describe('guessing is throttled (failures only)', () => {
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
   });
 });
+
+describe('idle timer and background reads', () => {
+  it('lets a refetch the user did not trigger read without keeping the session awake', async () => {
+    await fx.addUser('idle_waiter', ['waiter']);
+    const waiter = await fx.loggedIn('idle_waiter', STAFF_PASSWORD, 'waiter');
+    const idleExpiry = async (): Promise<string> => {
+      const { rows } = await fx.pool.query<{ t: string }>(
+        `SELECT s.idle_expires_at::text AS t FROM cl.auth_sessions s
+           JOIN cl.users u ON u.id = s.user_id
+          WHERE u.username = 'idle_waiter' AND s.revoked_at IS NULL`,
+      );
+      return rows[0]?.t ?? '';
+    };
+    // Pretend the session was last used 4 minutes ago (waiter idle limit: 5 min).
+    await fx.pool.query(
+      `UPDATE cl.auth_sessions s SET idle_expires_at = now() + interval '1 minute'
+         FROM cl.users u WHERE u.id = s.user_id AND u.username = 'idle_waiter'`,
+    );
+    const before = await idleExpiry();
+
+    const background = await waiter.call({
+      url: url('/auth/me'),
+      headers: { 'x-cl-background': '1' },
+    });
+    expect(background.statusCode).toBe(200);
+    expect(await idleExpiry()).toBe(before);
+
+    // A write is always user activity, even if a client marks it as background.
+    const write = await waiter.call({
+      method: 'POST',
+      url: url('/auth/pin'),
+      headers: { 'x-cl-background': '1' },
+      payload: { password: 'wrong-password-x', pin: '2580' },
+    });
+    expect(write.statusCode).toBeGreaterThanOrEqual(400);
+    const afterWrite = await idleExpiry();
+    expect(afterWrite > before).toBe(true);
+
+    await fx.pool.query(
+      `UPDATE cl.auth_sessions s SET idle_expires_at = now() + interval '1 minute'
+         FROM cl.users u WHERE u.id = s.user_id AND u.username = 'idle_waiter'`,
+    );
+    const reset = await idleExpiry();
+    expect((await waiter.call({ url: url('/auth/me') })).statusCode).toBe(200);
+    expect((await idleExpiry()) > reset).toBe(true);
+
+    // Once the idle time has run out, background reads are refused like any other.
+    await fx.pool.query(
+      `UPDATE cl.auth_sessions s SET idle_expires_at = now() - interval '1 second'
+         FROM cl.users u WHERE u.id = s.user_id AND u.username = 'idle_waiter'`,
+    );
+    const expired = await waiter.call({
+      url: url('/auth/me'),
+      headers: { 'x-cl-background': '1' },
+    });
+    expect(expired.statusCode).toBe(401);
+  });
+});

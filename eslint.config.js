@@ -1,14 +1,22 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'docs/prototypes/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/coverage/**',
+      'docs/prototypes/**',
+      'apps/web/test-results/**',
+      'apps/web/playwright-report/**',
+    ],
   },
   js.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     extends: [tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -23,6 +31,10 @@ export default tseslint.config(
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
     },
+  },
+  {
+    files: ['apps/web/src/**/*.tsx', 'apps/web/src/**/*.ts'],
+    extends: [reactHooks.configs.flat['recommended-latest']],
   },
   {
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],

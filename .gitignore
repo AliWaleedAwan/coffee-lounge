@@ -3,6 +3,8 @@ node_modules/
 dist/
 out/
 coverage/
+test-results/
+playwright-report/
 *.tsbuildinfo
 
 # local environment and secrets (never committed)
@@ -15,3 +17,6 @@ coverage/
 *.log
 .DS_Store
 Thumbs.db
+
+# browser end-to-end test state (test credentials)
+.e2e/

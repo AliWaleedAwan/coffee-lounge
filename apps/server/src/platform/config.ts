@@ -19,6 +19,8 @@ const schema = z
       .default('info'),
     /** How far the PC clock may be behind the latest stored timestamp (WINDOWS_DEPLOYMENT.md §5). */
     CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).max(3_600).default(120),
+    /** Built staff web app served on the staff listener. Default: apps/web/dist. */
+    WEB_DIST_DIR: z.string().min(1).optional(),
     /** Volume whose free space the health page watches (H-14). Default: the install drive. */
     DISK_CHECK_PATH: z.string().min(1).optional(),
     /** USB backup drive root (H-17: `B:\`). Unset: reported as not present. */

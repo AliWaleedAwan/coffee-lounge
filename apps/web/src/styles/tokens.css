@@ -1,0 +1,55 @@
+/*
+ * Design tokens (UI_UX.md §2–§4). Text pairs are AA-checked there; change them only
+ * together with that table. brand.primary can later be replaced by the shop's branding
+ * colour (DEC-14) after a live contrast check.
+ */
+:root {
+  --surface-base: #faf7f2;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ede3d7;
+
+  --text-primary: #2c211c;
+  --text-muted: #6e625a;
+  --text-on-brand: #ffffff;
+
+  --brand-primary: #6b4435;
+  --brand-accent: #9a563e;
+  --brand-accent-soft: #b86c50; /* large numerals and decoration only */
+
+  --success-text: #4f634d;
+  --success-tint: #e6ede4;
+  --warning-text: #7a5200;
+  --warning-tint: #fbefd6;
+  --danger-text: #a23b2a;
+  --danger-tint: #f8e3de;
+  --info-text: #355574;
+  --info-tint: #e3eaf1;
+
+  --border-subtle: #e2d8cc;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-card: 12px;
+  --radius-control: 10px;
+  --radius-chip: 999px;
+
+  --touch-min: 44px;
+  --touch-primary: 56px;
+
+  --motion: 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0ms linear;
+  }
+}

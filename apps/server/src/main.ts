@@ -14,6 +14,7 @@ import { HealthMonitor, parseInternetTarget } from './platform/health.ts';
 import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
+import { webAppAvailable } from './platform/web-app.ts';
 import { registerStaffRoutes } from './staff-routes.ts';
 
 const RECHECK_MS = 5_000;
@@ -49,9 +50,11 @@ const health = new HealthMonitor({
   ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
   internetTarget: parseInternetTarget(config.INTERNET_CHECK_TARGET),
 });
+const webRoot = config.WEB_DIST_DIR ?? fileURLToPath(new URL('../../web/dist', import.meta.url));
+const staffWebRoot = webAppAvailable(webRoot) ? webRoot : undefined;
 let hubStarted = false;
 const { customer, staff } = buildApps(
-  { config, pool, readiness, health },
+  { config, pool, readiness, health, ...(staffWebRoot ? { staffWebRoot } : {}) },
   { staff: (app) => registerStaffRoutes(app, { pool, secureCookies, hub, health }) },
 );
 
@@ -88,6 +91,7 @@ const clockWatch = setInterval(() => {
 
 await customer.listen({ host: config.HOST, port: config.CUSTOMER_PORT });
 await staff.listen({ host: config.HOST, port: config.STAFF_PORT });
+if (!staffWebRoot) staff.log.warn({ webRoot }, 'staff web app not built; serving the API only');
 await check();
 
 let stopping = false;

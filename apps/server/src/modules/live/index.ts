@@ -25,6 +25,12 @@ const MAX_BUFFERED_BYTES = 1_000_000;
 export async function liveRoutes(app: FastifyInstance, options: LiveRouteOptions): Promise<void> {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
   const revalidateMs = options.revalidateMs ?? 30_000;
+  // Streams never finish by themselves, and closing the server waits for open
+  // connections: end them first so a service stop does not hang (clients reconnect).
+  const openStreams = new Set<() => void>();
+  app.addHook('preClose', async () => {
+    for (const close of openStreams) close();
+  });
 
   app.get('/events', async (request, reply) => {
     const auth = authOf(request);
@@ -44,6 +50,7 @@ export async function liveRoutes(app: FastifyInstance, options: LiveRouteOptions
     const close = (event?: string): void => {
       if (!open) return;
       open = false;
+      openStreams.delete(close);
       clearInterval(heartbeat);
       clearInterval(revalidate);
       options.hub.unsubscribe(subscriber.id);
@@ -79,6 +86,7 @@ export async function liveRoutes(app: FastifyInstance, options: LiveRouteOptions
     request.raw.on('close', () => {
       close();
     });
+    openStreams.add(close);
 
     const lastEventId = request.headers['last-event-id'];
     await options.hub.subscribe(

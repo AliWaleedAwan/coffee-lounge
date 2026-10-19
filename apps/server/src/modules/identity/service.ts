@@ -523,11 +523,16 @@ export async function pinSwitch(
   return { token: outcome.token, userId: outcome.userId };
 }
 
-/** Resolves a session cookie on a device; null when missing, expired, revoked or mismatched. */
+/**
+ * Resolves a session cookie on a device; null when missing, expired, revoked or mismatched.
+ * `extend: false` (background reads the user did not trigger) leaves the idle timer
+ * running, so an unattended device still locks (SECURITY.md, RBAC.md §4).
+ */
 export async function sessionForToken(
   db: Queryable,
   token: string,
   device: DeviceInfo,
+  { extend = true }: { extend?: boolean } = {},
 ): Promise<Omit<AuthContext, 'permissions' | 'device'> | null> {
   const { rows } = await db.query<{
     session_id: string;
@@ -538,15 +543,17 @@ export async function sessionForToken(
     must_change_password: boolean;
   }>(
     `UPDATE cl.auth_sessions s
-        SET last_seen_at = now(),
-            idle_expires_at = LEAST(now() + make_interval(secs => $3), s.absolute_expires_at)
+        SET last_seen_at = CASE WHEN $4 THEN now() ELSE s.last_seen_at END,
+            idle_expires_at = CASE WHEN $4
+              THEN LEAST(now() + make_interval(secs => $3), s.absolute_expires_at)
+              ELSE s.idle_expires_at END
        FROM cl.users u
       WHERE s.token_hash = $1 AND s.device_id = $2 AND s.revoked_at IS NULL
         AND s.idle_expires_at > now() AND s.absolute_expires_at > now()
         AND u.id = s.user_id AND u.status = 'active'
       RETURNING s.id::text AS session_id, u.id::text AS user_id, u.username, u.display_name,
                 u.is_owner, u.must_change_password`,
-    [hashToken(token), device.id, SESSION_IDLE_MS[device.kind] / 1000],
+    [hashToken(token), device.id, SESSION_IDLE_MS[device.kind] / 1000, extend],
   );
   const row = rows[0];
   if (!row) return null;

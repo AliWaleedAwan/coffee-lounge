@@ -116,14 +116,20 @@ function toProblem(error: unknown, request: FastifyRequest): Problem {
   return problem('INTERNAL_ERROR', 'An unexpected error occurred. It has been logged.', id);
 }
 
-export function registerErrorHandling(app: FastifyInstance): void {
+export function registerErrorHandling(
+  app: FastifyInstance,
+  /** Answers unmatched requests first (e.g. the web app's client-side routes). */
+  notFoundFallback?: (request: FastifyRequest, reply: FastifyReply) => FastifyReply | undefined,
+): void {
   app.setErrorHandler((error, request, reply) => {
     const body = toProblem(error, request);
     if (body.status >= 500) request.log.error({ err: error }, 'request failed');
     else request.log.info({ code: body.code }, 'request rejected');
     return sendProblem(reply, body);
   });
-  app.setNotFoundHandler((request, reply) =>
-    sendProblem(reply, problem('NOT_FOUND', 'No such resource', request.id)),
+  app.setNotFoundHandler(
+    (request, reply) =>
+      notFoundFallback?.(request, reply) ??
+      sendProblem(reply, problem('NOT_FOUND', 'No such resource', request.id)),
   );
 }

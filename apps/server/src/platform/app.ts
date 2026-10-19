@@ -18,6 +18,7 @@ import { CORRELATION_HEADER, correlationIdFor } from './correlation.ts';
 import { problem, registerErrorHandling, sendProblem } from './errors.ts';
 import { HealthMonitor } from './health.ts';
 import type { Readiness } from './readiness.ts';
+import { appShellFallback, registerWebApp } from './web-app.ts';
 
 export interface PlatformDeps {
   config: Pick<Config, 'LOG_LEVEL' | 'STAFF_TLS_CERT' | 'STAFF_TLS_KEY'>;
@@ -25,6 +26,8 @@ export interface PlatformDeps {
   readiness: Readiness;
   /** Health probes; by default only the database probe is used here. */
   health?: HealthMonitor;
+  /** Built staff web app to serve on the staff listener (apps/web/dist). */
+  staffWebRoot?: string;
   /** false silences logs (tests). */
   logging?: boolean;
 }
@@ -61,10 +64,12 @@ function createListener(
   }
   const app = Fastify(options) as unknown as FastifyInstance;
 
-  registerErrorHandling(app);
+  const webRoot = name === 'staff' ? deps.staffWebRoot : undefined;
+  registerErrorHandling(app, webRoot ? appShellFallback : undefined);
 
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url.startsWith('/health/') || deps.readiness.isReady()) return;
+    // Only the API waits for readiness: the web app loads and shows "Server starting…".
+    if (!request.url.startsWith('/api/') || deps.readiness.isReady()) return;
     const { blockers } = deps.readiness.snapshot();
     await sendProblem(
       reply,
@@ -101,6 +106,7 @@ function createListener(
     return { status: 'ready', database, warnings: state.warnings };
   });
 
+  if (webRoot) registerWebApp(app, webRoot);
   if (routes) void app.register(routes, { prefix });
   return app;
 }

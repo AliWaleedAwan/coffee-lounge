@@ -10,7 +10,7 @@
 | Staff API | `https://<host>:8443` | `/api/staff/v1` | Waiter tablets/phones, counter PC (Electron) | Device cookie + session cookie |
 | Health | both | `/health/live`, `/health/ready` | Installer, diagnostics, connection banner | None (no business data) |
 
-Customer routes are **not mounted** on the staff listener and vice versa.
+Customer routes are **not mounted** on the staff listener and vice versa. The staff listener also serves the built staff web app at `/` (any non-API path falls back to its `index.html`), so the app and its API share one origin.
 
 ## 2. Conventions
 
@@ -25,6 +25,7 @@ Customer routes are **not mounted** on the staff listener and vice versa.
 | Pagination | Cursor-based: `?limit=50&cursor=<opaque>`; response `{ "items": [...], "nextCursor": "…" \| null }`. |
 | Correlation | Clients may send `X-Correlation-Id` (UUID); the server always returns one and logs it. |
 | CSRF | Staff mutations require header `X-CL-Request: 1` + same-origin `Origin`. Cookies are `SameSite=Strict`. |
+| Idle sessions | Every authenticated request extends the session idle timer (RBAC.md §4), except a `GET` sent with `X-CL-Background: 1`. Clients send it on reads the user did not trigger (refetch after a live hint, the live stream itself), so an unattended device still locks. Writes always count as activity. |
 | Concurrency | Catalog/settings edits send `expectedVersion`; bill-dependent calls send `lockVersion`. Mismatch → `409`. |
 | Server prices | Clients send `quotedUnitPrice` only so the server can detect drift. The **server always computes** prices, totals, discounts and tables. |
 | Rate limits | Customer: 10 submissions/min per guest, 60 requests/min per IP. Login/PIN: lockout rules (RBAC §4). → `429 RATE_LIMITED` with `Retry-After`. |
