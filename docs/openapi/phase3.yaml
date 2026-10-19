@@ -1,0 +1,2021 @@
+openapi: 3.1.0
+info:
+  title: Coffee Lounge API — Phase 3 order-to-cash slice
+  version: 0.1.0-design
+  description: >
+    Design contract for review R2 (Phase 1, package 1B). Not implemented yet.
+    Behaviour of state-changing operations is specified in docs/ORDER_STATE_MACHINE.md
+    (transition ids in each operation's x-transition). Permissions: docs/RBAC.md.
+    Money is a decimal string with two places. IDs are opaque strings.
+    Catalog CRUD endpoints follow the standard pattern in docs/API.md section 5.7 and are not detailed here yet.
+servers:
+  - url: http://{host}:8080
+    description: Customer listener (guest phones, shop Wi-Fi)
+    variables:
+      host: { default: 192.168.100.250 }
+  - url: https://{host}:8443
+    description: Staff listener (registered devices, shop certificate)
+    variables:
+      host: { default: 192.168.100.250 }
+tags:
+  - name: customer
+  - name: auth
+  - name: floor
+  - name: orders
+  - name: kitchen
+  - name: billing
+  - name: cash
+  - name: delivery
+  - name: menu
+  - name: printing
+  - name: system
+  - name: events
+
+paths:
+  # ---------------------------------------------------------------- customer
+  /api/customer/v1/entry/{qrToken}:
+    get:
+      tags: [customer]
+      operationId: customerResolveEntry
+      summary: Resolve a table or counter QR; sets entry cookie (and guest token when joining an active session)
+      security: []
+      parameters:
+        - name: qrToken
+          in: path
+          required: true
+          schema: { type: string, minLength: 22, maxLength: 64 }
+      responses:
+        '200':
+          description: Entry resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/customer/v1/menu:
+    get:
+      tags: [customer]
+      operationId: customerMenu
+      summary: Menu for this entry's order type, with live availability
+      security: [ { entryCookie: [] } ]
+      responses:
+        '200':
+          description: Menu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /api/customer/v1/rounds:
+    post:
+      tags: [customer]
+      operationId: customerSubmitRound
+      summary: Submit a round (pending staff approval). Opens the session if none is active.
+      x-transition: [S1, S2, R1]
+      security: [ { entryCookie: [] }, { guestToken: [] } ]
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerRoundInput' }
+      responses:
+        '201':
+          description: Round created, pending approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Round' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/customer/v1/rounds/{roundId}/withdraw:
+    post:
+      tags: [customer]
+      operationId: customerWithdrawRound
+      x-transition: [R5]
+      security: [ { guestToken: [] } ]
+      parameters:
+        - { $ref: '#/components/parameters/RoundId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Round' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/customer/v1/session:
+    get:
+      tags: [customer]
+      operationId: customerSession
+      summary: This visit's rounds, statuses and total
+      security: [ { guestToken: [] } ]
+      responses:
+        '200':
+          description: Session view for the guest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerSessionView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /api/customer/v1/session/bill-request:
+    post:
+      tags: [customer]
+      operationId: customerRequestBill
+      x-transition: [S4]
+      security: [ { guestToken: [] } ]
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses:
+        '200':
+          description: Bill requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerSessionView' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/customer/v1/events:
+    get:
+      tags: [events]
+      operationId: customerEvents
+      summary: SSE stream limited to this session and menu availability (see docs/API.md section 7)
+      security: [ { guestToken: [] } ]
+      parameters: [ { $ref: '#/components/parameters/LastEventId' } ]
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  # ---------------------------------------------------------------- auth & devices
+  /api/staff/v1/devices/registration-codes:
+    post:
+      tags: [auth]
+      operationId: createRegistrationCode
+      x-permission: devices.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceName, kind, ownership]
+              properties:
+                deviceName: { type: string, maxLength: 60 }
+                kind: { $ref: '#/components/schemas/DeviceKind' }
+                ownership: { type: string, enum: [shop, personal] }
+      responses:
+        '201':
+          description: One-time code valid for 10 minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expiresAt]
+                properties:
+                  code: { type: string, pattern: '^[0-9]{8}$' }
+                  expiresAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/staff/v1/devices/register:
+    post:
+      tags: [auth]
+      operationId: registerDevice
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{8}$' }
+      responses:
+        '201':
+          description: Device registered; device cookie set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+  /api/staff/v1/devices/{deviceId}/revoke:
+    post:
+      tags: [auth]
+      operationId: revokeDevice
+      x-permission: devices.manage
+      parameters:
+        - { name: deviceId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: Revoked; its sessions end immediately
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+  /api/staff/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: [ { deviceCookie: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Logged in; session cookie set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/staff/v1/auth/pin-switch:
+    post:
+      tags: [auth]
+      operationId: pinSwitch
+      security: [ { deviceCookie: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, pin]
+              properties:
+                username: { type: string }
+                pin: { type: string, pattern: '^[0-9]{4,6}$' }
+      responses:
+        '200':
+          description: Switched user on this device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/staff/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        '204': { description: Logged out }
+  /api/staff/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      responses:
+        '200':
+          description: Current user, effective permissions and device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /api/staff/v1/auth/step-up:
+    post:
+      tags: [auth]
+      operationId: stepUp
+      summary: Approver enters PIN on this device; returns a single-use token valid for 2 minutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StepUpInput' }
+      responses:
+        '201':
+          description: Approval granted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stepUpId, expiresAt]
+                properties:
+                  stepUpId: { $ref: '#/components/schemas/Id' }
+                  expiresAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---------------------------------------------------------------- floor & sessions
+  /api/staff/v1/floor:
+    get:
+      tags: [floor]
+      operationId: floor
+      x-permission: tables.read
+      responses:
+        '200':
+          description: Tables with derived state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tables]
+                properties:
+                  tables:
+                    type: array
+                    items: { $ref: '#/components/schemas/FloorTable' }
+  /api/staff/v1/tables/{tableId}/assignment:
+    put:
+      tags: [floor]
+      operationId: assignTable
+      x-permission: tables.assign
+      parameters: [ { $ref: '#/components/parameters/TableId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [waiterUserId]
+              properties:
+                waiterUserId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Assigned (previous assignment ended)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FloorTable' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [floor]
+      operationId: unassignTable
+      x-permission: tables.assign
+      parameters: [ { $ref: '#/components/parameters/TableId' } ]
+      responses:
+        '200':
+          description: Unassigned; its QR rounds now route to cashiers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FloorTable' }
+  /api/staff/v1/tables/{tableId}/sessions:
+    post:
+      tags: [floor]
+      operationId: openDineInSession
+      x-permission: orders.create
+      x-transition: [S1]
+      parameters:
+        - { $ref: '#/components/parameters/TableId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guestCount: { type: integer, minimum: 1, maximum: 50 }
+      responses:
+        '201':
+          description: Session opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/sessions/takeaway:
+    post:
+      tags: [floor]
+      operationId: openTakeawaySession
+      x-permission: orders.create
+      x-transition: [S2]
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerName: { type: string, maxLength: 60 }
+      responses:
+        '201':
+          description: Takeaway session opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+  /api/staff/v1/sessions/delivery:
+    post:
+      tags: [delivery]
+      operationId: openDeliverySession
+      x-permission: delivery.create
+      x-transition: [S3]
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryInput' }
+      responses:
+        '201':
+          description: Delivery session opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+  /api/staff/v1/sessions:
+    get:
+      tags: [floor]
+      operationId: listSessions
+      x-permission: orders.read_all
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, settled, cancelled] } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/OrderType' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SessionSummary' }
+                  nextCursor: { type: [string, 'null'] }
+  /api/staff/v1/sessions/{sessionId}:
+    get:
+      tags: [floor]
+      operationId: getSession
+      parameters: [ { $ref: '#/components/parameters/SessionId' } ]
+      responses:
+        '200':
+          description: Full session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/staff/v1/sessions/{sessionId}/transfer:
+    post:
+      tags: [floor]
+      operationId: transferSession
+      x-permission: sessions.transfer
+      x-transition: [S9]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toTableId]
+              properties:
+                toTableId: { $ref: '#/components/schemas/Id' }
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Moved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/sessions/{sessionId}/reset-guests:
+    post:
+      tags: [floor]
+      operationId: resetGuests
+      x-permission: sessions.reset_guests
+      parameters: [ { $ref: '#/components/parameters/SessionId' } ]
+      responses:
+        '200':
+          description: Guest tokens revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked: { type: integer, minimum: 0 }
+  /api/staff/v1/sessions/{sessionId}/bill-request:
+    post:
+      tags: [floor]
+      operationId: staffRequestBill
+      summary: Waiter records that the table asked for the bill
+      x-permission: invoices.read
+      x-transition: [S4]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Bill requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/sessions/{sessionId}/cancel:
+    post:
+      tags: [floor]
+      operationId: cancelSession
+      x-permission: orders.void
+      x-transition: [S8]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---------------------------------------------------------------- orders
+  /api/staff/v1/sessions/{sessionId}/rounds:
+    post:
+      tags: [orders]
+      operationId: staffSubmitRound
+      summary: Staff round — accepted on submit, stock reserved, kitchen ticket printed
+      x-permission: orders.create
+      x-transition: [R2]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoundInput' }
+      responses:
+        '201':
+          description: Accepted round
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedRound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+  /api/staff/v1/approvals:
+    get:
+      tags: [orders]
+      operationId: listApprovals
+      summary: Pending rounds in the caller's acceptance scope (plus escalated), oldest first
+      x-permission: orders.accept
+      responses:
+        '200':
+          description: Approval queue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApprovalItem' }
+  /api/staff/v1/rounds/{roundId}/accept:
+    post:
+      tags: [orders]
+      operationId: acceptRound
+      x-permission: orders.accept
+      x-transition: [R3]
+      parameters:
+        - { $ref: '#/components/parameters/RoundId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Accepted (exactly one concurrent accept succeeds)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedRound' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+  /api/staff/v1/rounds/{roundId}/reject:
+    post:
+      tags: [orders]
+      operationId: rejectRound
+      x-permission: orders.accept
+      x-transition: [R4]
+      parameters:
+        - { $ref: '#/components/parameters/RoundId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: Rejected; reason shown to guest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Round' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/rounds/{roundId}/accept-and-pay:
+    post:
+      tags: [orders, billing]
+      operationId: acceptAndPay
+      summary: Takeaway pay-first — accept, lock, pay and settle in one transaction
+      x-permission: [orders.accept, payments.collect]
+      x-transition: [R3, I2, P1, I4]
+      parameters:
+        - { $ref: '#/components/parameters/RoundId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payments]
+              properties:
+                payments:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/PaymentInput' }
+      responses:
+        '200':
+          description: Accepted and settled; kitchen ticket and receipt queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [round, invoice]
+                properties:
+                  round: { $ref: '#/components/schemas/AcceptedRound' }
+                  invoice: { $ref: '#/components/schemas/Invoice' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: Nothing was committed — no payment recorded
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /api/staff/v1/lines/{lineId}/pickup:
+    post:
+      tags: [kitchen]
+      operationId: pickupLine
+      summary: Picked up = prepared = stock consumption (D-33)
+      x-permission: kitchen.pickup
+      x-transition: [L1]
+      parameters:
+        - { $ref: '#/components/parameters/LineId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QtyInput' }
+      responses:
+        '200':
+          description: Line after pickup
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderLine' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/tickets/{ticketId}/pickup:
+    post:
+      tags: [kitchen]
+      operationId: pickupTicket
+      x-permission: kitchen.pickup
+      x-transition: [L1]
+      parameters:
+        - { $ref: '#/components/parameters/TicketId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: All remaining quantities picked up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KitchenTicket' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/lines/{lineId}/serve:
+    post:
+      tags: [orders]
+      operationId: serveLine
+      x-permission: orders.serve
+      x-transition: [L2]
+      parameters:
+        - { $ref: '#/components/parameters/LineId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QtyInput' }
+      responses:
+        '200':
+          description: Line after serve
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderLine' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/lines/{lineId}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelLineQty
+      summary: Cancel quantity not yet picked up; alreadyMade decides release vs waste
+      x-permission: [orders.void, orders.void_prepared]
+      x-transition: [L3, L4]
+      parameters:
+        - { $ref: '#/components/parameters/LineId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qty, alreadyMade, reason]
+              properties:
+                qty: { type: integer, minimum: 1 }
+                alreadyMade: { type: boolean }
+                reason: { type: string, minLength: 3, maxLength: 200 }
+                stepUpId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Line after cancellation; correction ticket queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderLine' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/lines/{lineId}/void-prepared:
+    post:
+      tags: [orders]
+      operationId: voidPreparedQty
+      x-permission: orders.void_prepared
+      x-transition: [L5]
+      parameters:
+        - { $ref: '#/components/parameters/LineId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qty, reason]
+              properties:
+                qty: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '200':
+          description: Classified as waste; stock not credited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderLine' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/kitchen/tickets:
+    get:
+      tags: [kitchen]
+      operationId: listKitchenTickets
+      x-permission: kitchen.read
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, completed, cancelled] } }
+      responses:
+        '200':
+          description: Tickets (never contain prices)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/KitchenTicket' }
+  /api/staff/v1/tickets/{ticketId}/reprint:
+    post:
+      tags: [kitchen]
+      operationId: reprintTicket
+      x-permission: kitchen.reprint
+      x-transition: [K5]
+      parameters:
+        - { $ref: '#/components/parameters/TicketId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '202':
+          description: Labelled reprint queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrintJob' }
+
+  # ---------------------------------------------------------------- billing
+  /api/staff/v1/sessions/{sessionId}/bill:
+    get:
+      tags: [billing]
+      operationId: getBill
+      x-permission: invoices.read
+      parameters: [ { $ref: '#/components/parameters/SessionId' } ]
+      responses:
+        '200':
+          description: Live bill (open) or snapshot (locked/settled)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+  /api/staff/v1/invoices/{invoiceId}/lock:
+    post:
+      tags: [billing]
+      operationId: lockInvoice
+      x-permission: invoices.lock
+      x-transition: [I2, S5]
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Locked; includes warnings for lines not yet picked up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/invoices/{invoiceId}/reopen:
+    post:
+      tags: [billing]
+      operationId: reopenInvoice
+      x-permission: invoices.reopen
+      x-transition: [I3, S6]
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/ReasonInput' }
+                - type: object
+                  properties:
+                    stepUpId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Reopened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/invoices/{invoiceId}/discounts:
+    post:
+      tags: [billing]
+      operationId: addDiscount
+      x-permission: [discounts.apply, discounts.comp]
+      x-transition: [L6]
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountInput' }
+      responses:
+        '201':
+          description: Discount applied; invoice totals recomputed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+  /api/staff/v1/discounts/{discountId}/void:
+    post:
+      tags: [billing]
+      operationId: voidDiscount
+      x-permission: discounts.apply
+      parameters:
+        - { name: discountId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: Discount voided
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/invoices/{invoiceId}/payments:
+    post:
+      tags: [billing]
+      operationId: addPayment
+      x-permission: payments.collect
+      x-transition: [P1, I4]
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lockVersion, payment]
+              properties:
+                lockVersion: { type: integer, minimum: 1 }
+                payment: { $ref: '#/components/schemas/PaymentInput' }
+      responses:
+        '201':
+          description: Payment recorded; invoice settled when fully paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+  /api/staff/v1/invoices/{invoiceId}/receipt/reprint:
+    post:
+      tags: [billing]
+      operationId: reprintReceipt
+      x-permission: receipts.reprint
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '202':
+          description: Labelled reprint queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrintJob' }
+  /api/staff/v1/invoices/{invoiceId}/refunds:
+    post:
+      tags: [billing]
+      operationId: createRefund
+      summary: Refund or payment-method correction on a settled invoice (invoice itself unchanged)
+      x-permission: [payments.refund_request, payments.refund]
+      x-transition: [P2]
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundInput' }
+      responses:
+        '201':
+          description: Refund recorded; refund slip queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+
+  # ---------------------------------------------------------------- cash shifts
+  /api/staff/v1/cash-shifts/current:
+    get:
+      tags: [cash]
+      operationId: currentShift
+      x-permission: cash_shifts.operate
+      responses:
+        '200':
+          description: Open shift with running expected cash
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashShift' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/staff/v1/cash-shifts:
+    post:
+      tags: [cash]
+      operationId: openShift
+      x-permission: cash_shifts.operate
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [openingFloat]
+              properties:
+                openingFloat: { $ref: '#/components/schemas/Money' }
+      responses:
+        '201':
+          description: Shift opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashShift' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/cash-shifts/{shiftId}/movements:
+    post:
+      tags: [cash]
+      operationId: addCashMovement
+      x-permission: cash_shifts.operate
+      parameters:
+        - { $ref: '#/components/parameters/ShiftId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, amount, reason]
+              properties:
+                kind: { type: string, enum: [paid_in, paid_out] }
+                amount: { $ref: '#/components/schemas/Money' }
+                reason: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashShift' }
+  /api/staff/v1/cash-shifts/{shiftId}/close:
+    post:
+      tags: [cash]
+      operationId: closeShift
+      x-permission: cash_shifts.operate
+      parameters:
+        - { $ref: '#/components/parameters/ShiftId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [countedCash]
+              properties:
+                countedCash: { $ref: '#/components/schemas/Money' }
+                varianceReason: { type: string, maxLength: 300 }
+      responses:
+        '200':
+          description: Closed; variance computed; warnings list outstanding COD
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashShift' }
+  /api/staff/v1/cash-shifts/{shiftId}/approve:
+    post:
+      tags: [cash]
+      operationId: approveShift
+      x-permission: cash_shifts.approve_variance
+      parameters:
+        - { $ref: '#/components/parameters/ShiftId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Approved (approver is not the cashier)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashShift' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---------------------------------------------------------------- delivery
+  /api/staff/v1/deliveries:
+    get:
+      tags: [delivery]
+      operationId: listDeliveries
+      x-permission: delivery.create
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/DeliveryStatus' } }
+      responses:
+        '200':
+          description: Delivery board with outstanding COD per rider
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, outstandingByRider]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Delivery' }
+                  outstandingByRider:
+                    type: array
+                    items:
+                      type: object
+                      required: [rider, amount]
+                      properties:
+                        rider: { $ref: '#/components/schemas/Rider' }
+                        amount: { $ref: '#/components/schemas/Money' }
+  /api/staff/v1/deliveries/{deliveryId}/dispatch:
+    post:
+      tags: [delivery]
+      operationId: dispatchDelivery
+      x-permission: delivery.dispatch
+      x-transition: [D1]
+      parameters:
+        - { $ref: '#/components/parameters/DeliveryId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [riderId]
+              properties:
+                riderId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '200':
+          description: Out for delivery; rider receipt queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/staff/v1/deliveries/{deliveryId}/return:
+    post:
+      tags: [delivery]
+      operationId: recordDeliveryReturn
+      x-permission: delivery.record_return
+      x-transition: [D2, D3]
+      parameters:
+        - { $ref: '#/components/parameters/DeliveryId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [outcome]
+                  properties:
+                    outcome: { const: delivered }
+                    deliveredAt: { type: string, format: date-time }
+                    payment: { $ref: '#/components/schemas/PaymentInput' }
+                - type: object
+                  required: [outcome, failureReason]
+                  properties:
+                    outcome: { const: failed }
+                    failureReason: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/BusinessRule' }
+  /api/staff/v1/deliveries/{deliveryId}/resolve:
+    post:
+      tags: [delivery]
+      operationId: resolveFailedDelivery
+      x-permission: delivery.resolve_failed
+      x-transition: [D4, D5, D6]
+      parameters:
+        - { $ref: '#/components/parameters/DeliveryId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, reason]
+              properties:
+                action: { type: string, enum: [reattempt, convert_to_pickup, cancel] }
+                riderId: { $ref: '#/components/schemas/Id' }
+                reason: { type: string, minLength: 3, maxLength: 200 }
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+  /api/staff/v1/riders:
+    get:
+      tags: [delivery]
+      operationId: listRiders
+      x-permission: delivery.dispatch
+      responses:
+        '200':
+          description: Active riders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Rider' }
+
+  # ---------------------------------------------------------------- menu (Phase 3 subset)
+  /api/staff/v1/menu:
+    get:
+      tags: [menu]
+      operationId: staffMenu
+      x-permission: menu.read
+      responses:
+        '200':
+          description: Staff menu with prices and availability
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+  /api/staff/v1/menu/variants/{variantId}/availability:
+    post:
+      tags: [menu]
+      operationId: setVariantAvailability
+      x-permission: menu.availability_toggle
+      parameters:
+        - { name: variantId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [available]
+              properties:
+                available: { type: boolean }
+                reason: { type: string, maxLength: 120 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Variant' }
+
+  # ---------------------------------------------------------------- printing & system
+  /api/staff/v1/print-jobs:
+    get:
+      tags: [printing]
+      operationId: listPrintJobs
+      x-permission: [printers.manage, kitchen.reprint]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, all] } }
+      responses:
+        '200':
+          description: Print jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PrintJob' }
+  /api/staff/v1/print-jobs/{jobId}/retry:
+    post:
+      tags: [printing]
+      operationId: retryPrintJob
+      x-permission: [printers.manage, kitchen.reprint]
+      parameters: [ { $ref: '#/components/parameters/JobId' } ]
+      responses:
+        '202':
+          description: Requeued (same job, not a reprint)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrintJob' }
+  /api/staff/v1/print-jobs/{jobId}/resolve-uncertain:
+    post:
+      tags: [printing]
+      operationId: resolveUncertainPrint
+      x-permission: [printers.manage, kitchen.reprint]
+      parameters: [ { $ref: '#/components/parameters/JobId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution]
+              properties:
+                resolution: { type: string, enum: [printed, reprint] }
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrintJob' }
+  /api/staff/v1/system/health:
+    get:
+      tags: [system]
+      operationId: systemHealth
+      x-permission: system.health
+      responses:
+        '200':
+          description: Health detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /api/staff/v1/events:
+    get:
+      tags: [events]
+      operationId: staffEvents
+      summary: SSE stream filtered by permission (see docs/API.md section 7)
+      parameters: [ { $ref: '#/components/parameters/LastEventId' } ]
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /health/ready:
+    get:
+      tags: [system]
+      operationId: healthReady
+      security: []
+      responses:
+        '200': { description: Ready }
+        '503': { $ref: '#/components/responses/ServerStarting' }
+
+components:
+  securitySchemes:
+    deviceCookie: { type: apiKey, in: cookie, name: cl_device }
+    staffSession: { type: apiKey, in: cookie, name: cl_session }
+    entryCookie:  { type: apiKey, in: cookie, name: cl_entry }
+    guestToken:   { type: apiKey, in: cookie, name: cl_guest }
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+    LastEventId:
+      name: Last-Event-ID
+      in: header
+      required: false
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    TableId:   { name: tableId,    in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    SessionId: { name: sessionId,  in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    RoundId:   { name: roundId,    in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    LineId:    { name: lineId,     in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    TicketId:  { name: ticketId,   in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    InvoiceId: { name: invoiceId,  in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    ShiftId:   { name: shiftId,    in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    DeliveryId: { name: deliveryId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    JobId:     { name: jobId,      in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+
+  responses:
+    ValidationFailed:
+      description: Invalid input (code VALIDATION_FAILED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthenticated:
+      description: UNAUTHENTICATED or VISIT_ENDED
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: FORBIDDEN, DEVICE_NOT_REGISTERED, NOT_IN_ACCEPTANCE_SCOPE or STEP_UP_REQUIRED
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: NOT_FOUND (also used for out-of-scope ids)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict (ROUND_ALREADY_DECIDED, SESSION_LOCKED_FOR_CHECKOUT, PENDING_ROUNDS_EXIST, BILL_CHANGED, QTY_EXCEEDS_REMAINING, STALE_STATE, IDEMPOTENCY_KEY_REUSED, TABLE_OCCUPIED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    BusinessRule:
+      description: Business rule rejection (INSUFFICIENT_STOCK, PRICE_CHANGED_LOCK_EXPIRED, AMOUNT_EXCEEDS_DUE, NO_OPEN_CASH_SHIFT, DISCOUNT_OVER_LIMIT, REFUND_EXCEEDS_PAID, CARD_NUMBER_NOT_ALLOWED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: RATE_LIMITED (see Retry-After)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServerStarting:
+      description: SERVER_STARTING
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Id: { type: string, pattern: '^[0-9]+$' }
+    Money: { type: string, pattern: '^-?[0-9]+\.[0-9]{2}$', examples: ['650.00'] }
+    Qty: { type: string, pattern: '^-?[0-9]+\.[0-9]{4}$', examples: ['150.0000'] }
+    OrderType: { type: string, enum: [dine_in, takeaway, delivery] }
+    DeviceKind: { type: string, enum: [waiter, reception, manager, inventory, kitchen] }
+    DeliveryStatus:
+      type: string
+      enum: [pending_dispatch, out_for_delivery, delivered, failed, cancelled, converted_to_pickup]
+    UserRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+
+    Problem:
+      type: object
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          enum: [VALIDATION_FAILED, UNAUTHENTICATED, VISIT_ENDED, DEVICE_NOT_REGISTERED, FORBIDDEN,
+                 NOT_IN_ACCEPTANCE_SCOPE, STEP_UP_REQUIRED, NOT_FOUND, ROUND_ALREADY_DECIDED,
+                 SESSION_LOCKED_FOR_CHECKOUT, PENDING_ROUNDS_EXIST, BILL_CHANGED, QTY_EXCEEDS_REMAINING,
+                 STALE_STATE, IDEMPOTENCY_KEY_REUSED, TABLE_OCCUPIED, INSUFFICIENT_STOCK,
+                 PRICE_CHANGED_LOCK_EXPIRED, AMOUNT_EXCEEDS_DUE, NO_OPEN_CASH_SHIFT, DISCOUNT_OVER_LIMIT,
+                 REFUND_EXCEEDS_PAID, CARD_NUMBER_NOT_ALLOWED, RATE_LIMITED, SERVER_STARTING]
+        detail: { type: string }
+        correlationId: { type: string, format: uuid }
+        currentState: { type: object, additionalProperties: true }
+        fields:
+          type: array
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }
+        shortages:
+          type: array
+          items:
+            type: object
+            required: [lineId, itemName, required, available, uom]
+            properties:
+              lineId: { $ref: '#/components/schemas/Id' }
+              itemName: { type: string }
+              required: { $ref: '#/components/schemas/Qty' }
+              available: { $ref: '#/components/schemas/Qty' }
+              uom: { type: string, enum: [g, ml, pcs] }
+        decidedBy: { $ref: '#/components/schemas/UserRef' }
+        decidedAt: { type: string, format: date-time }
+        remainingDue: { $ref: '#/components/schemas/Money' }
+
+    # ---- auth
+    Device:
+      type: object
+      required: [id, name, kind, ownership, status]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/DeviceKind' }
+        ownership: { type: string, enum: [shop, personal] }
+        status: { type: string, enum: [active, revoked] }
+    Me:
+      type: object
+      required: [user, roles, permissions, device]
+      properties:
+        user: { $ref: '#/components/schemas/UserRef' }
+        roles: { type: array, items: { type: string } }
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [key]
+            properties:
+              key: { type: string }
+              scope: { type: object, additionalProperties: true }
+        discountLimitPercent: { type: string }
+        device: { $ref: '#/components/schemas/Device' }
+        mustChangePassword: { type: boolean }
+    StepUpInput:
+      type: object
+      required: [action, entityType, entityId, approverUsername, approverPin, reason]
+      properties:
+        action:
+          type: string
+          enum: [discount.over_limit, refund.approve, payment.correct, invoice.reopen_with_payments,
+                 shift.variance, count.variance, line.void_prepared]
+        entityType: { type: string }
+        entityId: { $ref: '#/components/schemas/Id' }
+        approverUsername: { type: string }
+        approverPin: { type: string, pattern: '^[0-9]{4,6}$' }
+        reason: { type: string, minLength: 3, maxLength: 200 }
+
+    # ---- menu
+    Menu:
+      type: object
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, name, items]
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              name: { type: string }
+              items:
+                type: array
+                items: { $ref: '#/components/schemas/MenuItem' }
+    MenuItem:
+      type: object
+      required: [id, name, variants, modifierGroups]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        imageUrl: { type: [string, 'null'] }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/Variant' }
+        modifierGroups:
+          type: array
+          items:
+            type: object
+            required: [id, name, minSelect, maxSelect, options]
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              name: { type: string }
+              minSelect: { type: integer, minimum: 0 }
+              maxSelect: { type: integer, minimum: 1 }
+              options:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, priceDelta, available]
+                  properties:
+                    id: { $ref: '#/components/schemas/Id' }
+                    name: { type: string }
+                    priceDelta: { $ref: '#/components/schemas/Money' }
+                    available: { type: boolean }
+    Variant:
+      type: object
+      required: [id, name, price, available]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        promotionPrice: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        available: { type: boolean }
+        unavailableReason: { type: [string, 'null'], enum: [out_of_stock, marked_unavailable, null] }
+
+    # ---- customer
+    CustomerEntry:
+      type: object
+      required: [kind, shop]
+      properties:
+        kind: { type: string, enum: [table, counter_takeaway] }
+        table:
+          oneOf:
+            - type: object
+              required: [code, name]
+              properties:
+                code: { type: string }
+                name: { type: string }
+            - type: 'null'
+        joinedSession: { oneOf: [ { $ref: '#/components/schemas/CustomerSessionView' }, { type: 'null' } ] }
+        shop:
+          type: object
+          required: [name]
+          properties:
+            name: { type: string }
+            logoUrl: { type: [string, 'null'] }
+    LineInput:
+      type: object
+      required: [variantId, qty, quotedUnitPrice]
+      properties:
+        variantId: { $ref: '#/components/schemas/Id' }
+        qty: { type: integer, minimum: 1, maximum: 50 }
+        modifierOptionIds:
+          type: array
+          items: { $ref: '#/components/schemas/Id' }
+        notes: { type: string, maxLength: 120 }
+        quotedUnitPrice: { $ref: '#/components/schemas/Money' }
+    CustomerRoundInput:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: { $ref: '#/components/schemas/LineInput' }
+        customerName: { type: string, maxLength: 60 }
+    CustomerSessionView:
+      type: object
+      required: [sessionStatus, rounds, total]
+      properties:
+        sessionStatus: { type: string, enum: [open, checkout_requested, checkout_locked, settled, cancelled] }
+        orderRef: { type: string }
+        rounds:
+          type: array
+          items:
+            type: object
+            required: [id, ref, status, lines]
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              ref: { type: string }
+              status: { type: string, enum: [pending_approval, accepted, rejected, cancelled, expired] }
+              reason: { type: [string, 'null'] }
+              lines:
+                type: array
+                items:
+                  type: object
+                  required: [name, qty, displayStatus]
+                  properties:
+                    name: { type: string }
+                    qty: { type: integer }
+                    displayStatus: { type: string, enum: [waiting_for_staff, being_prepared, picked_up, served, collected, cancelled] }
+        total: { $ref: '#/components/schemas/Money' }
+        payAtCounter: { type: boolean }
+
+    # ---- floor & sessions
+    FloorTable:
+      type: object
+      required: [id, code, name, state, pendingRounds, escalatedRounds, uncollectedItems]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        code: { type: string }
+        name: { type: string }
+        area: { type: [string, 'null'] }
+        state: { type: string, enum: [available, occupied, bill_requested, paying, blocked, maintenance] }
+        assignedWaiter: { oneOf: [ { $ref: '#/components/schemas/UserRef' }, { type: 'null' } ] }
+        session: { oneOf: [ { $ref: '#/components/schemas/SessionSummary' }, { type: 'null' } ] }
+        pendingRounds: { type: integer, minimum: 0 }
+        escalatedRounds: { type: integer, minimum: 0 }
+        uncollectedItems: { type: integer, minimum: 0 }
+    SessionSummary:
+      type: object
+      required: [id, sessionNo, orderType, status, openedAt, total]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        sessionNo: { type: string }
+        orderType: { $ref: '#/components/schemas/OrderType' }
+        status: { type: string, enum: [open, checkout_requested, checkout_locked, settled, cancelled] }
+        tableCode: { type: [string, 'null'] }
+        customerName: { type: [string, 'null'] }
+        guestCount: { type: [integer, 'null'] }
+        openedAt: { type: string, format: date-time }
+        total: { $ref: '#/components/schemas/Money' }
+    Session:
+      allOf:
+        - { $ref: '#/components/schemas/SessionSummary' }
+        - type: object
+          required: [rounds, invoiceId]
+          properties:
+            rounds:
+              type: array
+              items: { $ref: '#/components/schemas/Round' }
+            invoiceId: { $ref: '#/components/schemas/Id' }
+            delivery: { oneOf: [ { $ref: '#/components/schemas/Delivery' }, { type: 'null' } ] }
+            guestDevices: { type: integer, minimum: 0 }
+
+    # ---- orders & kitchen
+    RoundInput:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/LineInput' }
+    Round:
+      type: object
+      required: [id, ref, sessionId, roundNo, source, status, submittedAt, lines]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        ref: { type: string, examples: ['R-1019-042'] }
+        sessionId: { $ref: '#/components/schemas/Id' }
+        roundNo: { type: integer }
+        source: { type: string, enum: [qr, waiter, reception] }
+        status: { type: string, enum: [pending_approval, accepted, rejected, cancelled, expired] }
+        submittedAt: { type: string, format: date-time }
+        afterBillRequest: { type: boolean }
+        escalatedAt: { type: [string, 'null'], format: date-time }
+        decidedBy: { oneOf: [ { $ref: '#/components/schemas/UserRef' }, { type: 'null' } ] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason: { type: [string, 'null'] }
+        quotedTotal: { $ref: '#/components/schemas/Money' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLine' }
+    AcceptedRound:
+      type: object
+      required: [round, ticket]
+      properties:
+        round: { $ref: '#/components/schemas/Round' }
+        ticket: { $ref: '#/components/schemas/KitchenTicket' }
+    ApprovalItem:
+      type: object
+      required: [round, tableCode, ageSeconds, escalated, stockCheck]
+      properties:
+        round: { $ref: '#/components/schemas/Round' }
+        tableCode: { type: [string, 'null'] }
+        orderType: { $ref: '#/components/schemas/OrderType' }
+        unpaid: { type: boolean, description: Counter-QR takeaway awaiting payment }
+        ageSeconds: { type: integer }
+        escalated: { type: boolean }
+        stockCheck: { type: string, enum: [ok, short], description: Advisory only; acceptance re-checks }
+    OrderLine:
+      type: object
+      required: [id, lineNo, variantId, name, variant, qty, qtyPickedUp, qtyServed, qtyCancelledUnprepared,
+                 qtyCancelledPrepared, unitPriceQuoted, displayStatus]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        lineNo: { type: integer }
+        variantId: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        variant: { type: string }
+        modifiers:
+          type: array
+          items:
+            type: object
+            required: [name, priceDelta]
+            properties:
+              name: { type: string }
+              priceDelta: { $ref: '#/components/schemas/Money' }
+        notes: { type: [string, 'null'] }
+        qty: { type: integer, minimum: 1 }
+        qtyPickedUp: { type: integer, minimum: 0 }
+        qtyServed: { type: integer, minimum: 0 }
+        qtyCancelledUnprepared: { type: integer, minimum: 0 }
+        qtyCancelledPrepared: { type: integer, minimum: 0 }
+        unitPriceQuoted: { $ref: '#/components/schemas/Money' }
+        unitPrice: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        priceLocked: { type: boolean }
+        promotionDiscount: { $ref: '#/components/schemas/Money' }
+        lineGross: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        stockTracked: { type: boolean }
+        displayStatus: { type: string, enum: [pending, waiting_for_kitchen, picked_up, served, collected, cancelled] }
+    KitchenTicket:
+      type: object
+      description: Never contains prices, payment data or customer contact details
+      required: [id, ticketNo, kind, status, createdAt, header, lines]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        ticketNo: { type: string, examples: ['K-1019-118'] }
+        kind: { type: string, enum: [new, supplement, correction, void] }
+        status: { type: string, enum: [open, completed, cancelled] }
+        createdAt: { type: string, format: date-time }
+        header: { type: string, examples: ['T5 · Dine-in · Round 3'] }
+        supersedesTicketNo: { type: [string, 'null'] }
+        printJob: { oneOf: [ { $ref: '#/components/schemas/PrintJob' }, { type: 'null' } ] }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [lineId, qty, name, remainingToPickUp]
+            properties:
+              lineId: { $ref: '#/components/schemas/Id' }
+              qty: { type: integer }
+              name: { type: string }
+              variant: { type: string }
+              modifiers: { type: array, items: { type: string } }
+              notes: { type: [string, 'null'] }
+              remainingToPickUp: { type: integer, minimum: 0 }
+    QtyInput:
+      type: object
+      required: [qty]
+      properties:
+        qty: { type: integer, minimum: 1 }
+    ReasonInput:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 200 }
+
+    # ---- billing
+    Invoice:
+      type: object
+      required: [id, sessionId, status, lockVersion, lines, discounts, payments, subtotal, discountTotal,
+                 taxTotal, roundingAdjustment, total, paidTotal, remainingDue]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        sessionId: { $ref: '#/components/schemas/Id' }
+        invoiceNo: { type: [string, 'null'], examples: ['INV-2026-000123'] }
+        status: { type: string, enum: [open, locked, settled] }
+        lockVersion: { type: integer, minimum: 0 }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [orderLineId, description, billableQty, unitPrice, gross, net]
+            properties:
+              orderLineId: { $ref: '#/components/schemas/Id' }
+              description: { type: string }
+              billableQty: { type: integer, minimum: 0 }
+              unitPrice: { $ref: '#/components/schemas/Money' }
+              modifiersUnitTotal: { $ref: '#/components/schemas/Money' }
+              gross: { $ref: '#/components/schemas/Money' }
+              promotionDiscount: { $ref: '#/components/schemas/Money' }
+              manualDiscount: { $ref: '#/components/schemas/Money' }
+              discountAlloc: { $ref: '#/components/schemas/Money' }
+              net: { $ref: '#/components/schemas/Money' }
+              isComp: { type: boolean }
+        discounts:
+          type: array
+          items:
+            type: object
+            required: [id, kind, value, amount, reason, appliedBy]
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              orderLineId: { type: [string, 'null'] }
+              kind: { type: string, enum: [percent, fixed, comp] }
+              value: { type: string }
+              amount: { $ref: '#/components/schemas/Money' }
+              reason: { type: string }
+              appliedBy: { $ref: '#/components/schemas/UserRef' }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/Payment' }
+        subtotal: { $ref: '#/components/schemas/Money' }
+        discountTotal: { $ref: '#/components/schemas/Money' }
+        taxTotal: { $ref: '#/components/schemas/Money' }
+        roundingAdjustment: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+        paidTotal: { $ref: '#/components/schemas/Money' }
+        remainingDue: { $ref: '#/components/schemas/Money' }
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string, enum: [LINES_NOT_PICKED_UP, ROUNDS_AFTER_BILL_REQUEST] }
+              message: { type: string }
+    DiscountInput:
+      type: object
+      required: [kind, value, reason]
+      properties:
+        orderLineId: { $ref: '#/components/schemas/Id' }
+        kind: { type: string, enum: [percent, fixed, comp] }
+        value: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$' }
+        reason: { type: string, minLength: 3, maxLength: 200 }
+        stepUpId: { $ref: '#/components/schemas/Id' }
+    PaymentInput:
+      description: Exactly one shape per method
+      oneOf:
+        - type: object
+          required: [method, amount, tendered]
+          properties:
+            method: { const: cash }
+            amount: { $ref: '#/components/schemas/Money' }
+            tendered: { $ref: '#/components/schemas/Money' }
+            riderId: { $ref: '#/components/schemas/Id' }
+        - type: object
+          required: [method, amount]
+          properties:
+            method: { const: card_manual }
+            amount: { $ref: '#/components/schemas/Money' }
+            reference: { type: string, maxLength: 32, description: HBL slip approval code / RRN — never a card number }
+            riderId: { $ref: '#/components/schemas/Id' }
+        - type: object
+          required: [method, amount, provider, reference]
+          properties:
+            method: { const: transfer }
+            amount: { $ref: '#/components/schemas/Money' }
+            provider: { type: string, enum: [bank, jazzcash, easypaisa] }
+            reference: { type: string, minLength: 4, maxLength: 32 }
+    Payment:
+      type: object
+      required: [id, method, amount, receivedBy, at]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        method: { type: string, enum: [cash, card_manual, transfer] }
+        provider: { type: [string, 'null'], enum: [bank, jazzcash, easypaisa, null] }
+        amount: { $ref: '#/components/schemas/Money' }
+        tendered: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        changeDue: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        reference: { type: [string, 'null'] }
+        rider: { oneOf: [ { $ref: '#/components/schemas/Rider' }, { type: 'null' } ] }
+        receivedBy: { $ref: '#/components/schemas/UserRef' }
+        at: { type: string, format: date-time }
+    RefundInput:
+      type: object
+      required: [kind, amount, method, reason, stepUpId]
+      properties:
+        kind: { type: string, enum: [refund, method_correction] }
+        paymentId: { $ref: '#/components/schemas/Id' }
+        amount: { $ref: '#/components/schemas/Money' }
+        method: { type: string, enum: [cash, card_manual, transfer] }
+        provider: { type: string, enum: [bank, jazzcash, easypaisa] }
+        reference: { type: string, maxLength: 32 }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [orderLineId, qty, amount]
+            properties:
+              orderLineId: { $ref: '#/components/schemas/Id' }
+              qty: { type: integer, minimum: 1 }
+              amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string, minLength: 3, maxLength: 200 }
+        stepUpId: { $ref: '#/components/schemas/Id' }
+    Refund:
+      type: object
+      required: [id, refundNo, kind, amount, method, requestedBy, approvedBy, at]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        refundNo: { type: string, examples: ['RF-2026-00012'] }
+        kind: { type: string, enum: [refund, method_correction] }
+        amount: { $ref: '#/components/schemas/Money' }
+        method: { type: string, enum: [cash, card_manual, transfer] }
+        requestedBy: { $ref: '#/components/schemas/UserRef' }
+        approvedBy: { $ref: '#/components/schemas/UserRef' }
+        at: { type: string, format: date-time }
+    CashShift:
+      type: object
+      required: [id, status, cashier, openedAt, openingFloat, expectedCash]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [open, closed, approved] }
+        cashier: { $ref: '#/components/schemas/UserRef' }
+        openedAt: { type: string, format: date-time }
+        openingFloat: { $ref: '#/components/schemas/Money' }
+        cashSales: { $ref: '#/components/schemas/Money' }
+        cashRefunds: { $ref: '#/components/schemas/Money' }
+        paidIn: { $ref: '#/components/schemas/Money' }
+        paidOut: { $ref: '#/components/schemas/Money' }
+        expectedCash: { $ref: '#/components/schemas/Money' }
+        countedCash: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        variance: { oneOf: [ { $ref: '#/components/schemas/Money' }, { type: 'null' } ] }
+        cardTotal: { $ref: '#/components/schemas/Money' }
+        transferTotal: { $ref: '#/components/schemas/Money' }
+        outstandingCod: { $ref: '#/components/schemas/Money' }
+
+    # ---- delivery
+    Rider:
+      type: object
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        phone: { type: [string, 'null'] }
+    DeliveryInput:
+      type: object
+      required: [channel, paymentMode, round]
+      properties:
+        channel: { type: string, enum: [phone, whatsapp, walk_in] }
+        paymentMode: { type: string, enum: [prepaid, cod_cash, card_on_delivery] }
+        customerName: { type: string, maxLength: 60 }
+        customerPhone: { type: string, maxLength: 20 }
+        customerEmail: { type: string, format: email, maxLength: 120 }
+        address: { type: string, maxLength: 300 }
+        landmark: { type: string, maxLength: 120 }
+        notes: { type: string, maxLength: 200 }
+        round: { $ref: '#/components/schemas/RoundInput' }
+    Delivery:
+      type: object
+      required: [id, sessionId, channel, paymentMode, status]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        sessionId: { $ref: '#/components/schemas/Id' }
+        channel: { type: string, enum: [phone, whatsapp, walk_in] }
+        paymentMode: { type: string, enum: [prepaid, cod_cash, card_on_delivery] }
+        status: { $ref: '#/components/schemas/DeliveryStatus' }
+        derivedKitchenStatus: { type: string, enum: [confirmed, preparing, ready_for_dispatch] }
+        customerName: { type: [string, 'null'] }
+        customerPhone: { type: [string, 'null'] }
+        address: { type: [string, 'null'] }
+        rider: { oneOf: [ { $ref: '#/components/schemas/Rider' }, { type: 'null' } ] }
+        dispatchedAt: { type: [string, 'null'], format: date-time }
+        deliveredAt: { type: [string, 'null'], format: date-time }
+        failureReason: { type: [string, 'null'] }
+        amountDue: { $ref: '#/components/schemas/Money' }
+
+    # ---- printing & system
+    PrintJob:
+      type: object
+      required: [id, documentType, copyNo, isReprint, status]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        documentType: { type: string, enum: [kitchen_ticket, receipt, refund_slip, shift_report] }
+        copyNo: { type: integer, minimum: 1 }
+        isReprint: { type: boolean }
+        status: { type: string, enum: [queued, sending, sent, retrying, uncertain, needs_attention, cancelled] }
+        attempts: { type: integer }
+        lastError: { type: [string, 'null'] }
+    Health:
+      type: object
+      required: [api, database, worker, printer, backup, disk, internet]
+      properties:
+        api: { type: string, enum: [ok, degraded] }
+        database: { type: string, enum: [ok, unreachable] }
+        worker:
+          type: object
+          required: [status, lastHeartbeatAt]
+          properties:
+            status: { type: string, enum: [ok, stale, down] }
+            lastHeartbeatAt: { type: [string, 'null'], format: date-time }
+        printer:
+          type: object
+          required: [status, openJobs]
+          properties:
+            status: { type: string, enum: [ok, error, unknown] }
+            openJobs: { type: integer }
+        backup:
+          type: object
+          required: [lastSuccessAt, usbDrivePresent]
+          properties:
+            lastSuccessAt: { type: [string, 'null'], format: date-time }
+            lastVerifiedAt: { type: [string, 'null'], format: date-time }
+            usbDrivePresent: { type: boolean }
+        disk:
+          type: object
+          required: [freePercent]
+          properties:
+            freePercent: { type: number }
+        internet: { type: string, enum: [online, offline] }
+
+security:
+  - deviceCookie: []
+    staffSession: []

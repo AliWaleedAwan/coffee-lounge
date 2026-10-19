@@ -1,0 +1,4 @@
+modifier_option,item,variant,action,ingredient_sku,replacement_sku,quantity,uom,scale_factor
+Oat milk,Cappuccino,,replace,EX-MILK-WHOLE,EX-MILK-OAT,,,
+Extra shot,Cappuccino,,add,EX-BEANS-HOUSE,,9,g,
+No sugar,Cappuccino,,remove,EX-SUGAR-SACHET,,,,

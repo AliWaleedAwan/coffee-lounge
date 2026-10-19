@@ -1,0 +1,4 @@
+group,min_select,max_select,option,price_delta,applies_to_items
+Milk choice,0,1,Oat milk,150.00,Cappuccino
+Extras,0,3,Extra shot,120.00,Cappuccino
+Sweetener,0,1,No sugar,0.00,Cappuccino

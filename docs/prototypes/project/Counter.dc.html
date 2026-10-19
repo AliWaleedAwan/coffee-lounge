@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Counter PC — cashier</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#9A563E}a:hover{color:#6B4435}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; overflow: hidden; box-sizing: border-box; background: #FAF7F2; color: #2C211C; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="flex: none; height: 64px; padding: 0 20px; display: flex; align-items: center; gap: 20px; background: #FFFFFF; border-bottom: 1px solid #E2D8CC;">
+    <span style="font-family: Fraunces, Georgia, serif; font-size: 22px; font-weight: 600;">Coffee Lounge · Counter</span>
+    <span style="flex: 1 1 auto;"></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #4F634D;"><span style="width: 10px; height: 10px; border-radius: 999px; background: #4F634D;"></span>Printer ready</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #4F634D;"><span style="width: 10px; height: 10px; border-radius: 999px; background: #4F634D;"></span>Backup drive OK</span>
+    <button type="button" style="height: 44px; padding: 0 14px; border: 1px solid #E2D8CC; border-radius: 999px; background: #FAF7F2; font-family: inherit; font-size: 15px; font-weight: 600; color: #2C211C; cursor: pointer;">Ali · Cashier · Switch user</button>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; min-height: 0;">
+    <nav aria-label="Counter sections" style="flex: none; width: 220px; padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; background: #EDE3D7;">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="5">
+        <button type="button" onClick="{{n.pick}}" aria-current="{{n.current}}" style="{{n.style}}"><span>{{n.label}}</span><sc-if value="{{n.hasBadge}}" hint-placeholder-val="{{ false }}"><span style="min-width: 24px; height: 24px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #9A563E; color: #FFFFFF; font-size: 13px; display: inline-flex; align-items: center; justify-content: center;">{{n.badge}}</span></sc-if></button>
+      </sc-for>
+    </nav>
+
+    <sc-if value="{{showSessions}}" hint-placeholder-val="{{ true }}">
+      <div style="flex: none; width: 360px; border-right: 1px solid #E2D8CC; display: flex; flex-direction: column; background: #FFFFFF;">
+        <div style="padding: 16px; border-bottom: 1px solid #E2D8CC;">
+          <label for="sess-search" style="display: block; font-size: 13px; font-weight: 600; color: #6E625A; margin-bottom: 6px;">Find a table or order ( / )</label>
+          <input id="sess-search" type="search" placeholder="T5, takeaway name…" style="width: 100%; box-sizing: border-box; height: 44px; border: 1px solid #E2D8CC; border-radius: 10px; padding: 0 12px; font-family: inherit; font-size: 15px; background: #FAF7F2;">
+        </div>
+        <div style="flex: 1 1 auto; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;">
+          <sc-for list="{{sessions}}" as="se" hint-placeholder-count="4">
+            <button type="button" onClick="{{se.pick}}" aria-pressed="{{se.active}}" style="{{se.style}}">
+              <span style="display: flex; flex-direction: column; gap: 2px; text-align: left;"><span style="font-size: 17px; font-weight: 600;">{{se.title}}</span><span style="{{se.statusStyle}}">{{se.status}}</span></span>
+              <span style="font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;">{{se.total}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 24px 28px; display: flex; gap: 24px;">
+        <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between;">
+            <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Table 5 · bill</h1>
+            <span style="{{billBadgeStyle}}">{{billBadge}}</span>
+          </div>
+          <sc-for list="{{rounds}}" as="r" hint-placeholder-count="2">
+            <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 13px; font-weight: 600; color: #6E625A;">{{r.title}}</span>
+              <sc-for list="{{r.lines}}" as="l" hint-placeholder-count="2">
+                <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 15px;"><span>{{l.label}} <span style="{{l.tagStyle}}">{{l.tag}}</span></span><span style="font-variant-numeric: tabular-nums;">{{l.amount}}</span></div>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{showWarning}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="padding: 12px 14px; border-radius: 10px; background: #FBEFD6; color: #7A5200; font-size: 14px; font-weight: 600;">Note: 2× Cappuccino (Round 2) not picked up yet. You can still take payment.</div>
+          </sc-if>
+          <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; font-variant-numeric: tabular-nums;">
+            <div style="display: flex; justify-content: space-between;"><span>Subtotal</span><span>{{subtotal}}</span></div>
+            <sc-if value="{{hasDiscount}}" hint-placeholder-val="{{ false }}"><div style="display: flex; justify-content: space-between; color: #4F634D;"><span>Discount · regular guest 10% (Ali)</span><span>{{discount}}</span></div></sc-if>
+            <div style="display: flex; justify-content: space-between; color: #6E625A;"><span>Tax</span><span>Rs 0</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 24px; font-weight: 600; border-top: 1px solid #E2D8CC; padding-top: 10px;"><span>Total</span><span>{{total}}</span></div>
+          </div>
+          <sc-if value="{{isOpen}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; gap: 10px;">
+              <button type="button" onClick="{{toggleDiscount}}" style="height: 52px; padding: 0 18px; border: 1px solid #6B4435; border-radius: 12px; background: #FFFFFF; color: #6B4435; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{discountLabel}}</button>
+              <button type="button" onClick="{{lockBill}}" style="flex: 1 1 auto; height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">Lock bill and take payment (F2)</button>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex: none; width: 420px; display: flex; flex-direction: column; gap: 14px;">
+          <sc-if value="{{isOpen}}" hint-placeholder-val="{{ true }}">
+            <div style="padding: 20px; border-radius: 14px; background: #EDE3D7; color: #6E625A; font-size: 15px; line-height: 1.5;">Lock the bill to take payment. While it's locked, guests at this table can't add items, so nothing is missed.</div>
+          </sc-if>
+          <sc-if value="{{isLocked}}" hint-placeholder-val="{{ false }}">
+            <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 15px; color: #6E625A;">Amount due</span><span style="font-size: 36px; font-weight: 600; font-variant-numeric: tabular-nums;">{{total}}</span></div>
+              <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+                <sc-for list="{{methods}}" as="m" hint-placeholder-count="5">
+                  <button type="button" onClick="{{m.pick}}" aria-pressed="{{m.active}}" style="{{m.style}}">{{m.label}}</button>
+                </sc-for>
+              </div>
+              <sc-if value="{{isCash}}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <span style="font-size: 14px; font-weight: 600;">Cash received</span>
+                  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+                    <sc-for list="{{tenders}}" as="t" hint-placeholder-count="4">
+                      <button type="button" onClick="{{t.pick}}" aria-pressed="{{t.active}}" style="{{t.style}}">{{t.label}}</button>
+                    </sc-for>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px; border-radius: 12px; background: #E6EDE4; color: #4F634D;"><span style="font-size: 16px; font-weight: 600;">Change</span><span style="font-size: 44px; font-weight: 600; font-variant-numeric: tabular-nums;">{{change}}</span></div>
+                </div>
+              </sc-if>
+              <sc-if value="{{isCard}}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <label for="card-ref" style="font-size: 14px; font-weight: 600;">HBL slip approval code <span style="font-weight: 400; color: #6E625A;">· optional, never the card number</span></label>
+                  <input id="card-ref" type="text" maxlength="12" placeholder="e.g. 482913" style="height: 48px; border: 1px solid #E2D8CC; border-radius: 10px; padding: 0 12px; font-family: inherit; font-size: 16px; background: #FAF7F2;">
+                </div>
+              </sc-if>
+              <sc-if value="{{isTransfer}}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <label for="tx-ref" style="font-size: 14px; font-weight: 600;">{{transferLabel}} transaction ID <span style="font-weight: 400; color: #6E625A;">· required</span></label>
+                  <input id="tx-ref" type="text" maxlength="32" value="{{txRef}}" onChange="{{onTxRef}}" placeholder="From the customer's or shop's app" style="height: 48px; border: 1px solid #E2D8CC; border-radius: 10px; padding: 0 12px; font-family: inherit; font-size: 16px; background: #FAF7F2;">
+                  <label style="display: flex; gap: 10px; align-items: center; min-height: 44px; font-size: 15px; cursor: pointer;"><input type="checkbox" checked="{{txSeen}}" onChange="{{onTxSeen}}" style="width: 22px; height: 22px;">I checked the money arrived in the shop's account</label>
+                </div>
+              </sc-if>
+              <button type="button" onClick="{{confirmPay}}" disabled="{{payDisabled}}" style="{{payStyle}}">{{payLabel}}</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{isSettled}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="background: #FFFFFF; border: 2px solid #4F634D; border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4F634D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
+              <span style="font-size: 24px; font-weight: 600;">Paid · INV-2026-000123</span>
+              <span style="font-size: 15px; color: #6E625A;">{{settledLine}}</span>
+              <span style="font-size: 15px; color: #6E625A;">Receipt printing. Table 5 is now free.</span>
+              <button type="button" onClick="{{reset}}" style="margin-top: 8px; height: 48px; padding: 0 18px; border: 1px solid #6B4435; border-radius: 12px; background: #FFFFFF; color: #6B4435; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Next customer</button>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showTakeaway}}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px;">
+        <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Takeaway · waiting to pay</h1>
+        <p style="margin: 0; color: #6E625A; font-size: 15px;">Orders from the counter QR. Take the money first, then press Accept &amp; pay. Unpaid orders cancel themselves after 30 minutes.</p>
+        <div style="max-width: 640px; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 24px; font-weight: 600;">T-0123 · Ali</span><span style="font-size: 14px; color: #7A5200; font-weight: 600;">Unpaid · cancels in 23:30</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px; font-variant-numeric: tabular-nums;">
+            <div style="display: flex; justify-content: space-between;"><span>1× Americano · Large</span><span>Rs 600</span></div>
+            <div style="display: flex; justify-content: space-between;"><span>1× Banana Bread</span><span>Rs 420</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 22px; font-weight: 600; border-top: 1px solid #E2D8CC; padding-top: 8px;"><span>Total</span><span>Rs 1,020</span></div>
+          </div>
+          <sc-if value="{{taPending}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                <sc-for list="{{taMethods}}" as="m" hint-placeholder-count="2"><button type="button" onClick="{{m.pick}}" aria-pressed="{{m.active}}" style="{{m.style}}">{{m.label}}</button></sc-for>
+              </div>
+              <label style="display: flex; gap: 10px; align-items: center; min-height: 44px; font-size: 14px; color: #9A563E; cursor: pointer;"><input type="checkbox" checked="{{taFail}}" onChange="{{onTaFail}}" style="width: 20px; height: 20px;">Prototype only: simulate “coffee beans just ran out”</label>
+              <button type="button" onClick="{{acceptAndPay}}" style="height: 60px; border: 0; border-radius: 14px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Accept &amp; pay · Rs 1,020</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{taDone}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="padding: 14px 16px; border-radius: 12px; background: #E6EDE4; color: #4F634D; font-weight: 600; line-height: 1.5;">Accepted and paid · INV-2026-000124 · kitchen ticket K-1019-125 and receipt printing.</div>
+          </sc-if>
+          <sc-if value="{{taFailed}}" hint-placeholder-val="{{ false }}">
+            <div role="alert" style="padding: 14px 16px; border-radius: 12px; background: #F8E3DE; color: #A23B2A; font-weight: 600; line-height: 1.5;">Not accepted. <strong>No payment was recorded: return the money.</strong> Americano Large needs 27 g of beans; 12 g available.</div>
+            <button type="button" onClick="{{taReject}}" style="height: 52px; border: 1px solid #A23B2A; border-radius: 12px; background: #FFFFFF; color: #A23B2A; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Reject order · reason “Item just ran out”</button>
+          </sc-if>
+          <sc-if value="{{taRejected}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="padding: 14px 16px; border-radius: 12px; background: #E3EAF1; color: #355574; font-weight: 600;">Rejected. Ali's phone shows the reason and can reorder.</div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showDelivery}}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px;">
+        <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Deliveries</h1>
+        <p style="margin: 0; color: #6E625A; font-size: 15px;">Riders can't update the system on the road. Record what happened when they come back.</p>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start;">
+          <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: #6E625A;">Pending dispatch</span>
+            <span style="font-size: 18px; font-weight: 600;">D-0046 · phone order</span>
+            <span style="font-size: 14px; color: #6E625A;">Prepaid (JazzCash) · 2 of 3 items picked up</span>
+          </div>
+          <div style="background: #FFFFFF; border: 2px solid #6B4435; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px;">
+            <span style="font-size: 13px; font-weight: 600; color: #6E625A;">{{dlvColumn}}</span>
+            <span style="font-size: 18px; font-weight: 600;">D-0045 · WhatsApp · Rider Bilal</span>
+            <span style="font-size: 14px; color: #6E625A;">Cash on delivery · Rs 2,340 to collect · out since 14:05</span>
+            <sc-if value="{{dlvOut}}" hint-placeholder-val="{{ true }}">
+              <button type="button" onClick="{{dlvReturn}}" style="height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Bilal returned: delivered, Rs 2,340 cash received</button>
+              <button type="button" style="height: 44px; border: 1px solid #A23B2A; border-radius: 12px; background: #FFFFFF; color: #A23B2A; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Delivery failed…</button>
+            </sc-if>
+            <sc-if value="{{dlvDone}}" hint-placeholder-val="{{ false }}"><span role="status" style="padding: 10px 12px; border-radius: 10px; background: #E6EDE4; color: #4F634D; font-weight: 600;">Delivered · cash added to Ali's shift · INV-2026-000125</span></sc-if>
+          </div>
+          <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: #6E625A;">Outstanding cash with riders</span>
+            <span style="font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums;">{{dlvOutstanding}}</span>
+            <span style="font-size: 14px; color: #6E625A;">Shown again at shift close</span>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showShift}}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px;">
+        <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Cash shift · Ali · since 09:00</h1>
+        <div style="max-width: 560px; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 16px; font-variant-numeric: tabular-nums;">
+          <div style="display: flex; justify-content: space-between;"><span>Opening float</span><span>Rs 5,000</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>Cash sales (incl. COD handed over)</span><span>Rs 41,620</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>Cash refunds</span><span>− Rs 650</span></div>
+          <div style="display: flex; justify-content: space-between;"><span>Paid out (milk top-up, receipt kept)</span><span>− Rs 1,200</span></div>
+          <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 20px; border-top: 1px solid #E2D8CC; padding-top: 8px;"><span>Expected cash in till</span><span>Rs 44,770</span></div>
+          <div style="display: flex; justify-content: space-between; color: #6E625A;"><span>Card (check against HBL settlement slip)</span><span>Rs 28,450</span></div>
+          <div style="display: flex; justify-content: space-between; color: #6E625A;"><span>JazzCash · Easypaisa · Bank</span><span>Rs 6,300 · Rs 2,100 · Rs 0</span></div>
+        </div>
+        <p style="margin: 0; color: #6E625A; font-size: 14px;">Close shift → count cash → variance → approval by a manager (not the cashier).</p>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showPickup}}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px;">
+        <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Pickup</h1>
+        <p style="margin: 0; color: #6E625A; font-size: 15px;">Same Pickup screen as on waiter devices (see the Waiter board, Pickup tab). Cashiers use it for takeaway and delivery orders.</p>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { section: 'sessions', stage: 'open', discount: false, method: 'cash', tendered: null, txRef: '', txSeen: false, ta: 'pending', taMethod: 'cash', taFail: false, dlv: 'out' };
+  }
+  fmt(n) { return 'Rs ' + Number(n).toLocaleString('en-US'); }
+  pill(active) {
+    return 'min-height: 52px; padding: 0 10px; border-radius: 12px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; ' + (active ? 'border: 2px solid #6B4435; background: #F3ECE4; color: #2C211C;' : 'border: 1px solid #E2D8CC; background: #FFFFFF; color: #2C211C;');
+  }
+  renderVals() {
+    const s = this.state;
+    const set = (p) => this.setState(p);
+    const nav = [['sessions', 'Open bills', 0], ['takeaway', 'Takeaway queue', s.ta === 'pending' || s.ta === 'failed' ? 1 : 0], ['delivery', 'Deliveries', s.dlv === 'out' ? 1 : 0], ['pickup', 'Pickup', 0], ['shift', 'Cash shift', 0]].map(([id, label, n]) => ({
+      label, badge: n, hasBadge: n > 0, current: s.section === id ? 'page' : 'false',
+      style: 'height: 48px; padding: 0 14px; border: 0; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-align: left; ' + (s.section === id ? 'background: #6B4435; color: #FFFFFF;' : 'background: transparent; color: #2C211C;'),
+      pick: () => set({ section: id })
+    }));
+    const statusColor = { 'Occupied': '#6B4435', 'Bill requested': '#355574', 'Paying': '#7A5200', 'Paid': '#4F634D' };
+    const t5Status = s.stage === 'settled' ? 'Paid' : s.stage === 'locked' ? 'Paying' : 'Bill requested';
+    const sessions = [['Table 5', t5Status, s.discount ? 3015 : 3350, true], ['Table 3', 'Bill requested', 1980, false], ['Table 6', 'Paying', 3640, false], ['Table 9', 'Occupied', 680, false]].map(([title, status, amt, active]) => ({
+      title, status, total: this.fmt(amt), active,
+      statusStyle: 'font-size: 13px; font-weight: 600; color: ' + statusColor[status] + ';',
+      style: 'min-height: 64px; padding: 10px 14px; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-family: inherit; color: #2C211C; cursor: pointer; ' + (active ? 'border: 2px solid #6B4435; background: #F3ECE4;' : 'border: 1px solid transparent; background: #FFFFFF;'),
+      pick: () => {}
+    }));
+    const subtotal = 3350;
+    const discount = s.discount ? 335 : 0;
+    const total = subtotal - discount;
+    const tag = (t) => 'font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; margin-left: 6px; ' + (t === 'Served' ? 'background: #E6EDE4; color: #4F634D;' : 'background: #FBEFD6; color: #7A5200;');
+    const rounds = [
+      { title: 'Round 1 · 13:10 · entered by Sara', lines: [{ label: '2× Cappuccino · Regular', tag: 'Served', amount: 'Rs 1,300' }, { label: '1× Butter Croissant', tag: 'Served', amount: 'Rs 450' }] },
+      { title: 'Round 2 · 13:42 · guest QR, accepted by Sara', lines: [{ label: '2× Cappuccino · Regular · Oat milk', tag: 'Waiting for kitchen', amount: 'Rs 1,600' }] }
+    ].map((r) => ({ title: r.title, lines: r.lines.map((l) => Object.assign({}, l, { tagStyle: tag(l.tag) })) }));
+    const methodList = [['cash', 'Cash'], ['card', 'Card (HBL)'], ['jazzcash', 'JazzCash'], ['easypaisa', 'Easypaisa'], ['bank', 'Bank']];
+    const methods = methodList.map(([id, label]) => ({ label, active: s.method === id, style: this.pill(s.method === id), pick: () => set({ method: id, txRef: '', txSeen: false }) }));
+    const exact = total;
+    const tenderValues = [exact, Math.ceil(total / 500) * 500 === total ? total + 500 : Math.ceil(total / 500) * 500, Math.ceil(total / 1000) * 1000 + (Math.ceil(total / 1000) * 1000 === Math.ceil(total / 500) * 500 ? 1000 : 0), 5000];
+    const tendered = s.tendered || exact;
+    const tenders = tenderValues.map((v, i) => ({ label: i === 0 ? 'Exact' : this.fmt(v), active: tendered === v, style: this.pill(tendered === v), pick: () => set({ tendered: v }) }));
+    const isTransfer = ['jazzcash', 'easypaisa', 'bank'].includes(s.method);
+    const transferLabel = { jazzcash: 'JazzCash', easypaisa: 'Easypaisa', bank: 'Bank' }[s.method] || '';
+    const payDisabled = isTransfer && (!s.txRef.trim() || !s.txSeen);
+    const payLabel = s.method === 'cash' ? 'Confirm cash · change ' + this.fmt(tendered - total) + ' (F4)' : s.method === 'card' ? 'Confirm card payment (F5)' : 'Confirm ' + transferLabel + ' payment';
+    const methodText = s.method === 'cash' ? 'Cash ' + this.fmt(tendered) + ', change ' + this.fmt(tendered - total) : s.method === 'card' ? 'Card (HBL) ' + this.fmt(total) : transferLabel + ' ' + this.fmt(total) + ' · ref ' + s.txRef;
+    const taMethods = [['cash', 'Cash'], ['card', 'Card (HBL)']].map(([id, label]) => ({ label, active: s.taMethod === id, style: this.pill(s.taMethod === id), pick: () => set({ taMethod: id }) }));
+    return {
+      nav,
+      showSessions: s.section === 'sessions', showTakeaway: s.section === 'takeaway', showDelivery: s.section === 'delivery', showShift: s.section === 'shift', showPickup: s.section === 'pickup',
+      sessions, rounds,
+      billBadge: s.stage === 'settled' ? 'Settled' : s.stage === 'locked' ? 'Locked for payment' : 'Bill requested by guest',
+      billBadgeStyle: 'padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; ' + (s.stage === 'settled' ? 'background: #E6EDE4; color: #4F634D;' : s.stage === 'locked' ? 'background: #FBEFD6; color: #7A5200;' : 'background: #E3EAF1; color: #355574;'),
+      showWarning: s.stage === 'locked',
+      subtotal: this.fmt(subtotal), hasDiscount: s.discount, discount: '− ' + this.fmt(discount), total: this.fmt(total),
+      isOpen: s.stage === 'open', isLocked: s.stage === 'locked', isSettled: s.stage === 'settled',
+      discountLabel: s.discount ? 'Remove discount' : 'Discount 10% (within your limit)',
+      toggleDiscount: () => set({ discount: !s.discount, tendered: null }),
+      lockBill: () => set({ stage: 'locked' }),
+      methods, isCash: s.method === 'cash', isCard: s.method === 'card', isTransfer, transferLabel,
+      tenders, change: this.fmt(tendered - total),
+      txRef: s.txRef, onTxRef: (e) => set({ txRef: e.target.value }), txSeen: s.txSeen, onTxSeen: (e) => set({ txSeen: e.target.checked }),
+      payDisabled, payLabel,
+      payStyle: 'height: 60px; border: 0; border-radius: 14px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (payDisabled ? 'background: #EDE3D7; color: #6E625A;' : 'background: #6B4435; color: #FFFFFF; cursor: pointer;'),
+      confirmPay: () => set({ stage: 'settled' }),
+      settledLine: methodText,
+      reset: () => set({ stage: 'open', discount: false, method: 'cash', tendered: null, txRef: '', txSeen: false }),
+      taPending: s.ta === 'pending', taDone: s.ta === 'done', taFailed: s.ta === 'failed', taRejected: s.ta === 'rejected',
+      taMethods, taFail: s.taFail, onTaFail: (e) => set({ taFail: e.target.checked }),
+      acceptAndPay: () => set({ ta: s.taFail ? 'failed' : 'done' }),
+      taReject: () => set({ ta: 'rejected' }),
+      dlvOut: s.dlv === 'out', dlvDone: s.dlv === 'done', dlvColumn: s.dlv === 'out' ? 'Out for delivery' : 'Delivered',
+      dlvReturn: () => set({ dlv: 'done' }),
+      dlvOutstanding: s.dlv === 'out' ? 'Rs 2,340' : 'Rs 0'
+    };
+  }
+}
+</script>
+</body>
+</html>

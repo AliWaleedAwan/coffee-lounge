@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coffee Lounge prototypes — start</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#9A563E}a:hover{color:#6B4435}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; padding: 56px 64px; background: #FAF7F2; color: #2C211C; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 64px;">
+  <div style="display: flex; flex-direction: column; gap: 28px;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9A563E;">Phase 1 · Package 1E · Review R5</div>
+      <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 52px; line-height: 1.05; font-weight: 600;">Coffee Lounge<br>clickable prototypes</h1>
+      <p style="margin: 0; font-size: 17px; line-height: 1.55; color: #6E625A; max-width: 520px;">Sample data only, not connected to a server. Each journey is a live artboard: press Play on it, or open a journey from the list.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.06em;">Colour tokens (all text pairs pass WCAG AA)</div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;">
+        <sc-for list="{{swatches}}" as="s" hint-placeholder-count="8">
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="height: 52px; border-radius: 10px; border: 1px solid #E2D8CC; background: {{s.hex}};"></div>
+            <div style="font-size: 13px; font-weight: 600;">{{s.name}}</div>
+            <div style="font-size: 12px; color: #6E625A; font-variant-numeric: tabular-nums;">{{s.hex}}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px; padding: 20px; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 12px;">
+      <div style="font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Fraunces for display</div>
+      <div style="font-size: 16px;">IBM Plex Sans for interface text and numbers</div>
+      <div style="font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; color: #6B4435;">Rs 12,450.00</div>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 12px;">
+    <div style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.06em;">Priority journeys</div>
+    <sc-for list="{{journeys}}" as="j" hint-placeholder-count="8">
+      <a href="{{j.href}}" style="display: flex; align-items: center; gap: 16px; padding: 14px 18px; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 12px; text-decoration: none; color: #2C211C; min-height: 44px;">
+        <span style="flex: none; width: 44px; height: 44px; border-radius: 999px; background: #EDE3D7; color: #6B4435; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;">{{j.id}}</span>
+        <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0;">
+          <span style="font-size: 16px; font-weight: 600;">{{j.title}}</span>
+          <span style="font-size: 13px; color: #6E625A;">{{j.device}} · target {{j.target}}</span>
+        </span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A563E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </a>
+    </sc-for>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <a href="States.dc.html" style="padding: 12px 16px; border-radius: 999px; background: #EDE3D7; color: #2C211C; text-decoration: none; font-size: 14px; font-weight: 500;">Key states</a>
+      <a href="Print.dc.html" style="padding: 12px 16px; border-radius: 999px; background: #EDE3D7; color: #2C211C; text-decoration: none; font-size: 14px; font-weight: 500;">Print previews</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      swatches: [
+        { name: 'Parchment', hex: '#FAF7F2' },
+        { name: 'Sand', hex: '#EDE3D7' },
+        { name: 'Espresso', hex: '#2C211C' },
+        { name: 'Coffee', hex: '#6B4435' },
+        { name: 'Terracotta', hex: '#9A563E' },
+        { name: 'Sage text', hex: '#4F634D' },
+        { name: 'Amber text', hex: '#7A5200' },
+        { name: 'Danger', hex: '#A23B2A' }
+      ],
+      journeys: [
+        { id: 'J1', title: 'Guest orders from the table QR', device: 'Guest phone', target: '≤ 8 taps', href: 'Guest.dc.html' },
+        { id: 'J2', title: 'Waiter sends a round to the kitchen', device: 'Waiter tablet', target: '≤ 5 taps', href: 'Waiter.dc.html' },
+        { id: 'J3', title: 'Waiter accepts a guest QR round', device: 'Waiter tablet · Approvals', target: '1 tap', href: 'Waiter.dc.html' },
+        { id: 'J4', title: 'Collect from kitchen: Picked up', device: 'Waiter tablet · Pickup', target: '1 tap', href: 'Waiter.dc.html' },
+        { id: 'J5', title: 'Cashier locks the bill and takes cash', device: 'Counter PC', target: '≤ 4 actions', href: 'Counter.dc.html' },
+        { id: 'J6', title: 'Counter-QR takeaway: Accept & pay', device: 'Counter PC · Takeaway', target: '2 actions', href: 'Counter.dc.html' },
+        { id: 'J7', title: 'Clerk receives stock with lot and expiry', device: 'Counter PC · Inventory', target: '≤ 90 s', href: 'Clerk.dc.html' },
+        { id: 'J8', title: 'Owner finds top items by margin', device: 'Counter PC · Owner', target: '≤ 3 clicks', href: 'Owner.dc.html' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

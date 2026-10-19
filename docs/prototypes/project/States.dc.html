@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Key states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#9A563E}a:hover{color:#6B4435}
+</style>
+</helmet>
+<div style="width: 1280px; height: 980px; box-sizing: border-box; padding: 40px; background: #FAF7F2; color: #2C211C; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 24px;">
+  <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 32px; font-weight: 600;">Key states</h1>
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; flex: 1 1 auto;">
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Staff device lost connection</span>
+      <div role="status" style="padding: 12px 14px; border-radius: 10px; background: #FBEFD6; color: #7A5200; font-size: 14px; line-height: 1.45;"><strong>Reconnecting…</strong> Showing data from 14:02. Accept, Picked up, Lock and Pay are paused until the screen is up to date.</div>
+      <button type="button" disabled="disabled" style="height: 52px; border: 0; border-radius: 12px; background: #EDE3D7; color: #6E625A; font-family: inherit; font-size: 16px; font-weight: 600;">Accept (paused)</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">After a power cut</span>
+      <div role="status" style="padding: 12px 14px; border-radius: 10px; background: #E3EAF1; color: #355574; font-size: 14px; line-height: 1.45;"><strong>Server starting…</strong> Checking saved data. This usually takes under 3 minutes. Nothing you entered before the cut is lost.</div>
+      <div role="alert" style="padding: 12px 14px; border-radius: 10px; background: #F8E3DE; color: #A23B2A; font-size: 14px; line-height: 1.45;"><strong>PC clock is wrong</strong> (shows 1 Jan 2001). A manager must set the date and time, then press Retry.</div>
+      <button type="button" style="height: 48px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600;">Retry</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Guest: round not accepted</span>
+      <div role="alert" style="padding: 12px 14px; border-radius: 10px; background: #F8E3DE; color: #A23B2A; font-size: 14px; line-height: 1.45;"><strong>Not accepted:</strong> “Iced Latte just ran out.” Nothing from this order was made or charged.</div>
+      <span style="font-size: 14px; color: #6E625A;">Order again without the Iced Latte, or ask a waiter for alternatives.</span>
+      <button type="button" style="height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600;">Back to menu</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Approval: price changed</span>
+      <span style="font-size: 18px; font-weight: 600;">Table 4 · R-1019-051</span>
+      <div style="padding: 12px 14px; border-radius: 10px; background: #E3EAF1; color: #355574; font-size: 14px; line-height: 1.45;">Cappuccino went from Rs 650 to Rs 700 after the guest ordered (8 min ago). <strong>The guest pays Rs 650</strong> (price held for 30 min).</div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <button type="button" style="height: 52px; border: 1px solid #A23B2A; border-radius: 12px; background: #FFFFFF; color: #A23B2A; font-family: inherit; font-size: 16px; font-weight: 600;">Reject</button>
+        <button type="button" style="height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600;">Accept</button>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Printer problem</span>
+      <div role="alert" style="padding: 12px 14px; border-radius: 10px; background: #F8E3DE; color: #A23B2A; font-size: 14px; line-height: 1.45;"><strong>Printer: out of paper.</strong> 2 jobs waiting: kitchen ticket K-1019-126 and receipt INV-2026-000131. The kitchen ticket is on screen under Pickup.</div>
+      <button type="button" style="height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600;">Paper loaded: print waiting jobs</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Print result unknown</span>
+      <span style="font-size: 16px; font-weight: 600; line-height: 1.4;">Did kitchen ticket K-1019-118 print? The printer stopped responding while it was sending.</span>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <button type="button" style="height: 52px; border: 1px solid #6B4435; border-radius: 12px; background: #FFFFFF; color: #6B4435; font-family: inherit; font-size: 15px; font-weight: 600;">Yes, it printed</button>
+        <button type="button" style="height: 52px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 600;">No: reprint</button>
+      </div>
+      <span style="font-size: 13px; color: #6E625A;">A reprint is marked “REPRINT #2”. It never creates a second order.</span>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Manager approval needed</span>
+      <span style="font-size: 15px; line-height: 1.45;">A 25% discount is above your 10% limit. A manager can approve on this device.</span>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="stepup-user" style="font-size: 14px; font-weight: 600;">Manager</label>
+        <input id="stepup-user" type="text" value="Hina (Manager)" readonly="readonly" style="height: 44px; border: 1px solid #E2D8CC; border-radius: 10px; padding: 0 12px; font-family: inherit; font-size: 15px; background: #FAF7F2;">
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;" aria-label="PIN, 2 of 4 digits entered">
+        <span style="width: 16px; height: 16px; border-radius: 999px; background: #2C211C;"></span>
+        <span style="width: 16px; height: 16px; border-radius: 999px; background: #2C211C;"></span>
+        <span style="width: 16px; height: 16px; border-radius: 999px; border: 2px solid #E2D8CC; box-sizing: border-box;"></span>
+        <span style="width: 16px; height: 16px; border-radius: 999px; border: 2px solid #E2D8CC; box-sizing: border-box;"></span>
+      </div>
+      <button type="button" style="height: 48px; border: 0; border-radius: 12px; background: #6B4435; color: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 600;">Approve discount</button>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Guest: visit ended</span>
+      <span style="font-family: Fraunces, Georgia, serif; font-size: 24px; font-weight: 600;">Thanks for visiting!</span>
+      <span style="font-size: 15px; color: #6E625A; line-height: 1.45;">This bill has been paid and the table is closed. To order again, scan the QR code on your table.</span>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.05em;">Backup drive missing</span>
+      <div role="alert" style="padding: 12px 14px; border-radius: 10px; background: #F8E3DE; color: #A23B2A; font-size: 14px; line-height: 1.45;"><strong>Backups paused since 14:20.</strong> Plug the CL-BACKUP drive back into the counter PC. Shown on the counter and owner screens until fixed.</div>
+      <span style="font-size: 13px; color: #6E625A;">Orders keep working. Only the safety copy is paused.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

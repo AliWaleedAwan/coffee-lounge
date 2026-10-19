@@ -1,0 +1,4 @@
+item,variant,ingredient_sku,quantity,uom,waste_factor_percent,for_dine_in,for_takeaway,for_delivery,prep_note
+Cappuccino,Regular,EX-BEANS-HOUSE,18,g,0,yes,yes,yes,Double shot
+Cappuccino,Regular,EX-MILK-WHOLE,150,ml,5,yes,yes,yes,Steam to 60-65 C
+Cappuccino,Regular,EX-CUP-12OZ,1,pcs,0,no,yes,yes,

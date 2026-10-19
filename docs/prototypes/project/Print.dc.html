@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Print previews</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&amp;family=IBM+Plex+Mono:wght@400;600&amp;family=IBM+Plex+Sans:wght@400;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#9A563E}a:hover{color:#6B4435}
+</style>
+</helmet>
+<div style="width: 760px; height: 1100px; box-sizing: border-box; padding: 32px 24px; background: #EDE3D7; color: #2C211C; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column; gap: 20px;">
+  <div style="display: flex; flex-direction: column; gap: 4px;">
+    <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 28px; font-weight: 600;">Print previews · 80 mm, 48 characters per line</h1>
+    <span style="font-size: 14px; color: #6E625A;">Both print on the single Sonic SNC-101 at the counter. Layout to confirm on the real printer.</span>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span style="font-size: 14px; font-weight: 600;">Kitchen ticket: never shows prices</span>
+      <pre style="margin: 0; padding: 16px 12px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(44,33,28,0.18); font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.5; white-space: pre; overflow: hidden; color: #1A1411;">================================================
+KITCHEN                               K-1019-118
+T5 · DINE-IN                  ROUND 3 · ADD-ON
+19 Oct 2026 14:02                Accepted: Sara
+------------------------------------------------
+2 x Cappuccino (Regular)
+    + Oat milk
+    + Extra shot
+    ** NOTE: less foam, very hot **
+1 x Club Sandwich
+------------------------------------------------
+Collect &amp; tap "Picked up"
+================================================</pre>
+      <pre style="margin: 0; padding: 16px 12px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(44,33,28,0.18); font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.5; white-space: pre; overflow: hidden; color: #1A1411;">************ CORRECTION · CANCEL ***************
+KITCHEN                               K-1019-127
+T5 · DINE-IN           replaces K-1019-118
+19 Oct 2026 14:06              Cancelled: Sara
+------------------------------------------------
+CANCEL 1 x Club Sandwich
+------------------------------------------------
+************************************************</pre>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span style="font-size: 14px; font-weight: 600;">Customer receipt</span>
+      <pre style="margin: 0; padding: 16px 12px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(44,33,28,0.18); font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.5; white-space: pre; overflow: hidden; color: #1A1411;">                  [ LOGO ]
+                COFFEE LOUNGE
+         [ADDRESS LINE]  ·  [PHONE]
+------------------------------------------------
+Invoice: INV-2026-000123             Table: T5
+19 Oct 2026 14:35                 Cashier: Ali
+------------------------------------------------
+2  Cappuccino Regular                 1,300.00
+1  Butter Croissant                     450.00
+2  Cappuccino Regular                 1,300.00
+     Oat milk ×2                        300.00
+------------------------------------------------
+Subtotal                              3,350.00
+Discount (regular guest 10%)           -335.00
+Rounding                                  0.00
+TOTAL                              Rs 3,015.00
+Cash                                  3,500.00
+Change                                  485.00
+------------------------------------------------
+          Thank you — see you again!</pre>
+      <span style="font-size: 13px; color: #6E625A; line-height: 1.45;">Reprints add “*** REPRINT #2 ***” at the top. Card payments print the HBL slip reference; transfers print the provider and transaction ID. Rider copies for cash on delivery print “CASH TO COLLECT”.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

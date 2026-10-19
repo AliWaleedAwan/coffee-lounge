@@ -1,0 +1,4 @@
+category,item,description,variant,price,is_default,allow_dine_in,allow_takeaway,allow_delivery
+Hot Coffee,Cappuccino,Espresso with steamed milk and foam,Regular,650.00,yes,yes,yes,yes
+Hot Coffee,Cappuccino,Espresso with steamed milk and foam,Large,780.00,no,yes,yes,yes
+Bakery,Butter Croissant,,Single,450.00,yes,yes,yes,yes

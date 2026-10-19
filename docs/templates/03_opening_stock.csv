@@ -1,0 +1,4 @@
+sku,lot_code,expiry_date,quantity,uom,total_value
+EX-MILK-WHOLE,L2410A,2026-10-25,12,l,3240.00
+EX-BEANS-HOUSE,,,3.5,kg,21000.00
+EX-CUP-12OZ,,,400,pcs,14000.00

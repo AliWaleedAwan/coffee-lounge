@@ -1,0 +1,24 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-19T12:00:00Z" },
+  "title": "Coffee Lounge Prototypes",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html":    { "x": 0,    "y": 0,    "w": 1280, "h": 800,  "title": "Start here — journeys & tokens", "is_interactive": true },
+    "Guest.dc.html":   { "x": 0,    "y": 1150, "w": 390,  "h": 844,  "title": "J1 Guest phone — QR order", "is_interactive": true },
+    "Waiter.dc.html":  { "x": 470,  "y": 1150, "w": 1194, "h": 834,  "title": "J2–J4 Waiter tablet — order, approve, pick up", "is_interactive": true },
+    "Counter.dc.html": { "x": 1744, "y": 1150, "w": 1440, "h": 900,  "title": "J5–J6 Counter PC — bill, payment, takeaway", "is_interactive": true },
+    "Clerk.dc.html":   { "x": 0,    "y": 2420, "w": 1440, "h": 900,  "title": "J7 Clerk — receive stock", "is_interactive": true },
+    "Owner.dc.html":   { "x": 1520, "y": 2420, "w": 1440, "h": 1180, "title": "J8 Owner — overview", "is_interactive": true, "expand": "fill" },
+    "States.dc.html":  { "x": 0,    "y": 4000, "w": 1280, "h": 980,  "title": "Key states" },
+    "Print.dc.html":   { "x": 1360, "y": 4000, "w": 760,  "h": 1100, "title": "Print previews (80 mm)" }
+  },
+  "order": ["Main.dc.html", "Guest.dc.html", "Waiter.dc.html", "Counter.dc.html", "Clerk.dc.html", "Owner.dc.html", "States.dc.html", "Print.dc.html"],
+  "notes": {
+    "rowService": { "x": 0, "y": 880, "text": "Service: guest, waiter, counter", "kind": "title1", "maxW": 3184 },
+    "rowBack":    { "x": 0, "y": 2150, "text": "Back office: clerk and owner", "kind": "title1", "maxW": 2960 },
+    "rowStates":  { "x": 0, "y": 3730, "text": "States and print", "kind": "title1", "maxW": 2120 }
+  },
+  "designSystems": []
+}

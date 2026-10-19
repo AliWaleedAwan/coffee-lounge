@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Owner overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#9A563E}a:hover{color:#6B4435}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 1180px; box-sizing: border-box; background: #FAF7F2; color: #2C211C; font-family: 'IBM Plex Sans', system-ui, sans-serif; padding: 28px 16px 48px;">
+  <div style="max-width: 1360px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 13px; font-weight: 600; color: #6E625A; text-transform: uppercase; letter-spacing: 0.06em;">Owner · sample data</span>
+        <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 600;">Overview</h1>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <div role="group" aria-label="Period" style="display: flex; background: #EDE3D7; border-radius: 12px; padding: 4px; gap: 4px;">
+          <sc-for list="{{periods}}" as="p" hint-placeholder-count="3">
+            <button type="button" onClick="{{p.pick}}" aria-pressed="{{p.active}}" style="{{p.style}}">{{p.label}}</button>
+          </sc-for>
+        </div>
+        <button type="button" style="height: 44px; padding: 0 16px; border: 1px solid #6B4435; border-radius: 10px; background: #FFFFFF; color: #6B4435; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Export PDF</button>
+      </div>
+    </div>
+
+    <div role="note" style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 14px 16px; border-radius: 12px; background: #FBEFD6; color: #7A5200;">
+      <span style="font-weight: 600;">Costs incomplete: 72% of net sales come from items with recipes.</span>
+      <span style="font-size: 14px;">Margins cover those items only. Coverage rises as the clerk adds recipes each week.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+      <sc-for list="{{kpis}}" as="k" hint-placeholder-count="6">
+        <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+          <span style="font-size: 14px; font-weight: 600; color: #6E625A;">{{k.label}}</span>
+          <span style="font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1;">{{k.value}}</span>
+          <span style="{{k.deltaStyle}}">{{k.delta}}</span>
+          <sc-if value="{{k.hasNote}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #6E625A; line-height: 1.4;">{{k.note}}</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+      <div style="flex: 999 1 560px; min-width: 0; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">{{chartTitle}}</h2>
+          <span style="font-size: 13px; color: #6E625A;">Net sales, Rs thousands</span>
+        </div>
+        <div role="img" aria-label="{{chartAria}}" style="display: flex; align-items: flex-end; gap: 8px; height: 240px; padding-top: 20px; border-bottom: 1px solid #E2D8CC;">
+          <sc-for list="{{bars}}" as="b" hint-placeholder-count="8">
+            <div style="flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px;">
+              <span style="font-size: 12px; color: #6E625A; font-variant-numeric: tabular-nums;">{{b.value}}</span>
+              <div style="{{b.style}}"></div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <sc-for list="{{bars}}" as="b" hint-placeholder-count="8">
+            <span style="flex: 1 1 0; min-width: 0; text-align: center; font-size: 12px; color: #6E625A;">{{b.label}}</span>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 320px; min-width: 0; background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Needs attention</h2>
+        <sc-for list="{{alerts}}" as="a" hint-placeholder-count="4">
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid #F0E8DE;">
+            <span style="{{a.tagStyle}}">{{a.tag}}</span>
+            <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; font-weight: 600;">{{a.title}}</span><span style="font-size: 13px; color: #6E625A;">{{a.detail}}</span></span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2D8CC; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Top items · {{periodLabel}}</h2>
+        <div role="group" aria-label="Sort top items" style="display: flex; gap: 6px; align-items: center;">
+          <span style="font-size: 14px; color: #6E625A;">Sort by</span>
+          <sc-for list="{{sorts}}" as="so" hint-placeholder-count="2">
+            <button type="button" onClick="{{so.pick}}" aria-pressed="{{so.active}}" style="{{so.style}}">{{so.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; min-width: 640px; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums;">
+          <thead>
+            <tr style="text-align: left; background: #EDE3D7;">
+              <th style="padding: 10px 12px;">Item</th><th style="padding: 10px 12px; text-align: right;">Sold</th><th style="padding: 10px 12px; text-align: right;">Net sales</th><th style="padding: 10px 12px; text-align: right;">Gross profit</th><th style="padding: 10px 12px; text-align: right;">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+              <tr style="border-top: 1px solid #F0E8DE;">
+                <td style="padding: 12px; font-weight: 600;">{{r.name}}</td>
+                <td style="padding: 12px; text-align: right;">{{r.sold}}</td>
+                <td style="padding: 12px; text-align: right;">{{r.net}}</td>
+                <td style="padding: 12px; text-align: right;">{{r.gp}}</td>
+                <td style="padding: 12px; text-align: right;"><span style="{{r.marginStyle}}">{{r.margin}}</span></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+      <span style="font-size: 12px; color: #6E625A;">Net sales by settlement business date (day ends 04:00). Gross profit = net sales − frozen ingredient cost of sold items. Items without a recipe show no margin.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { period: 'week', sort: 'revenue' };
+  }
+  rs(n) { return 'Rs ' + Math.round(n).toLocaleString('en-US'); }
+  data() {
+    return {
+      today: { label: 'today', cmp: 'vs last Sunday', net: 86420, orders: 112, margin: 67.6, waste: 1840, d: [8, 5, 3, 1, -12],
+        chartTitle: 'Sales by hour · today', bars: [['8', 3.1], ['9', 6.8], ['10', 9.4], ['11', 8.2], ['12', 7.5], ['13', 9.9], ['14', 8.1], ['15', 6.3], ['16', 7.2], ['17', 8.8], ['18', 6.4], ['19', 4.7]] },
+      week: { label: 'this week', cmp: 'vs last week', net: 548900, orders: 701, margin: 67.0, waste: 11350, d: [6, 4, 2, 1, -8],
+        chartTitle: 'Sales by day · this week', bars: [['Mon', 68.2], ['Tue', 71.5], ['Wed', 74.9], ['Thu', 79.3], ['Fri', 92.4], ['Sat', 98.7], ['Sun', 63.9]] },
+      month: { label: 'October so far', cmp: 'vs same days of September', net: 1402600, orders: 1812, margin: 66.5, waste: 29900, d: [9, 7, 2, -1, 5],
+        chartTitle: 'Sales by week · October', bars: [['Wk 1', 362.0], ['Wk 2', 418.6], ['Wk 3', 473.1], ['Wk 4 (part)', 148.9]] }
+    };
+  }
+  delta(pct, goodWhenUp, cmp) {
+    const up = pct >= 0;
+    const good = goodWhenUp ? up : !up;
+    return {
+      text: (up ? '▲ +' : '▼ ') + pct + '% ' + cmp,
+      style: 'align-self: flex-start; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; ' + (good ? 'background: #E6EDE4; color: #4F634D;' : 'background: #F8E3DE; color: #A23B2A;')
+    };
+  }
+  renderVals() {
+    const s = this.state;
+    const all = this.data();
+    const d = all[s.period];
+    const segStyle = (on) => 'height: 40px; padding: 0 14px; border: 0; border-radius: 9px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; ' + (on ? 'background: #6B4435; color: #FFFFFF;' : 'background: transparent; color: #2C211C;');
+    const periods = [['today', 'Today'], ['week', 'This week'], ['month', 'This month']].map(([id, label]) => ({ label, active: s.period === id, style: segStyle(s.period === id), pick: () => this.setState({ period: id }) }));
+    const kdefs = [
+      ['Net sales', this.rs(d.net), d.d[0], true, ''],
+      ['Orders', d.orders.toLocaleString('en-US'), d.d[1], true, ''],
+      ['Average order', this.rs(d.net / d.orders), d.d[2], true, ''],
+      ['Gross margin (after waste)', d.margin.toFixed(1) + '%', d.d[3], true, 'Items with recipes only (72% of sales)'],
+      ['Waste cost', this.rs(d.waste), d.d[4], false, ''],
+      ['Recorded operating result', 'Needs recipes', null, true, 'Shown once 95% of sales have recipes (now 72%). Based only on expenses entered.']
+    ];
+    const kpis = kdefs.map(([label, value, pct, goodUp, note]) => {
+      if (pct === null) return { label, value, delta: 'Not enough cost data yet', deltaStyle: 'align-self: flex-start; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #FBEFD6; color: #7A5200;', note, hasNote: !!note };
+      const dl = this.delta(pct, goodUp, d.cmp);
+      return { label, value, delta: dl.text, deltaStyle: dl.style, note, hasNote: !!note };
+    });
+    const max = Math.max.apply(null, d.bars.map((b) => b[1]));
+    const peak = d.bars.reduce((a, b) => (b[1] > a[1] ? b : a));
+    const bars = d.bars.map(([label, v]) => ({
+      label, value: v.toFixed(1),
+      style: 'width: 100%; max-width: 56px; border-radius: 6px 6px 0 0; height: ' + Math.round((v / max) * 190) + 'px; background: ' + (v === max ? '#9A563E' : '#6B4435') + ';'
+    }));
+    const factor = d.net / all.week.net;
+    const items = [
+      ['Cappuccino', 248, 168400, 117000], ['Café Latte', 171, 115700, 78100], ['Americano', 140, 72800, 57500],
+      ['Butter Croissant', 132, 59400, null], ['Cold Brew', 58, 40020, 24850]
+    ].map(([name, sold, net, gpv]) => ({ name, sold: sold * factor, net: net * factor, gp: gpv === null ? null : gpv * factor }));
+    const sorted = items.slice().sort((a, b) => {
+      if (s.sort === 'margin') {
+        const ma = a.gp === null ? -1 : a.gp / a.net;
+        const mb = b.gp === null ? -1 : b.gp / b.net;
+        return mb - ma;
+      }
+      return b.net - a.net;
+    });
+    const rows = sorted.map((it) => {
+      const m = it.gp === null ? null : (it.gp / it.net) * 100;
+      return {
+        name: it.name, sold: Math.round(it.sold).toLocaleString('en-US'), net: this.rs(it.net), gp: it.gp === null ? '—' : this.rs(it.gp),
+        margin: m === null ? 'No recipe yet' : m.toFixed(1) + '%',
+        marginStyle: m === null ? 'padding: 2px 8px; border-radius: 999px; background: #FBEFD6; color: #7A5200; font-size: 13px; font-weight: 600;' : 'font-weight: 600;'
+      };
+    });
+    const sorts = [['revenue', 'Net sales'], ['margin', 'Margin']].map(([id, label]) => ({
+      label, active: s.sort === id, pick: () => this.setState({ sort: id }),
+      style: 'height: 40px; padding: 0 14px; border-radius: 9px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; ' + (s.sort === id ? 'border: 0; background: #6B4435; color: #FFFFFF;' : 'border: 1px solid #E2D8CC; background: #FFFFFF; color: #2C211C;')
+    }));
+    const tag = (kind) => 'flex: none; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; ' + (kind === 'warn' ? 'background: #FBEFD6; color: #7A5200;' : kind === 'ok' ? 'background: #E6EDE4; color: #4F634D;' : 'background: #E3EAF1; color: #355574;');
+    const alerts = [
+      ['warn', 'Low stock', 'Oat milk: 1,200 ml left', 'Below the 2,000 ml alert level · receive stock'],
+      ['info', 'Approve', '2 stock count differences', 'Beans −140 g (Rs 840) · Cups −12 pcs (Rs 420)'],
+      ['warn', 'Expiring', 'Whole milk lot L2410A', 'Expires tomorrow · 3,000 ml left'],
+      ['ok', 'Backups', 'Last backup 04:15 today', 'Test restore passed Sunday · drive B: 38% used']
+    ].map(([kind, t, title, detail]) => ({ tag: t, tagStyle: tag(kind), title, detail }));
+    return {
+      periods, kpis, bars, rows, sorts, alerts,
+      chartTitle: d.chartTitle, periodLabel: d.label,
+      chartAria: d.chartTitle + '. Highest: ' + peak[0] + ' at ' + peak[1].toFixed(1) + ' thousand rupees.'
+    };
+  }
+}
+</script>
+</body>
+</html>

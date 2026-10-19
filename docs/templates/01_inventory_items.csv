@@ -1,0 +1,6 @@
+sku,name,category,base_uom,track_lots,track_expiry,low_threshold,overstock_threshold,near_expiry_days
+EX-MILK-WHOLE,Whole milk,Dairy,ml,yes,yes,5000,60000,2
+EX-BEANS-HOUSE,Espresso beans (house blend),Coffee,g,no,no,2000,20000,
+EX-CUP-12OZ,Takeaway cup 12 oz with lid,Packaging,pcs,no,no,100,2000,
+EX-MILK-OAT,Oat milk,Dairy alternatives,ml,yes,yes,2000,20000,5
+EX-SUGAR-SACHET,Sugar sachet,Condiments,pcs,no,no,100,3000,

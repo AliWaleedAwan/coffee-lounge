@@ -1,0 +1,130 @@
+requirement_id,source,requirement,tests,first_phase
+MENU-001,Q,Categories/items/variants maintained and archived; availability; order-type eligibility,AT-102;AT-114;AT-95;CT-10,3
+MENU-002,Q,Variants modifiers extras notes discounts promotions,AT-113;AT-112;AT-93;AT-69,3
+MENU-003,C,Versioned recipe per sellable variant,AT-63;AT-64;AT-19,4
+MENU-004,C,Modifiers adjust recipe quantities and price,AT-64,4
+MENU-005,R,Recipe required before enabling stock-consuming variant,AT-63;AT-61,4
+MENU-006,C,Immutable price/recipe/modifier snapshot on accepted lines,AT-19;AT-97;CT-08,3
+MENU-007,C,Controlled UOM conversions; no mass-volume mixing,AT-31;AT-32;PT-04,4
+MENU-008,R,Allergen/dietary tags displayed as provided; no inference,AT-126,3
+TABLE-001,C,Unique table ID name and opaque QR token,AT-01;AT-74,3
+TABLE-002,C,QR opens local URL on shop Wi-Fi without public DNS,SITE-N2;SITE-N3;SITE-N4;AT-15;AT-58,7
+TABLE-003,C,Server resolves table; client cannot override,AT-127;AT-01,3
+TABLE-004,C,Multiple devices share a session without exposing prior guests,AT-09;AT-75;AT-12,3
+TABLE-005,C,One active session per table,CT-03;AT-100,3
+TABLE-006,C,Available/Occupied/Checkout Requested/Settled states,AT-74;AT-12;UX-J2,3
+TABLE-007,C,Settled session immutable; new diners new session,AT-12;AT-97,3
+TABLE-008,C,Customer access expires with session,AT-40;AT-12,3
+TABLE-009,R/TBD,Stale sessions blocked tables transfer/merge (resolved D-10),AT-100;AT-128,3
+ORD-001,Q/C,Orders from QR waiter reception for dine-in takeaway delivery,AT-01;AT-26;AT-51;AT-54,3
+ORD-002,C,QR orders pending staff approval; no stock or kitchen,AT-01,3
+ORD-003,C,Atomic approval with revalidation and reservation,AT-02;AT-25;AT-78;AT-04,3
+ORD-004,C,No silent partial approval (resolved D-06 reject whole round),AT-26;AT-52;CT-02,3
+ORD-005,C,Acceptance idempotent: no duplicate reservations or tickets,AT-03;CT-01;AT-72;AT-24,3
+ORD-006,C,Validated status transitions,AT-05;AT-27;PT-06,3
+ORD-007,C,Add-on rounds share session and bill with new tickets,AT-08,3
+ORD-008,C,Post-acceptance changes via revisions/voids only,AT-06;AT-07;AT-27;AT-62,3
+ORD-009,C,Actor timestamp before/after reason on lifecycle changes,AT-95,2
+ORD-010,C,Fulfilment invoice and table states separate,AT-51;AT-97,3
+ORD-011,C,Authoritative state after reconnect,AT-43;AT-73,3
+ORD-012,C,Checkout lock prevents unnoticed additions,AT-10;AT-34;CT-04,3
+ORD-013,R/TBD,Bill request behaviour (resolved D-12),AT-101,3
+ORD-014,Q,Customer contact captured only where relevant,AT-123;AT-75,3
+ORD-015,C,Delivery customer/address/dispatch flow,AT-54;AT-55;AT-60;AT-89,3
+ORD-016,C,Collision-free order and bill numbering,AT-117,3
+ORD-017,R,No silent price increase between submission and acceptance,AT-25;AT-78;CT-07,3
+KDS-001,Q,Kitchen queue view (resolved D-33: pickup screen),AT-92;UX-J4,3
+KDS-002,C,Configurable kitchen ticket template,AT-83,3
+KDS-003,C,Kitchen output never shows prices or payment data,AT-99;AT-83,3
+KDS-004,C,New ticket per round; auditable corrections and voids,AT-08;AT-06;AT-83,3
+KDS-005,C,Prepared recorded separately; consume exactly once at prepared (Picked up),AT-05;AT-65;CT-05,3
+KDS-006,Q/C,Live status updates and resync on reconnect,AT-43;AT-73,3
+KDS-007,C,Durable print jobs and labelled reprints,AT-16;AT-28;AT-57;AT-85,3
+KDS-008,R/TBD,Station routing/timers (resolved D-26 single station),AT-83,3
+INV-001,Q/C,On hand reserved available per item and lot,PT-01;AT-02,4
+INV-002,C,Reserve from snapshot using non-expired stock only,AT-02;AT-13;AT-64,4
+INV-003,C,Consume and release reservation in one transaction,AT-05;AT-65,4
+INV-004,C,Cancel before preparation releases reservations,AT-06,3
+INV-005,C,Cancel after preparation keeps consumption; classify waste/comp,AT-07;AT-62;AT-55,3
+INV-006,C,Every movement has source and actor; immutable trail,AT-96;PT-01;AT-94,2
+INV-007,C,Block selling unavailable items,AT-102;AT-26,4
+INV-008,C,No direct on-hand edits outside counts/opening,AT-96;AT-108,4
+INV-009,C,Purchases receiving suppliers pack conversions costs,AT-31;AT-110;AT-82;UX-J7,4
+INV-010,C,Barcode exact SKU lookup with duplicate/unknown handling,AT-14,4
+INV-011,C,Batch/lot expiry tracking,AT-13;AT-30,4
+INV-012,C,Low zero near-expiry expired overstock alerts,AT-111;AT-88,4
+INV-013,C,Wastage records with cost basis,AT-109;AT-07,4
+INV-014,C,Stock count reconciliation with approval,AT-108;AT-29;AT-67;CT-09,4
+INV-015,R/TBD,FEFO physical picking,AT-129;AT-30,4
+INV-016,C,Reservations survive restarts; no blind timeout release,AT-17;AT-88,3
+INV-017,C,Additions omissions sizes packaging; no float drift,AT-64;PT-01;PT-04,4
+PAY-001,C,One consolidated invoice per session,AT-08;AT-117,3
+PAY-002,C,Cashier opens bill and applies authorised discounts,AT-93;AT-69,3
+PAY-003,C,Cash and manual card recording without card data,AT-42;AT-35;AT-59,3
+PAY-004,C,Receipt contents,AT-84,3
+PAY-005,C,No tax/service charge; history stable,AT-116;AT-115;PT-07;PT-08,3
+PAY-006,C,Payment recorded once server-side with idempotency,AT-11;CT-06;AT-72,3
+PAY-007,C,No finalisation with unresolved lines,AT-10,3
+PAY-008,C,Checkout closes session and releases table,AT-12;AT-97,3
+PAY-009,Q/C,Original/reprint receipts; drawer only on authorised events (no drawer installed),AT-84;AT-57,3
+PAY-010,R/TBD,Post-settlement refunds and corrections (resolved D-13),AT-36;AT-90;AT-91;PT-05,5
+PAY-011,R,Cash shifts float expected vs actual variance approval,AT-37;AT-54,3
+FIN-001,Q/C,Operational ledger with source references,AT-71;AT-121,5
+FIN-002,C,Not statutory accounting; labels,AT-70;AT-103,6
+FIN-003,C,Expense records,AT-107,5
+FIN-004,Q/C,Fixed-asset register separate from stock,AT-106,5
+FIN-005,C,Asset fields and history,AT-106,5
+FIN-006,C,Permissioned audited corrections; no silent deletes,AT-23;AT-96;AT-107,5
+FIN-007,R/TBD,Depreciation/payables/accruals (resolved D-19 out of scope; labelled),AT-70,6
+FIN-008,C,Cash card net sales and cost reports reconcile,AT-122;AT-121,5
+RPT-001,Q/C,Owner dashboard KPIs,AT-70;AT-20;UX-J8,6
+RPT-002,Q,Sales by item/category/type usage waste margin shift/day-end,AT-20;AT-122,6
+RPT-003,C,Hourly to custom filters and secondary filters,AT-20;AT-44,6
+RPT-004,C,Chart set,AT-20;UX-J8,6
+RPT-005,C,CSV and PDF exports,AT-103,6
+RPT-006,C,Scheduled e-mailed PDF configuration,AT-104;AT-21,6
+RPT-007,C,Offline e-mail queue with retries and status,AT-21;AT-104,6
+RPT-008,C,RBAC on reports exports schedules,AT-18;SEC-ALL,6
+RPT-009,C,Documented KPI definitions,AT-70;AT-69;AT-122;PT-03,6
+RPT-010,R,Drill-down and incomplete-data explanation,AT-20;AT-70,6
+RPT-011,C,Explicit shop timezone and business day,AT-44;AT-79,3
+OPS-001,Q/C,Kitchen and reception print routing without lost jobs,AT-57;AT-83;AT-84,3
+OPS-002,C,Customer status from committed events; recover after refresh,AT-73;AT-43,3
+OPS-003,Q,Audit of prices recipes stock discounts bills permissions finance assets,AT-95;AT-118,2
+OPS-004,Q/C,Owner settings incl. branding thresholds printer routing,AT-130,3
+OPS-005,R,Diagnostics health screen,AT-120,2
+NFR-01,C,Reliability: atomic durable idempotent critical writes,AT-17;AT-56;AT-72;CT-01,2
+NFR-02,C,Local availability without internet,AT-15;SITE-N8;AT-46,7
+NFR-03,C,Responsiveness targets,AC-PERF-1;AC-PERF-3;AC-PERF-4,7
+NFR-04,C,Realtime update targets and resync,AC-PERF-2;AT-43,7
+NFR-05,C,Security: backend RBAC devices sessions isolation,SEC-ALL;AT-41;AT-76;AT-77;AT-124;AT-125;AT-38;AT-39;AT-119,2
+NFR-06,C,Auditability,AT-95;AT-96,2
+NFR-07,C,Data durability: backups and verified restore,AT-22;AT-80;AT-81;DRILL-1,7
+NFR-08,C,Testability: automated suites and coverage,AC-SEC-1;PT-01,2
+NFR-09,C,Accessibility,AT-86;AT-87;AC-UX-2,3
+NFR-10,C,Supportability: health logs upgrades rollback,AT-120;AT-45;AT-47,2
+NFR-11,C,Maintainability: modular monolith without cycles,ARCH-01,2
+NFR-12,C,Privacy: minimal PII retention masking,AT-105;AT-123,5
+D-04,Decision,Weighted-average costing with FEFO picking,AT-33;AT-66;PT-02;AT-68,4
+D-05,Decision,Delivery: staff-entered; optional fields; riders; prepaid/COD/card; manager resolves failures,AT-54;AT-55;AT-60;AT-89,3
+D-05b,Decision,Takeaway pay-first; counter QR,AT-51;AT-52;AT-53,3
+D-06,Decision,Out-of-stock round rejected whole,AT-26;AT-52,3
+D-07,Decision,Acceptance scope by role; single atomic acceptance,AT-48;AT-49,3
+D-08,Decision (provisional),Price lock 30 minutes,AT-25;AT-78,3
+D-09,Decision (provisional),Auto-join occupied table session,AT-09;AT-75,3
+D-10,Decision (provisional),Transfer yes merge no stale alert 3 h,AT-100;AT-128,3
+D-12,Decision (provisional),Bill request and lock rules,AT-10;AT-101,3
+D-13,Decision (provisional),Split tender; refunds with step-up,AT-35;AT-36;AT-90,3
+D-14,Decision (provisional),Discount limits and promotions,AT-93;AT-112,3
+D-16,Decision (provisional),Tax zero; Rs 1 cash rounding line,AT-115;AT-116,3
+D-18,Decision (provisional),Count approval threshold; shortfall handling,AT-108;AT-29;AT-67,4
+D-22,Decision (provisional),Asia/Karachi with 04:00 business-day cutoff,AT-44,3
+D-29,Decision,Weekly incremental data entry by clerk,AT-61;AT-63;AT-82;AT-70,4
+D-33,Decision,No kitchen device; Picked up = consumption,AT-05;AT-62;AT-92,3
+D-34,Decision (accepted risk),Windows 10 host hardening,SITE-N5;SITE-N6;HOST-H12,7
+D-35,Decision (accepted risk),No UPS: safe restart and durability,AT-56;AT-79;AC-REC-1,7
+D-36,Decision,Escalation after 3 minutes,AT-50,3
+D-37,Decision,Card on delivery; bank/JazzCash/Easypaisa transfers,AT-59;AT-60,3
+D-39,Decision,Staff HTTPS with shop certificate,SITE-N5;SITE-N7;AT-41,7
+D-40,Decision,Unpaid counter-QR orders expire after 30 minutes,AT-53,3
+D-41,Decision,Riders without login; cashier records dispatch/return,AT-54,3
