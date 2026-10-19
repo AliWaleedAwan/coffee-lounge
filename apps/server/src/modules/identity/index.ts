@@ -13,6 +13,7 @@ export {
   DEVICE_KINDS,
   type DeviceKind,
   recoverOwner,
+  sessionStillValid,
   STEP_UP_ACTIONS,
   type AuthContext,
   type DeviceInfo,

@@ -562,6 +562,23 @@ export async function sessionForToken(
   };
 }
 
+/**
+ * Whether a session is still usable, without extending it (used by long-lived live
+ * update streams, which must not keep an idle session alive).
+ */
+export async function sessionStillValid(db: Queryable, sessionId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT 1 FROM cl.auth_sessions s
+       JOIN cl.users u ON u.id = s.user_id
+       JOIN cl.devices d ON d.id = s.device_id
+      WHERE s.id = $1 AND s.revoked_at IS NULL
+        AND s.idle_expires_at > now() AND s.absolute_expires_at > now()
+        AND u.status = 'active' AND d.status = 'active'`,
+    [sessionId],
+  );
+  return rows.length === 1;
+}
+
 export async function logout(db: Queryable, auth: AuthContext, facts: RequestFacts): Promise<void> {
   await db.query(
     `UPDATE cl.auth_sessions SET revoked_at = now(), revoke_reason = 'logout' WHERE id = $1 AND revoked_at IS NULL`,

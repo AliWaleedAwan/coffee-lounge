@@ -36,6 +36,24 @@ export async function withAdmin<T>(fn: (client: pg.Client) => Promise<T>): Promi
   }
 }
 
+/**
+ * Runs a CREATE/DROP DATABASE statement, retrying for a few seconds while another backend
+ * (typically autovacuum, which the test login may not terminate) is using the database.
+ */
+export async function adminDdl(sql: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await withAdmin((admin) => admin.query(sql));
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      const busy = code === '55006' || (code === '42501' && /terminate/.test(String(error)));
+      if (!busy || attempt >= 20) throw error;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+}
+
 export interface TestDatabase {
   name: string;
   client: pg.Client;
@@ -50,7 +68,7 @@ export async function createTestDatabase(
 ): Promise<TestDatabase> {
   const name = `cl_t_${randomBytes(6).toString('hex')}`;
   const template = kind === 'migrated' ? TEMPLATE_DB : 'template0';
-  await withAdmin((admin) => admin.query(`CREATE DATABASE ${name} TEMPLATE ${template}`));
+  await adminDdl(`CREATE DATABASE ${name} TEMPLATE ${template}`);
   const extra: pg.Client[] = [];
   const open = async (): Promise<pg.Client> => {
     const c = new pg.Client({ connectionString: urlFor(name) });
@@ -68,7 +86,7 @@ export async function createTestDatabase(
     },
     async drop() {
       await Promise.all([client, ...extra].map((c) => c.end().catch(() => undefined)));
-      await withAdmin((admin) => admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
+      await adminDdl(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
     },
   };
 }

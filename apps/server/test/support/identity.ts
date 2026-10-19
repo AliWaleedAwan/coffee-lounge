@@ -70,7 +70,9 @@ function clientFor(app: FastifyInstance, initial: Record<string, string> = {}): 
   return client;
 }
 
-export async function identityFixture(): Promise<IdentityFixture> {
+export async function identityFixture(
+  extraStaffRoutes?: (app: FastifyInstance, pool: PlatformFixture['pool']) => Promise<void>,
+): Promise<IdentityFixture> {
   const base = await platformFixture(20);
   const routes: CollectedRoute[] = [];
   const { staff } = readyApps(base.pool, {
@@ -87,6 +89,7 @@ export async function identityFixture(): Promise<IdentityFixture> {
         }
       });
       await registerStaffIdentity(app, { pool: base.pool, secureCookies: false });
+      if (extraStaffRoutes) await extraStaffRoutes(app, base.pool);
     },
   });
   await staff.ready();

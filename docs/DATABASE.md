@@ -1255,6 +1255,8 @@ Transaction contents for submit, accept (with the D-07 scope check), Picked up, 
 | 20 Oct 2026 | 0002, 0003 | Seeds: `0002_seed_access.sql` is generated from RBAC.md (72 permissions, 163 grants, 269 policies); `0003_seed_settings.sql` from DECISIONS.md §4 | Tests re-read both documents and compare them with the database |
 | 20 Oct 2026 | 0001 | Default privileges: later tables automatically get SELECT (cl_readonly) and SELECT/INSERT (cl_app); UPDATE/DELETE are granted per table in each migration | Append-only tables stay append-only by default |
 | 20 Oct 2026 | 0004 | Added `cl.device_registration_codes` (hashed one-time codes, 10 min), `cl.step_up_uses` (single use of an approval; `step_up_approvals` stays append-only) and `cl.owner_recovery_codes` (argon2id hash; hidden from `cl_readonly`) | Needed for device registration (API.md §4), single-use step-up approvals (RBAC.md §1.4) and owner recovery (SECURITY.md §2.2) |
+| 20 Oct 2026 | 0005 | Added `cl.worker_heartbeats (worker_name, pid, version, started_at, beat_at)`; `cl_app` may UPDATE it | The health page reports the worker as stale after 60 s without a beat (WINDOWS_DEPLOYMENT.md §2) |
+| 20 Oct 2026 | — | The job queue is graphile-worker 0.18 in its own schema `graphile_worker`, installed and upgraded by `db:migrate` after our migrations (not by numbered files). Jobs are added with `graphile_worker.add_job` inside the business transaction. Task names use `area:action` (cron lines reject dots) | Library-owned schema stays out of our checksummed migrations. **Open for 2.9:** grant the production app login what graphile needs in that schema; today only the owner login runs the worker |
 
 ## 16. Open points for review R1
 

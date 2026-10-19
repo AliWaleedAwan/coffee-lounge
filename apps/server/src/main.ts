@@ -4,12 +4,15 @@
  * and the checks are retried every few seconds (e.g. while PostgreSQL is still starting).
  */
 import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 import { registerStaffIdentity } from './modules/identity/index.ts';
+import { liveRoutes } from './modules/live/index.ts';
 import { buildApps } from './platform/app.ts';
 import { ClockJumpDetector } from './platform/clock.ts';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
+import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 
 const RECHECK_MS = 5_000;
@@ -26,11 +29,24 @@ const pool = createPool({
 });
 const migrations = await loadMigrations(fileURLToPath(new URL('../migrations', import.meta.url)));
 const secureCookies = config.STAFF_TLS_CERT !== undefined;
+const hub = new LiveHub({
+  pool,
+  connectListener: async () => {
+    const client = new pg.Client({ connectionString: config.DATABASE_URL });
+    await client.connect();
+    return client;
+  },
+  onError: (error, context) => {
+    staff.log.warn({ err: error }, `live hub: ${context}`);
+  },
+});
+let hubStarted = false;
 const { customer, staff } = buildApps(
   { config, pool, readiness },
   {
     staff: async (app) => {
       await registerStaffIdentity(app, { pool, secureCookies });
+      await liveRoutes(app, { pool, hub });
     },
   },
 );
@@ -44,6 +60,10 @@ const check = async (): Promise<void> => {
     readiness,
   });
   const state = readiness.snapshot();
+  if (readiness.isReady() && !hubStarted) {
+    await hub.start();
+    hubStarted = true;
+  }
   if (readiness.isReady()) customer.log.info('startup checks passed; serving requests');
   else customer.log.warn({ blockers: state.blockers }, 'not ready yet');
 };
@@ -73,6 +93,7 @@ async function shutdown(signal: string): Promise<void> {
   customer.log.info({ signal }, 'shutting down');
   clearInterval(recheck);
   clearInterval(clockWatch);
+  await hub.stop();
   await Promise.allSettled([customer.close(), staff.close()]);
   await pool.end();
 }

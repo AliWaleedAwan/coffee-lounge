@@ -3,8 +3,10 @@
  * Usage (from apps/server): corepack pnpm db:migrate
  */
 import { fileURLToPath } from 'node:url';
+import { runMigrations as runJobQueueMigrations } from 'graphile-worker';
 import pg from 'pg';
 import { loadMigrations, migrate } from './migrate.ts';
+import { createPool } from './pool.ts';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -20,6 +22,14 @@ try {
   console.log(
     applied.length > 0 ? `Applied migrations: ${applied.join(', ')}` : 'Database is up to date.',
   );
+  // The job queue keeps its own schema (graphile_worker), installed and upgraded here too.
+  const pool = createPool({ connectionString: url, max: 2 });
+  try {
+    await runJobQueueMigrations({ pgPool: pool });
+    console.log('Job queue schema is up to date.');
+  } finally {
+    await pool.end();
+  }
 } finally {
   await client.end();
 }

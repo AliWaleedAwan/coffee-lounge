@@ -25,8 +25,12 @@ export function createPool({ connectionString, max = 10, onError }: PoolOptions)
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
   });
-  // An idle client losing its connection must not crash the process.
+  // A client losing its connection must not crash the process: the pool reports idle
+  // clients here; a checked-out client also emits on itself (its query rejects anyway).
   pool.on('error', (error) => onError?.(error));
+  pool.on('connect', (client) => {
+    client.on('error', (error) => onError?.(error));
+  });
   return pool;
 }
 
