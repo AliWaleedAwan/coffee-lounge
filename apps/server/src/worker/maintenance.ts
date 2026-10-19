@@ -7,8 +7,6 @@ import type { Queryable } from '../platform/db/pool.ts';
 
 export const OUTBOX_RETENTION_HOURS = 24;
 export const HEARTBEAT_INTERVAL_MS = 15_000;
-/** The API reports the worker as down after this long without a heartbeat. */
-export const HEARTBEAT_STALE_MS = 60_000;
 
 export async function pruneIdempotencyKeys(db: Queryable): Promise<number> {
   const result = await db.query('DELETE FROM cl.idempotency_keys WHERE expires_at < now()');
@@ -58,24 +56,4 @@ export class Heartbeat {
   stop(): void {
     clearInterval(this.timer);
   }
-}
-
-export interface WorkerStatus {
-  status: 'ok' | 'stale' | 'down';
-  lastHeartbeatAt: Date | null;
-}
-
-/** Read by the API health page (step 2.6). */
-export async function workerStatus(db: Queryable, name = 'worker'): Promise<WorkerStatus> {
-  const { rows } = await db.query<{ beat_at: Date; age_ms: number }>(
-    `SELECT beat_at, (EXTRACT(EPOCH FROM (now() - beat_at)) * 1000)::int AS age_ms
-       FROM cl.worker_heartbeats WHERE worker_name = $1`,
-    [name],
-  );
-  const row = rows[0];
-  if (!row) return { status: 'down', lastHeartbeatAt: null };
-  return {
-    status: row.age_ms <= HEARTBEAT_STALE_MS ? 'ok' : 'stale',
-    lastHeartbeatAt: row.beat_at,
-  };
 }

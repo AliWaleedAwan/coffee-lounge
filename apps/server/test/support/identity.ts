@@ -4,14 +4,17 @@
  * the CSRF header the way a real staff client does.
  */
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
-import { registerStaffIdentity } from '../../src/modules/identity/index.ts';
 import {
   createOwner,
   createRegistrationCode,
   type DeviceKind,
 } from '../../src/modules/identity/index.ts';
 import { hashSecret } from '../../src/modules/identity/secrets.ts';
-import { platformFixture, readyApps, type PlatformFixture } from './platform.ts';
+import { HealthMonitor, type HealthProbes } from '../../src/platform/health.ts';
+import { LiveHub } from '../../src/platform/live-hub.ts';
+import type { Readiness } from '../../src/platform/readiness.ts';
+import { registerStaffRoutes, type StaffRouteDeps } from '../../src/staff-routes.ts';
+import { passedReadiness, platformFixture, readyApps, type PlatformFixture } from './platform.ts';
 
 export const OWNER = { username: 'owner', password: 'owner-password-1' };
 export const STAFF_PASSWORD = 'staff-password-1';
@@ -28,8 +31,19 @@ export interface CollectedRoute {
   config: { auth?: string; permission?: string };
 }
 
+export interface FixtureOptions {
+  /** The hub behind GET /events (default: one that is never started). */
+  makeHub?: (pool: PlatformFixture['pool']) => LiveHub;
+  live?: StaffRouteDeps['live'];
+  /** Health probe overrides; the internet probe is always stubbed offline unless given. */
+  probes?: Partial<HealthProbes>;
+}
+
 export interface IdentityFixture extends PlatformFixture {
   staff: FastifyInstance;
+  readiness: Readiness;
+  hub: LiveHub;
+  health: HealthMonitor;
   /** Every staff route registered in the API scope, with its access declaration. */
   routes: CollectedRoute[];
   ownerId: string;
@@ -70,28 +84,48 @@ function clientFor(app: FastifyInstance, initial: Record<string, string> = {}): 
   return client;
 }
 
-export async function identityFixture(
-  extraStaffRoutes?: (app: FastifyInstance, pool: PlatformFixture['pool']) => Promise<void>,
-): Promise<IdentityFixture> {
+export async function identityFixture(options: FixtureOptions = {}): Promise<IdentityFixture> {
   const base = await platformFixture(20);
   const routes: CollectedRoute[] = [];
-  const { staff } = readyApps(base.pool, {
-    staff: async (app) => {
-      app.addHook('onRoute', (route) => {
-        const methods = Array.isArray(route.method) ? route.method : [route.method];
-        for (const method of methods) {
-          if (method === 'HEAD') continue;
-          routes.push({
-            method,
-            url: route.url,
-            config: route.config ?? {},
-          });
-        }
-      });
-      await registerStaffIdentity(app, { pool: base.pool, secureCookies: false });
-      if (extraStaffRoutes) await extraStaffRoutes(app, base.pool);
-    },
+  const hub =
+    options.makeHub?.(base.pool) ??
+    new LiveHub({
+      pool: base.pool,
+      connectListener: () => Promise.reject(new Error('not started in this test')),
+    });
+  const readiness = passedReadiness();
+  const health = new HealthMonitor({
+    db: base.pool,
+    readiness,
+    probes: { internet: () => Promise.resolve('offline'), ...options.probes },
   });
+  const { staff } = readyApps(
+    base.pool,
+    {
+      staff: async (app) => {
+        app.addHook('onRoute', (route) => {
+          const methods = Array.isArray(route.method) ? route.method : [route.method];
+          for (const method of methods) {
+            if (method === 'HEAD') continue;
+            routes.push({
+              method,
+              url: route.url,
+              config: route.config ?? {},
+            });
+          }
+        });
+        await registerStaffRoutes(app, {
+          pool: base.pool,
+          secureCookies: false,
+          hub,
+          health,
+          ...(options.live ? { live: options.live } : {}),
+        });
+      },
+    },
+    readiness,
+    health,
+  );
   await staff.ready();
   const { userId: ownerId, recoveryCode } = await createOwner(
     base.pool,
@@ -122,6 +156,9 @@ export async function identityFixture(
   return {
     ...base,
     staff,
+    readiness,
+    hub,
+    health,
     routes,
     ownerId,
     recoveryCode,

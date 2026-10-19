@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | Customer API | `http://<host>:8080` | `/api/customer/v1` | Guest phones (table QR, counter QR) | Entry cookie → guest token cookie |
 | Staff API | `https://<host>:8443` | `/api/staff/v1` | Waiter tablets/phones, counter PC (Electron) | Device cookie + session cookie |
-| Health | both | `/health/live`, `/health/ready` | Installer, diagnostics | None (no business data) |
+| Health | both | `/health/live`, `/health/ready` | Installer, diagnostics, connection banner | None (no business data) |
 
 Customer routes are **not mounted** on the staff listener and vice versa.
 
@@ -157,10 +157,31 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /print-jobs?status=open` | `printers.manage` or `kitchen.reprint` | Failed / uncertain jobs |
 | `POST /print-jobs/{jobId}/retry` | same | Retry a failed job (same job, not a reprint) |
 | `POST /print-jobs/{jobId}/resolve-uncertain` | same | `printed` (mark sent) or `reprint` (new labelled copy) |
-| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet |
+| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 
 The OpenAPI file details every endpoint above except the catalog CRUD family, which follows the standard pattern and will be added to the spec in the same form as the Phase 3 build starts.
+
+### 5.8 Health (Phase 2 step 2.6)
+
+| Endpoint | Answers |
+|---|---|
+| `GET /health/live` | `200 {"status":"live"}` while the process runs |
+| `GET /health/ready` | `200 {"status":"ready","database":"ok","warnings":{…}}` once startup checks pass **and** a live database probe answers; `503 SERVER_STARTING` (with blockers) before that; `503 DATABASE_UNAVAILABLE` (`"database":"unreachable"`) if PostgreSQL stops answering later. No error detail is exposed. Probe cached 1 s |
+| `GET /api/staff/v1/system/health` | The health page (fields below). Needs a session, so while the database is down it answers `503 DATABASE_UNAVAILABLE`; the page then shows "Database unreachable" from `/health/ready` |
+
+`/system/health` fields:
+
+| Field | Meaning |
+|---|---|
+| `api` | `ok`, or `degraded` while a readiness warning (e.g. `clock_jumped`) or blocker is present, or the database probe fails |
+| `database` | `ok` / `unreachable` (2 s timeout; a database too busy to answer counts as unreachable) |
+| `worker` | `ok`; `stale` when the last heartbeat is older than 60 s (worker stopped or crashed); `down` when no worker has ever run. `lastHeartbeatAt` |
+| `printer` | `unknown`, `openJobs: 0` until the printing phase |
+| `backup` | `lastSuccessAt`/`lastVerifiedAt` are `null` until the backup phase; `usbDrivePresent` is real: the configured `BACKUP_DRIVE_PATH` (`B:\`, H-17) is mounted |
+| `disk` | `freePercent` of the volume in `DISK_CHECK_PATH` (default: the install drive) and `status` `ok` / `warning` (≤ 20 % free, H-14 80 % used) / `critical` (≤ 10 % free) / `unknown`. Cached 10 s |
+| `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
+| `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
 ## 6. Errors
 
@@ -207,6 +228,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | 429 | `RATE_LIMITED` | Wait `Retry-After` |
 | 500 | `INTERNAL_ERROR` | Unexpected failure; details are logged under the correlation ID, never sent to the client. Retry or report the correlation ID |
 | 503 | `SERVER_STARTING` | Show "Server starting…", retry automatically |
+| 503 | `DATABASE_UNAVAILABLE` | The API is running but cannot reach PostgreSQL (restart, power cut). Show "Reconnecting…" and retry automatically with the **same** `Idempotency-Key`: a write whose reply was lost then replays instead of repeating |
 
 ## 7. Realtime (Server-Sent Events)
 

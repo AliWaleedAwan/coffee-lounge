@@ -10,10 +10,10 @@ import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
+import { SERVER_VERSION } from './platform/version.ts';
 import { Heartbeat } from './worker/maintenance.ts';
 import { startRunner } from './worker/runner.ts';
 
-const VERSION = process.env['npm_package_version'] ?? '0.0.0';
 const log = (level: string, msg: string, extra: Record<string, unknown> = {}): void => {
   console.log(
     JSON.stringify({ level, time: new Date().toISOString(), name: 'worker', msg, ...extra }),
@@ -61,7 +61,7 @@ while (!stop.signal.aborted) {
 }
 
 if (!stop.signal.aborted) {
-  heartbeat = new Heartbeat(pool, 'worker', VERSION);
+  heartbeat = new Heartbeat(pool, 'worker', SERVER_VERSION);
   heartbeat.start((error) => {
     log('error', 'heartbeat failed', {
       err: error instanceof Error ? error.message : String(error),

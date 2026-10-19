@@ -103,13 +103,15 @@ describe('route × role matrix (SEC-ALL)', () => {
 });
 
 describe('no route forgets its permission', () => {
-  it('only personal self-service routes are open to any logged-in user', () => {
+  it('only personal self-service routes and the live stream are open to any logged-in user', () => {
     const SELF_SERVICE = [
       'POST /api/staff/v1/auth/logout',
       'GET /api/staff/v1/auth/me',
       'POST /api/staff/v1/auth/password',
       'POST /api/staff/v1/auth/pin',
       'POST /api/staff/v1/auth/step-up',
+      // Filtered per topic by the user's permissions (API.md §7; tested in live/events-route).
+      'GET /api/staff/v1/events',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

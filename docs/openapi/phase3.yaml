@@ -1289,6 +1289,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+        '503': { $ref: '#/components/responses/ServerStarting' }
   /api/staff/v1/events:
     get:
       tags: [events]
@@ -1301,6 +1302,13 @@ paths:
           content:
             text/event-stream:
               schema: { type: string }
+  /health/live:
+    get:
+      tags: [system]
+      operationId: healthLive
+      security: []
+      responses:
+        '200': { description: The process is running }
   /health/ready:
     get:
       tags: [system]
@@ -1386,7 +1394,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     ServerStarting:
-      description: SERVER_STARTING
+      description: SERVER_STARTING or DATABASE_UNAVAILABLE
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -1421,7 +1429,8 @@ components:
                  SESSION_LOCKED_FOR_CHECKOUT, PENDING_ROUNDS_EXIST, BILL_CHANGED, QTY_EXCEEDS_REMAINING,
                  STALE_STATE, IDEMPOTENCY_KEY_REUSED, TABLE_OCCUPIED, INSUFFICIENT_STOCK,
                  PRICE_CHANGED_LOCK_EXPIRED, AMOUNT_EXCEEDS_DUE, NO_OPEN_CASH_SHIFT, DISCOUNT_OVER_LIMIT,
-                 REFUND_EXCEEDS_PAID, CARD_NUMBER_NOT_ALLOWED, RATE_LIMITED, INTERNAL_ERROR, SERVER_STARTING]
+                 REFUND_EXCEEDS_PAID, CARD_NUMBER_NOT_ALLOWED, RATE_LIMITED, INTERNAL_ERROR, SERVER_STARTING,
+                 DATABASE_UNAVAILABLE]
         detail: { type: string }
         correlationId: { type: string, format: uuid }
         currentState: { type: object, additionalProperties: true }
@@ -1986,7 +1995,7 @@ components:
         lastError: { type: [string, 'null'] }
     Health:
       type: object
-      required: [api, database, worker, printer, backup, disk, internet]
+      required: [api, database, worker, printer, backup, disk, internet, warnings, version, checkedAt]
       properties:
         api: { type: string, enum: [ok, degraded] }
         database: { type: string, enum: [ok, unreachable] }
@@ -2011,10 +2020,16 @@ components:
             usbDrivePresent: { type: boolean }
         disk:
           type: object
-          required: [freePercent]
+          required: [freePercent, status]
           properties:
-            freePercent: { type: number }
+            freePercent: { type: [number, 'null'] }
+            status: { type: string, enum: [ok, warning, critical, unknown] }
         internet: { type: string, enum: [online, offline] }
+        warnings:
+          type: object
+          additionalProperties: { type: string }
+        version: { type: string }
+        checkedAt: { type: string, format: date-time }
 
 security:
   - deviceCookie: []

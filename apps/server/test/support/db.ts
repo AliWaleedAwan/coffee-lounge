@@ -72,6 +72,8 @@ export async function createTestDatabase(
   const extra: pg.Client[] = [];
   const open = async (): Promise<pg.Client> => {
     const c = new pg.Client({ connectionString: urlFor(name) });
+    // A test that terminates connections (restart drills) must not crash the run.
+    c.on('error', () => undefined);
     await c.connect();
     return c;
   };

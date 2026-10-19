@@ -5,7 +5,6 @@
 import type { AddressInfo } from 'node:net';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { liveRoutes } from '../../src/modules/live/index.ts';
 import { LiveHub } from '../../src/platform/live-hub.ts';
 import { publish, type OutboxEvent } from '../../src/platform/outbox.ts';
 import { urlFor } from '../support/db.ts';
@@ -16,22 +15,21 @@ let hub: LiveHub;
 let base: string;
 
 beforeAll(async () => {
-  let fixtureHub: LiveHub | undefined;
-  fx = await identityFixture(async (app, pool) => {
-    fixtureHub = new LiveHub({
-      pool,
-      connectListener: async () => {
-        const client = new pg.Client({ connectionString: urlFor(fx.db.name) });
-        await client.connect();
-        return client;
-      },
-      pollMs: 50,
-      gapGraceMs: 200,
-    });
-    await liveRoutes(app, { pool, hub: fixtureHub, heartbeatMs: 100, revalidateMs: 100 });
+  fx = await identityFixture({
+    makeHub: (pool) =>
+      new LiveHub({
+        pool,
+        connectListener: async () => {
+          const client = new pg.Client({ connectionString: urlFor(fx.db.name) });
+          await client.connect();
+          return client;
+        },
+        pollMs: 50,
+        gapGraceMs: 200,
+      }),
+    live: { heartbeatMs: 100, revalidateMs: 100 },
   });
-  if (!fixtureHub) throw new Error('hub not created');
-  hub = fixtureHub;
+  hub = fx.hub;
   await hub.start();
   await fx.staff.listen({ port: 0, host: '127.0.0.1' });
   base = `http://127.0.0.1:${String((fx.staff.server.address() as AddressInfo).port)}/api/staff/v1`;

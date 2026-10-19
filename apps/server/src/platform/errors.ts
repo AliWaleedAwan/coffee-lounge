@@ -5,6 +5,7 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { ERROR_STATUS, type ErrorCode } from '@cl/shared';
+import { isConnectionError } from './db/pool.ts';
 
 export class AppError extends Error {
   override name = 'AppError';
@@ -49,6 +50,7 @@ const TITLES: Record<ErrorCode, string> = {
   RATE_LIMITED: 'Too many requests',
   INTERNAL_ERROR: 'Something went wrong',
   SERVER_STARTING: 'The server is starting',
+  DATABASE_UNAVAILABLE: 'The database is not reachable',
 };
 
 export interface Problem {
@@ -102,6 +104,14 @@ function toProblem(error: unknown, request: FastifyRequest): Problem {
     fastifyError.statusCode < 500
   ) {
     return problem('VALIDATION_FAILED', fastifyError.message ?? 'Bad request', id);
+  }
+  if (isConnectionError(error)) {
+    // Safe to retry: writes carry idempotency keys, so a commit whose reply was lost replays.
+    return problem(
+      'DATABASE_UNAVAILABLE',
+      'The server cannot reach its database right now. Retrying automatically.',
+      id,
+    );
   }
   return problem('INTERNAL_ERROR', 'An unexpected error occurred. It has been logged.', id);
 }

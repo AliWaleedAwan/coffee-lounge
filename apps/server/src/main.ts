@@ -5,15 +5,16 @@
  */
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { registerStaffIdentity } from './modules/identity/index.ts';
-import { liveRoutes } from './modules/live/index.ts';
 import { buildApps } from './platform/app.ts';
 import { ClockJumpDetector } from './platform/clock.ts';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
+import { HealthMonitor, parseInternetTarget } from './platform/health.ts';
 import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
+import { SERVER_VERSION } from './platform/version.ts';
+import { registerStaffRoutes } from './staff-routes.ts';
 
 const RECHECK_MS = 5_000;
 const CLOCK_SAMPLE_MS = 60_000;
@@ -40,15 +41,18 @@ const hub = new LiveHub({
     staff.log.warn({ err: error }, `live hub: ${context}`);
   },
 });
+const health = new HealthMonitor({
+  db: pool,
+  readiness,
+  version: SERVER_VERSION,
+  ...(config.DISK_CHECK_PATH ? { diskPath: config.DISK_CHECK_PATH } : {}),
+  ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
+  internetTarget: parseInternetTarget(config.INTERNET_CHECK_TARGET),
+});
 let hubStarted = false;
 const { customer, staff } = buildApps(
-  { config, pool, readiness },
-  {
-    staff: async (app) => {
-      await registerStaffIdentity(app, { pool, secureCookies });
-      await liveRoutes(app, { pool, hub });
-    },
-  },
+  { config, pool, readiness, health },
+  { staff: (app) => registerStaffRoutes(app, { pool, secureCookies, hub, health }) },
 );
 
 const check = async (): Promise<void> => {

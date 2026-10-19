@@ -3,12 +3,8 @@ import { parseCrontab } from 'graphile-worker';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { enqueueJob } from '../../src/platform/jobs.ts';
-import {
-  Heartbeat,
-  pruneIdempotencyKeys,
-  pruneOutbox,
-  workerStatus,
-} from '../../src/worker/maintenance.ts';
+import { workerStatus } from '../../src/platform/health.ts';
+import { Heartbeat, pruneIdempotencyKeys, pruneOutbox } from '../../src/worker/maintenance.ts';
 import { CRONTAB, makeTasks, silentLogger, startRunner } from '../../src/worker/runner.ts';
 import { urlFor } from '../support/db.ts';
 import { platformFixture, type PlatformFixture } from '../support/platform.ts';

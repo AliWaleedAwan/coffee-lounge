@@ -16,12 +16,15 @@ import type pg from 'pg';
 import type { Config } from './config.ts';
 import { CORRELATION_HEADER, correlationIdFor } from './correlation.ts';
 import { problem, registerErrorHandling, sendProblem } from './errors.ts';
+import { HealthMonitor } from './health.ts';
 import type { Readiness } from './readiness.ts';
 
 export interface PlatformDeps {
   config: Pick<Config, 'LOG_LEVEL' | 'STAFF_TLS_CERT' | 'STAFF_TLS_KEY'>;
   pool: pg.Pool;
   readiness: Readiness;
+  /** Health probes; by default only the database probe is used here. */
+  health?: HealthMonitor;
   /** false silences logs (tests). */
   logging?: boolean;
 }
@@ -37,7 +40,7 @@ const BODY_LIMIT = 64 * 1024;
 
 function createListener(
   name: 'customer' | 'staff',
-  deps: PlatformDeps,
+  deps: PlatformDeps & { health: HealthMonitor },
   routes: FastifyPluginAsync | undefined,
   prefix: string,
 ): FastifyInstance {
@@ -77,13 +80,25 @@ function createListener(
   });
 
   app.get('/health/live', async () => ({ status: 'live' }));
+  // Readiness gate plus a live (1 s cached) database probe. Public, so no error detail.
   app.get('/health/ready', async (request, reply) => {
     const state = deps.readiness.snapshot();
-    if (deps.readiness.isReady()) return { status: 'ready', warnings: state.warnings };
-    return sendProblem(
-      reply,
-      problem('SERVER_STARTING', Object.values(state.blockers).join(' '), request.id, state),
-    );
+    if (!deps.readiness.isReady()) {
+      return sendProblem(
+        reply,
+        problem('SERVER_STARTING', Object.values(state.blockers).join(' '), request.id, state),
+      );
+    }
+    const database = await deps.health.databaseStatus();
+    if (database !== 'ok') {
+      return sendProblem(
+        reply,
+        problem('DATABASE_UNAVAILABLE', 'The server cannot reach its database.', request.id, {
+          database,
+        }),
+      );
+    }
+    return { status: 'ready', database, warnings: state.warnings };
   });
 
   if (routes) void app.register(routes, { prefix });
@@ -94,8 +109,12 @@ export function buildApps(
   deps: PlatformDeps,
   routes: RouteRegistrations = {},
 ): { customer: FastifyInstance; staff: FastifyInstance } {
+  const shared = {
+    ...deps,
+    health: deps.health ?? new HealthMonitor({ db: deps.pool, readiness: deps.readiness }),
+  };
   return {
-    customer: createListener('customer', deps, routes.customer, CUSTOMER_PREFIX),
-    staff: createListener('staff', deps, routes.staff, STAFF_PREFIX),
+    customer: createListener('customer', shared, routes.customer, CUSTOMER_PREFIX),
+    staff: createListener('staff', shared, routes.staff, STAFF_PREFIX),
   };
 }

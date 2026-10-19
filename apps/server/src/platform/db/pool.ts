@@ -38,3 +38,30 @@ export function createPool({ connectionString, max = 10, onError }: PoolOptions)
 export interface Queryable {
   query: pg.Pool['query'];
 }
+
+/** Node socket errors and PostgreSQL SQLSTATEs that mean "no usable connection". */
+const CONNECTION_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  '57P01', // admin_shutdown (server stopped or connection terminated)
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now (server starting up)
+]);
+const CONNECTION_MESSAGES =
+  /Connection terminated|timeout exceeded when trying to connect|Client has encountered a connection error|Client was closed|Connection terminated unexpectedly/;
+
+/** Whether an error means the database could not be reached (not a query or data error). */
+export function isConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && (CONNECTION_CODES.has(code) || /^08[0-9A-Z]{3}$/.test(code))) {
+    return true;
+  }
+  if (error instanceof AggregateError && error.errors.some(isConnectionError)) return true;
+  return CONNECTION_MESSAGES.test(error.message);
+}

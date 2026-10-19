@@ -29,6 +29,7 @@ export const ERROR_STATUS = {
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
   SERVER_STARTING: 503,
+  DATABASE_UNAVAILABLE: 503,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

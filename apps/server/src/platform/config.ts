@@ -19,6 +19,15 @@ const schema = z
       .default('info'),
     /** How far the PC clock may be behind the latest stored timestamp (WINDOWS_DEPLOYMENT.md §5). */
     CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).max(3_600).default(120),
+    /** Volume whose free space the health page watches (H-14). Default: the install drive. */
+    DISK_CHECK_PATH: z.string().min(1).optional(),
+    /** USB backup drive root (H-17: `B:\`). Unset: reported as not present. */
+    BACKUP_DRIVE_PATH: z.string().min(1).optional(),
+    /** `host:port` reached over TCP to report internet online/offline, or `off`. */
+    INTERNET_CHECK_TARGET: z
+      .string()
+      .regex(/^(off|[^\s:]+:\d{1,5})$/, 'must be host:port or off')
+      .default('1.1.1.1:443'),
   })
   .refine((c) => (c.STAFF_TLS_CERT === undefined) === (c.STAFF_TLS_KEY === undefined), {
     message: 'STAFF_TLS_CERT and STAFF_TLS_KEY must be set together',
