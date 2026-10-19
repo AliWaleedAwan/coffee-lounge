@@ -4,3 +4,6 @@ packages:
 
 # Supply-chain safeguard: only install package versions published at least 7 days ago.
 minimumReleaseAge: 10080
+
+# Record exact versions (no ^ ranges).
+saveExact: true

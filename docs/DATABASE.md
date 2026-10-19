@@ -1244,7 +1244,18 @@ GRANT DELETE ON cl.purchase_receipt_lines, cl.recipe_components, cl.stock_count_
 
 Transaction contents for submit, accept (with the D-07 scope check), Picked up, cancel, lock bill, take payment, Accept & pay, dispatch, rider return, post receipt and post count are specified step by step in [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md) §8 and `docs/phase-0/03-data-model.md` §3.5.
 
-## 15. Open points for review R1
+## 15. Implementation notes (changes made while building)
+
+| Date | Migration | Change from the design above | Why |
+|---|---|---|---|
+| 20 Oct 2026 | 0001 | Added `cl.role_permission_policy (role_id, permission_key, policy grantable/forbidden)` and triggers `check_role_grant` / `check_user_override` | RBAC.md's ○/✕ marks and owner-only permissions are now enforced by the database, not only by the service |
+| 20 Oct 2026 | 0001 | `cl_migrator` is **not** created by migrations; the installer creates the login that runs migrations. Migrations create only `cl_app` and `cl_readonly` (idempotently, since roles are cluster-wide) | Roles outlive databases; dev and test databases share one PostgreSQL instance |
+| 20 Oct 2026 | 0001 | Migration bookkeeping lives in `cl_meta.schema_migrations (version, name, checksum, applied_at)` | Forward-only runner refuses edited, missing or out-of-order migrations |
+| 20 Oct 2026 | 0001 | `ensure_active_owner` also fires on INSERT, so the first user must be an owner | The installer creates the owner first; prevents a shop with no owner |
+| 20 Oct 2026 | 0002, 0003 | Seeds: `0002_seed_access.sql` is generated from RBAC.md (72 permissions, 163 grants, 269 policies); `0003_seed_settings.sql` from DECISIONS.md §4 | Tests re-read both documents and compare them with the database |
+| 20 Oct 2026 | 0001 | Default privileges: later tables automatically get SELECT (cl_readonly) and SELECT/INSERT (cl_app); UPDATE/DELETE are granted per table in each migration | Append-only tables stay append-only by default |
+
+## 16. Open points for review R1
 
 1. Promotions: confirm **no stacking** (best single promotion per line) — part of D-14.
 2. Modifier price deltas are **≥ 0**. Is a negative modifier ever needed (e.g., "no milk −Rs 50")?

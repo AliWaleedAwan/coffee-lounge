@@ -2,6 +2,22 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.ts'],
+    projects: [
+      {
+        test: {
+          name: 'shared',
+          include: ['packages/*/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'server',
+          include: ['apps/server/src/**/*.test.ts', 'apps/server/test/**/*.test.ts'],
+          globalSetup: ['apps/server/test/global-setup.ts'],
+          testTimeout: 20_000,
+          hookTimeout: 60_000,
+        },
+      },
+    ],
   },
 });
