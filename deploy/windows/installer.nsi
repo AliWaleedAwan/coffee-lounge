@@ -5,6 +5,7 @@
 
 Unicode true
 !include "FileFunc.nsh"
+!include "x64.nsh"
 
 !ifndef VERSION
   !define VERSION "0.0.0"
@@ -37,8 +38,13 @@ Section
   SetOutPath "$PLUGINSDIR\bundle"
   File /r "${BUNDLE}\*.*"
   ${GetParameters} $R0
+  ; NSIS is a 32-bit program: without this, Windows would start the 32-bit PowerShell,
+  ; which lacks LocalAccounts and writes HKLM\SOFTWARE under WOW6432Node.
+  ${If} ${RunningX64}
+    ${DisableX64FSRedirection}
+  ${EndIf}
   ClearErrors
-  ExecWait 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\bundle\setup\install.ps1" -Source "$PLUGINSDIR\bundle" $R0' $0
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\bundle\setup\install.ps1" -Source "$PLUGINSDIR\bundle" $R0' $0
   IfErrors 0 +2
     StrCpy $0 1
   ; Leave the temporary folder so it can be deleted when the installer exits.

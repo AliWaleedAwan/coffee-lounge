@@ -35,12 +35,18 @@ $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Psql = Join-Path $PgDir 'bin\psql.exe'
 
 if (-not (Test-Admin)) { throw 'Run the installer as an Administrator.' }
+if (-not [Environment]::Is64BitProcess) { throw 'Run the installer in 64-bit PowerShell.' }
 # Unattended runs through CoffeeLounge-Setup.exe pass the CA passphrase in the environment.
 if (-not $CaPassphrase -and $env:CL_CA_PASSPHRASE) { $CaPassphrase = $env:CL_CA_PASSPHRASE }
 foreach ($d in @($DataDir, $Config, (Join-Path $DataDir 'logs'), (Join-Path $DataDir 'files'), (Join-Path $DataDir 'desktop'))) {
   New-Item -ItemType Directory -Force -Path $d | Out-Null
 }
 $script:LogFile = Join-Path $DataDir ("logs\install-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+# Any failure from here on is written to the install log too (the console may close).
+trap {
+  Write-Step ("INSTALL FAILED: {0}`n{1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+  exit 1
+}
 Write-Step "Coffee Lounge install from $Source"
 Write-Step (Get-Content -Raw (Join-Path $Source 'VERSION.txt'))
 
