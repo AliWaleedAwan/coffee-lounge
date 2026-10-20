@@ -597,3 +597,93 @@ fieldset legend {
 .variant-line .chip {
   align-self: center;
 }
+
+/* ---------------------------------------------------------------- floor and QR cards */
+.floor-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.table-card h2 {
+  font-size: 20px;
+}
+
+.table-card .kv dd {
+  white-space: nowrap;
+}
+
+.qr {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.qr-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.qr-card {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: #fff;
+  color: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  break-inside: avoid;
+}
+
+.qr-card figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.qr-card strong {
+  font-size: 22px;
+}
+
+/* A4, two cards across and three down; only the cards are printed. */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  .topbar,
+  .nav,
+  .status-banners,
+  .tabs,
+  .no-print,
+  h1 {
+    display: none !important;
+  }
+
+  .shell-body {
+    display: block;
+  }
+
+  .main {
+    padding: 0;
+  }
+
+  .qr-sheet {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8mm;
+  }
+
+  .qr-card {
+    height: 85mm;
+    border-color: #999;
+  }
+
+  .qr-card .qr {
+    width: 55mm;
+  }
+}

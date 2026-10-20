@@ -13,6 +13,7 @@ import { hashSecret } from '../../src/modules/identity/secrets.ts';
 import { HealthMonitor, type HealthProbes } from '../../src/platform/health.ts';
 import { LiveHub } from '../../src/platform/live-hub.ts';
 import type { Readiness } from '../../src/platform/readiness.ts';
+import { registerCustomerRoutes } from '../../src/customer-routes.ts';
 import { registerStaffRoutes, type StaffRouteDeps } from '../../src/staff-routes.ts';
 import { passedReadiness, platformFixture, readyApps, type PlatformFixture } from './platform.ts';
 
@@ -45,6 +46,8 @@ export interface FixtureOptions {
 
 export interface IdentityFixture extends PlatformFixture {
   staff: FastifyInstance;
+  /** The customer (guest) listener. */
+  customer: FastifyInstance;
   readiness: Readiness;
   hub: LiveHub;
   health: HealthMonitor;
@@ -103,9 +106,14 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
     readiness,
     probes: { internet: () => Promise.resolve('offline'), ...options.probes },
   });
-  const { staff } = readyApps(
+  const { staff, customer } = readyApps(
     base.pool,
     {
+      customer: (app) =>
+        registerCustomerRoutes(app, {
+          pool: base.pool,
+          ...(options.now ? { now: options.now } : {}),
+        }),
       staff: async (app) => {
         app.addHook('onRoute', (route) => {
           const methods = Array.isArray(route.method) ? route.method : [route.method];
@@ -132,6 +140,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
     health,
   );
   await staff.ready();
+  await customer.ready();
   const { userId: ownerId, recoveryCode } = await createOwner(
     base.pool,
     { ...OWNER, displayName: 'Owner' },
@@ -161,6 +170,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
   return {
     ...base,
     staff,
+    customer,
     readiness,
     hub,
     health,

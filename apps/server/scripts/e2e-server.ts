@@ -22,6 +22,7 @@ import { adoptJobQueue } from '../src/platform/jobs.ts';
 import { LiveHub } from '../src/platform/live-hub.ts';
 import { Readiness, runStartupChecks } from '../src/platform/readiness.ts';
 import { SERVER_VERSION } from '../src/platform/version.ts';
+import { registerCustomerRoutes } from '../src/customer-routes.ts';
 import { registerStaffRoutes } from '../src/staff-routes.ts';
 import { createTestDatabase, MIGRATIONS_DIR, urlFor } from '../test/support/db.ts';
 
@@ -122,7 +123,15 @@ const apps = buildApps(
     staffWebRoot: WEB_ROOT,
   },
   {
-    staff: (app) => registerStaffRoutes(app, { pool, secureCookies: TLS !== null, hub, health }),
+    customer: (app) => registerCustomerRoutes(app, { pool }),
+    staff: (app) =>
+      registerStaffRoutes(app, {
+        pool,
+        secureCookies: TLS !== null,
+        hub,
+        health,
+        guestBaseUrl: `http://127.0.0.1:${String(CUSTOMER_PORT)}`,
+      }),
   },
 );
 await apps.customer.listen({ host: '127.0.0.1', port: CUSTOMER_PORT });

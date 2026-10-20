@@ -18,6 +18,7 @@ export const RECORDED_INSTANT_COLUMNS: string[] = [
   'cl.auth_sessions.last_seen_at',
   'cl.step_up_approvals.created_at',
   'cl.stock_movements.occurred_at',
+  'cl.dining_sessions.opened_at',
 ];
 
 const COLUMN_REF = /^cl\.[a-z_]+\.[a-z_]+$/;

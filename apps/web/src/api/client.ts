@@ -46,8 +46,10 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
+  /** For commands marked [I] (API.md §3): made once per user intent and reused on retry. */
+  idempotencyKey?: string;
   signal?: AbortSignal;
 }
 
@@ -94,6 +96,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (method !== 'GET') headers['x-cl-request'] = '1';
   else if (!userRecentlyActive()) headers['x-cl-background'] = '1';
   if (options.body !== undefined) headers['content-type'] = 'application/json';
+  if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {

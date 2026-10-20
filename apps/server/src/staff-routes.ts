@@ -5,6 +5,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { catalogRoutes } from './modules/catalog/index.ts';
+import { floorRoutes } from './modules/floor/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
 import { liveRoutes, type LiveRouteOptions } from './modules/live/index.ts';
 import { systemRoutes } from './modules/system/index.ts';
@@ -20,6 +21,9 @@ export interface StaffRouteDeps {
   live?: Pick<LiveRouteOptions, 'heartbeatMs' | 'revalidateMs'>;
   /** Clock for time-dependent reads such as promotions (tests). */
   now?: () => Date;
+  /** Base of the QR links (`http://<shop address>:8080`); default: this PC's LAN address. */
+  guestBaseUrl?: string | undefined;
+  customerPort?: number | undefined;
 }
 
 export async function registerStaffRoutes(
@@ -30,4 +34,10 @@ export async function registerStaffRoutes(
   await liveRoutes(app, { pool: deps.pool, hub: deps.hub, ...deps.live });
   await systemRoutes(app, { health: deps.health });
   await catalogRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await floorRoutes(app, {
+    pool: deps.pool,
+    guestBaseUrl: deps.guestBaseUrl,
+    customerPort: deps.customerPort,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
 }

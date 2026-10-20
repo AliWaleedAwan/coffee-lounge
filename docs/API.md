@@ -75,6 +75,8 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only |
 | `GET /events` | SSE stream for this session | — | §7 |
 
+**Guest cookies (step 3.3):** `cl_entry` = `<entryPointId>.<issuedAt>.<HMAC-SHA256>` with a server key kept in `cl.signing_keys`, 12 h; `cl_guest` = the guest token, 24 h at most and revoked with the visit. Both httpOnly, `SameSite=Lax` (they must travel when the camera app opens the QR link), not `Secure` (plain HTTP, SECURITY.md SR-3). `GET /menu` needs a valid entry cookie, else `401 VISIT_ENDED`; `GET /session` answers `404` before the first order and `401 VISIT_ENDED` once the visit is over. Customer routes accept no ids and no unknown query parameters (AT-127).
+
 ### 5.2 Staff API (`/api/staff/v1`): authentication & devices
 
 | Method & path | Permission | Purpose |
@@ -102,6 +104,10 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /sessions/{sessionId}/reset-guests` | `sessions.reset_guests` | — | Revoke guest phones |
 | `POST /sessions/{sessionId}/bill-request` **[I]** | `invoices.read` | S4 | Waiter records that the table asked for the bill |
 | `POST /sessions/{sessionId}/cancel` **[I]** | `orders.void` | S8 | Close a session with nothing billable |
+| `GET /tables` | `tables.manage` | — | Tables for management (version, availability, when the QR card was printed) and the active entry points. Never returns QR tokens |
+| `POST /tables`, `PATCH /tables/{tableId}`, `POST /tables/{tableId}/archive` | `tables.manage` | — | Standard pattern (`expectedVersion`). Blocking, maintenance or archiving a table with an active session → `409 TABLE_OCCUPIED` |
+| `POST /qr-entry-points/generate` | `tables.manage` | — | `{tableIds, counter}` → new codes with their link `http://<shop address>:8080/t/<token>` for the print sheet. Shown **once**: only the hash is stored, and each new code retires the one printed before. The address comes from `GUEST_BASE_URL`, else this PC's LAN address |
+| `GET /assignable-staff` | `tables.assign` | — | Active waiters, for the assignment picker |
 
 ### 5.4 Rounds, approvals, lines, kitchen
 

@@ -15,6 +15,7 @@ import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
 import { webAppAvailable } from './platform/web-app.ts';
+import { registerCustomerRoutes } from './customer-routes.ts';
 import { registerStaffRoutes } from './staff-routes.ts';
 
 const RECHECK_MS = 5_000;
@@ -55,7 +56,18 @@ const staffWebRoot = webAppAvailable(webRoot) ? webRoot : undefined;
 let hubStarted = false;
 const { customer, staff } = buildApps(
   { config, pool, readiness, health, ...(staffWebRoot ? { staffWebRoot } : {}) },
-  { staff: (app) => registerStaffRoutes(app, { pool, secureCookies, hub, health }) },
+  {
+    customer: (app) => registerCustomerRoutes(app, { pool }),
+    staff: (app) =>
+      registerStaffRoutes(app, {
+        pool,
+        secureCookies,
+        hub,
+        health,
+        guestBaseUrl: config.GUEST_BASE_URL,
+        customerPort: config.CUSTOMER_PORT,
+      }),
+  },
 );
 
 const check = async (): Promise<void> => {

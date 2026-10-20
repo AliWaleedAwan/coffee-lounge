@@ -15,7 +15,7 @@ export interface Area {
 
 /** In priority order: the first visible area is the user's home screen. */
 export const AREAS: readonly Area[] = [
-  { id: 'floor', label: 'Floor', path: '/floor', anyOf: ['tables.read'], ready: false },
+  { id: 'floor', label: 'Floor', path: '/floor', anyOf: ['tables.read'], ready: true },
   {
     id: 'approvals',
     label: 'Approvals',

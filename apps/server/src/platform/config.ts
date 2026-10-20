@@ -19,6 +19,14 @@ const schema = z
       .default('info'),
     /** How far the PC clock may be behind the latest stored timestamp (WINDOWS_DEPLOYMENT.md §5). */
     CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(0).max(3_600).default(120),
+    /**
+     * Base of the printed QR links, e.g. `http://192.168.100.250:8080` (LOCAL_LAN_HOSTING.md §2).
+     * Unset: the LAN address of this PC and CUSTOMER_PORT.
+     */
+    GUEST_BASE_URL: z
+      .string()
+      .regex(/^http:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/, 'must be http://<address>[:port] with no path')
+      .optional(),
     /** Built staff web app served on the staff listener. Default: apps/web/dist. */
     WEB_DIST_DIR: z.string().min(1).optional(),
     /** Volume whose free space the health page watches (H-14). Default: the install drive. */
