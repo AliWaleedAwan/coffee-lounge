@@ -102,6 +102,11 @@ port = $PgPort
 wal_sync_method = fsync_writethrough
 fsync = on
 full_page_writes = on
+logging_collector = on
+log_directory = 'log'
+log_filename = 'postgresql-%a.log'
+log_truncate_on_rotation = on
+log_rotation_age = 1d
 "@
   Set-Content -Path (Join-Path $PgData 'pg_hba.conf') -Encoding ASCII -Value @"
 # Coffee Lounge: password logins from this PC only.
@@ -110,13 +115,25 @@ host all all ::1/128      scram-sha-256
 "@
 }
 Set-RestrictedAcl -Path $PgData -Modify @('NT AUTHORITY\NETWORK SERVICE')
+# initdb may leave explicit permissions on files inside: grant the service account
+# down the whole tree, as the EDB installer does.
+Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M', '/T', '/Q') | Out-Null
 if (-not $pgServiceObj) {
   Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @(
     'register', '-N', $PgService, '-U', 'NT AUTHORITY\NetworkService', '-D', $PgData, '-S', 'auto', '-w'
   ) | Out-Null
 }
 Invoke-Native -FilePath 'sc.exe' -Arguments @('failure', $PgService, 'reset=', '86400', 'actions=', 'restart/10000/restart/30000/restart/60000') | Out-Null
-Start-Service -Name $PgService
+try {
+  Start-Service -Name $PgService
+} catch {
+  Show-ServiceFailure $PgService @('PostgreSQL', 'postgres')
+  $pgLog = Join-Path $PgData 'log'
+  if (Test-Path $pgLog) { Get-ChildItem $pgLog | ForEach-Object { Write-Step "--- $($_.Name)"; Write-Step (Get-Content -Raw $_.FullName) } }
+  # Starting it directly (as this administrator, with a restricted token) shows configuration errors.
+  & (Join-Path $PgDir 'bin\postgres.exe') -D $PgData -C data_directory 2>&1 | ForEach-Object { Write-Step "postgres -C: $_" }
+  throw
+}
 $superPassword = Unprotect-FromFile $superSecret
 for ($i = 0; $i -lt 30; $i++) {
   & (Join-Path $PgDir 'bin\pg_isready.exe') -h 127.0.0.1 -p $PgPort | Out-Null
@@ -221,7 +238,17 @@ $serviceAccounts = $AppServices | ForEach-Object { "NT SERVICE\$_" }
 Set-RestrictedAcl -Path $Config -Read $serviceAccounts
 Set-RestrictedAcl -Path (Join-Path $DataDir 'logs') -Modify $serviceAccounts
 Set-RestrictedAcl -Path (Join-Path $DataDir 'files') -Modify $serviceAccounts
-foreach ($s in $AppServices) { Start-Service -Name $s; Write-Step "Started $s" }
+foreach ($s in $AppServices) {
+  try {
+    Start-Service -Name $s
+    Write-Step "Started $s"
+  } catch {
+    Show-ServiceFailure $s @('coffeelounge', 'WinSW')
+    Get-ChildItem (Join-Path $DataDir 'logs') -Filter "$s*" -ErrorAction SilentlyContinue |
+      ForEach-Object { Write-Step "--- $($_.Name)"; Write-Step (Get-Content -Raw $_.FullName) }
+    throw
+  }
+}
 
 # ------------------------------------------------------------------ 8. firewall (H-3)
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule

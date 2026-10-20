@@ -128,3 +128,19 @@ function Test-PortFree([int]$Port) {
   $listening = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
   return -not $listening
 }
+
+# Prints what Windows recorded about a service that would not start (event logs).
+function Show-ServiceFailure([string]$Name, [string[]]$Providers = @()) {
+  $since = (Get-Date).AddMinutes(-15)
+  Write-Step "Diagnosing $Name"
+  $sc = (& sc.exe queryex $Name) -join "`n"
+  Write-Step $sc
+  $events = @()
+  $events += Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = $since } -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProviderName -eq 'Service Control Manager' -and $_.Message -match [regex]::Escape($Name) }
+  $events += Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $since } -ErrorAction SilentlyContinue |
+    Where-Object { $p = $_.ProviderName; ($Providers | Where-Object { $p -like "*$_*" }) }
+  foreach ($e in ($events | Sort-Object TimeCreated | Select-Object -Last 25)) {
+    Write-Step ("  {0} {1} [{2}] {3}" -f $e.TimeCreated.ToString('HH:mm:ss'), $e.ProviderName, $e.Id, ($e.Message -replace '\s+', ' '))
+  }
+}
