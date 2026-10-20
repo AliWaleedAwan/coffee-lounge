@@ -99,7 +99,9 @@ if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
 # --- Coffee Lounge ---
 listen_addresses = 'localhost'
 port = $PgPort
-wal_sync_method = fsync_writethrough
+# Flush each commit through to the disk (H-8). fsync_writethrough is not accepted by
+# this PostgreSQL build; the power-cut drill measures the choice on the iMac.
+wal_sync_method = fsync
 fsync = on
 full_page_writes = on
 logging_collector = on
@@ -130,8 +132,6 @@ try {
   Show-ServiceFailure $PgService @('PostgreSQL', 'postgres')
   $pgLog = Join-Path $PgData 'log'
   if (Test-Path $pgLog) { Get-ChildItem $pgLog | ForEach-Object { Write-Step "--- $($_.Name)"; Write-Step (Get-Content -Raw $_.FullName) } }
-  # Starting it directly (as this administrator, with a restricted token) shows configuration errors.
-  & (Join-Path $PgDir 'bin\postgres.exe') -D $PgData -C data_directory 2>&1 | ForEach-Object { Write-Step "postgres -C: $_" }
   throw
 }
 $superPassword = Unprotect-FromFile $superSecret
