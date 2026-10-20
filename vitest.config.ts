@@ -18,6 +18,12 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'desktop',
+          include: ['apps/desktop/test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'server',
           include: ['apps/server/src/**/*.test.ts', 'apps/server/test/**/*.test.ts'],
           globalSetup: ['apps/server/test/global-setup.ts'],

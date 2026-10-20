@@ -7,3 +7,8 @@ minimumReleaseAge: 10080
 
 # Record exact versions (no ^ ranges).
 saveExact: true
+
+# Packages allowed to run install scripts. Electron downloads its runtime from the
+# official GitHub release and checks it against the checksums shipped in the package.
+allowBuilds:
+  electron: true

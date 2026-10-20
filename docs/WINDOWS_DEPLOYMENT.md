@@ -11,7 +11,7 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 | PostgreSQL 17 (x64, Windows build) | `C:\Program Files\PostgreSQL\17` · data: `C:\ProgramData\CoffeeLounge\pgdata` | Windows service `postgresql-x64-17` |
 | Node.js runtime (pinned LTS, bundled, not system-wide) | `C:\Program Files\CoffeeLounge\runtime` | — |
 | API + worker application | `C:\Program Files\CoffeeLounge\app` | Services `coffeelounge-api`, `coffeelounge-worker` (WinSW wrappers) |
-| Electron counter app | `C:\Program Files\CoffeeLounge\desktop` | The logged-in Windows user |
+| Electron counter app | `C:\Program Files\CoffeeLounge\desktop` · settings: `C:\ProgramData\CoffeeLounge\desktop` (§10) | The logged-in Windows user |
 | Helpers: `cl-rawprint.exe` (RAW printing), `age.exe` (backup encryption), `cl-admin.exe` (recovery/maintenance CLI) | `C:\Program Files\CoffeeLounge\tools` | Called by services / owner |
 | Config & secrets | `C:\ProgramData\CoffeeLounge\config` (ACL: service account + Administrators only) | — |
 | Logs | `C:\ProgramData\CoffeeLounge\logs` (rotated daily, 30 days, size-capped) | — |
@@ -110,3 +110,23 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 - After a power cut: if the PC doesn't start by itself, press its power button. Wait for "System back online".
 - Don't browse the web, read e-mail or install software on the counter PC.
 - Keep spare receipt rolls; keep the emergency paper order pad at the counter.
+
+## 10. Counter app (step 2.8, as built and tested on macOS)
+
+**Settings file** `C:\ProgramData\CoffeeLounge\desktop\desktop.json` (readable by the `Counter` user, writable by Administrators only; written by the installer):
+
+```json
+{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }
+```
+
+`caCertFile` is the **public** shop root certificate, next to the settings file. The app trusts that root, and only that root, for the server; it never consults the Windows certificate store for it. The counter app uses the loopback address because it runs on the server PC itself, so it keeps working when the Ethernet cable is out. **The server certificate must therefore list `127.0.0.1` as well as `192.168.100.250`** (step 2.9 certificate tool). Plain `http` is accepted only for a loopback address, for development.
+
+| Behaviour | As built |
+|---|---|
+| Renderer | Sandboxed, context-isolated, no Node, no webviews, no new windows, no permissions (camera, notifications, …), no downloads (exports get a reviewed path in their phase), DevTools only in unpackaged builds |
+| Origin lock | Pages may only be the server origin. Every network request to anything else is cancelled before it leaves the PC; navigation and redirects elsewhere are refused |
+| Certificate pinning | The chain must lead to the shop root, match the server address, be in date and use no weak signature (SHA-1, MD5). Chromium's own checks still apply; pinning overrides only its "unknown root" verdict |
+| CSP | The server's policy; the app adds the same policy if a server page ever arrives without one. Its own pages carry a stricter one |
+| Server unavailable | Branded screen with what to check and "Try again now"; probes `/health/live` every 3 s and opens the app as soon as it answers. A certificate problem shows "Server not trusted" (do not enter passwords) and is never bypassed. Missing or invalid settings show "Counter app not set up" |
+| Preload API | `window.coffeeLounge = { version, retryNow() }` only. First-run address entry (`setHostAddress` in 02-architecture §2.11) was dropped: the installer writes the settings, so staff cannot point the app elsewhere |
+| Still to do on Windows (step 2.9) | Installer, auto-start at `Counter` login (H-11), full screen, Electron fuses (no `RunAsNode`, no `NODE_OPTIONS`, cookie encryption, app only from the signed asar), and the drills above on the iMac |

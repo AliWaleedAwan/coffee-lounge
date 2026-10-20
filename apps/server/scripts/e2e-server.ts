@@ -26,6 +26,11 @@ import { createTestDatabase, MIGRATIONS_DIR, urlFor } from '../test/support/db.t
 
 const STAFF_PORT = Number(process.env['E2E_STAFF_PORT'] ?? 18443);
 const CUSTOMER_PORT = Number(process.env['E2E_CUSTOMER_PORT'] ?? 18080);
+// Optional HTTPS on the staff port (desktop tests use throwaway certificates).
+const TLS =
+  process.env['E2E_TLS_CERT'] && process.env['E2E_TLS_KEY']
+    ? { STAFF_TLS_CERT: process.env['E2E_TLS_CERT'], STAFF_TLS_KEY: process.env['E2E_TLS_KEY'] }
+    : null;
 const STATE_FILE =
   process.env['E2E_STATE_FILE'] ??
   fileURLToPath(new URL('../../web/.e2e/state.json', import.meta.url));
@@ -104,14 +109,14 @@ const hub = new LiveHub({
 await hub.start();
 const apps = buildApps(
   {
-    config: { LOG_LEVEL: 'warn' },
+    config: { LOG_LEVEL: 'warn', ...TLS },
     pool,
     readiness,
     health,
     staffWebRoot: WEB_ROOT,
   },
   {
-    staff: (app) => registerStaffRoutes(app, { pool, secureCookies: false, hub, health }),
+    staff: (app) => registerStaffRoutes(app, { pool, secureCookies: TLS !== null, hub, health }),
   },
 );
 await apps.customer.listen({ host: '127.0.0.1', port: CUSTOMER_PORT });
@@ -122,7 +127,7 @@ writeFileSync(
   STATE_FILE,
   JSON.stringify(
     {
-      baseURL: `http://127.0.0.1:${String(STAFF_PORT)}`,
+      baseURL: `${TLS ? 'https' : 'http'}://127.0.0.1:${String(STAFF_PORT)}`,
       database: db.name,
       owner,
       staff,
@@ -134,7 +139,9 @@ writeFileSync(
   ),
   { mode: 0o600 },
 );
-console.log(`e2e shop ready on http://127.0.0.1:${String(STAFF_PORT)} (database ${db.name})`);
+console.log(
+  `e2e shop ready on ${TLS ? 'https' : 'http'}://127.0.0.1:${String(STAFF_PORT)} (database ${db.name})`,
+);
 
 let stopping = false;
 async function shutdown(): Promise<void> {

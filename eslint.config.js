@@ -44,4 +44,9 @@ export default tseslint.config(
     files: ['**/*.cjs'],
     languageOptions: { sourceType: 'commonjs' },
   },
+  {
+    // The counter app's local pages run in a browser context, not Node.
+    files: ['apps/desktop/static/*.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
+  },
 );

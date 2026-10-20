@@ -65,7 +65,7 @@ The installer creates these rules and sets the network profile of the Ethernet c
 
 ## 5. Staff HTTPS with a shop certificate (D-39)
 
-**How it works:** the installer creates a private **Coffee Lounge Root CA** on the counter PC. It then issues the server certificate for `192.168.100.250` (Subject Alternative Name = that IP, Extended Key Usage = server authentication, validity **730 days**, within Apple's 825-day limit). The root CA's private key is copied to the owner's backup USB key and **deleted from the server** after setup; the owner needs it again only for renewal every two years.
+**How it works:** the installer creates a private **Coffee Lounge Root CA** on the counter PC. It then issues the server certificate for `192.168.100.250` (Subject Alternative Names = that IP and `127.0.0.1`, which the counter app on the server PC itself uses: WINDOWS_DEPLOYMENT.md §10; Extended Key Usage = server authentication, validity **730 days**, within Apple's 825-day limit). The root CA's private key is copied to the owner's backup USB key and **deleted from the server** after setup; the owner needs it again only for renewal every two years.
 
 **One-time install of the root certificate on each staff device:**
 
