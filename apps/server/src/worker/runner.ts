@@ -4,6 +4,8 @@
  */
 import { Logger, parseCrontab, run, type Runner, type TaskList } from 'graphile-worker';
 import type pg from 'pg';
+import { raiseMismatchAlerts } from '../modules/stock/index.ts';
+import { withTransaction } from '../platform/db/tx.ts';
 import { pruneIdempotencyKeys, pruneOutbox } from './maintenance.ts';
 
 export function makeTasks(pool: pg.Pool): TaskList {
@@ -16,13 +18,26 @@ export function makeTasks(pool: pg.Pool): TaskList {
       const removed = await pruneOutbox(pool);
       helpers.logger.info(`pruned ${String(removed)} old live-update hints`);
     },
+    // COST_VALUATION.md §11: report, never correct.
+    'stock:reconcile': async (_payload, helpers) => {
+      const mismatches = await withTransaction(pool, (tx) => raiseMismatchAlerts(tx));
+      if (mismatches.length > 0) {
+        helpers.logger.error(`stock check found ${String(mismatches.length)} mismatches`);
+      } else {
+        helpers.logger.info('stock check: every balance matches its movements');
+      }
+    },
   };
 }
 
-/** Hourly housekeeping; minutes are staggered so both do not run at once. */
+/**
+ * Hourly housekeeping, minutes staggered; the stock check runs nightly just after the
+ * business-day cutoff (04:00 shop time, D-22).
+ */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
   '35 * * * * maintenance:prune_outbox',
+  '10 4 * * * stock:reconcile',
 ].join('\n');
 
 export interface WorkerRunOptions {

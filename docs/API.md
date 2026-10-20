@@ -152,7 +152,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Permission | Purpose |
 |---|---|---|
-| `GET /menu` | `menu.read` | Staff menu with availability and prices |
+| `GET /menu` | `menu.read` | Staff menu with availability and prices. Optional `?orderType=` `dine_in`, `takeaway` or `delivery` (default `dine_in`: takeaway and delivery also need their packaging). A size is unavailable with `unavailableReason` `marked_unavailable` (the manual switch, which wins) or `out_of_stock` (its recipe cannot be covered for one unit); a choice has `available: false` when the ingredient it adds or replaces in is short |
 | `POST /menu/variants/{variantId}/availability` | `menu.availability_toggle` | Temporarily unavailable on/off with reason |
 | Catalog CRUD: `/menu/categories`, `/menu/items`, `/menu/items/{id}/variants`, `/modifier-groups`, `/modifier-options`, `/promotions`, `/tables`, `/qr-entry-points`, `/riders` | `menu.manage`, `menu.price_change`, `promotions.manage`, `tables.manage`, `riders.manage` | Standard pattern: `GET` list, `POST` create, `PATCH /{id}` with `expectedVersion`, `POST /{id}/archive`. No hard deletes. Price changes write price history. |
 | `GET /menu/catalog` | `menu.manage` | Management view of the menu: inactive rows too, with `version` on every row, and all modifier groups |

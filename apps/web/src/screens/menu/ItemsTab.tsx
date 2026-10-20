@@ -242,6 +242,8 @@ function VariantLine({ variant, canToggle }: { variant: MenuVariant; canToggle: 
     setAsking(false);
     setReason('');
   });
+  // Only the manual switch can be turned back on here; stock comes back by itself.
+  const marked = variant.unavailableReason === 'marked_unavailable';
   const setAvailable = (available: boolean): void => {
     write.mutate({
       path: `/menu/variants/${variant.id}/availability`,
@@ -265,22 +267,25 @@ function VariantLine({ variant, canToggle }: { variant: MenuVariant; canToggle: 
           <span>{rupees(variant.price)}</span>
         )}
         {variant.isActive === false ? <span className="chip chip-warning">Hidden</span> : null}
-        {variant.available ? null : (
+        {marked ? (
           <span className="chip chip-danger">
             Unavailable{variant.unavailableNote ? `: ${variant.unavailableNote}` : ''}
           </span>
-        )}
+        ) : null}
+        {variant.unavailableReason === 'out_of_stock' ? (
+          <span className="chip chip-danger">Out of stock</span>
+        ) : null}
         {canToggle && !asking ? (
           <button
             type="button"
             className="btn btn-ghost"
             disabled={!writes || write.isPending}
             onClick={() => {
-              if (variant.available) setAsking(true);
-              else setAvailable(true);
+              if (marked) setAvailable(true);
+              else setAsking(true);
             }}
           >
-            {variant.available ? 'Mark unavailable' : 'Mark available'}
+            {marked ? 'Mark available' : 'Mark unavailable'}
             <span className="visually-hidden"> ({variant.name})</span>
           </button>
         ) : null}

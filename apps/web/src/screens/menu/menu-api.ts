@@ -34,7 +34,7 @@ export interface MenuVariant {
   promotionId: string | null;
   isDefault: boolean;
   available: boolean;
-  unavailableReason: string | null;
+  unavailableReason: 'marked_unavailable' | 'out_of_stock' | null;
   unavailableNote: string | null;
   sort?: number;
   isActive?: boolean;

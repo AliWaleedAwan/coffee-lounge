@@ -9,6 +9,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
+import { ORDER_TYPES } from '../stock/index.ts';
 import * as catalog from './service.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
@@ -87,9 +88,17 @@ export async function catalogRoutes(
   const now = options.now ?? (() => new Date());
 
   // ------------------------------------------------------------ reading
-  app.get('/menu', { config: { permission: 'menu.read' } }, async () =>
-    catalog.readMenu(pool, { management: false, now: now() }),
-  );
+  app.get('/menu', { config: { permission: 'menu.read' } }, async (request) => {
+    const query = parseInput(
+      z.object({ orderType: z.enum(ORDER_TYPES).optional() }).strict(),
+      request.query,
+    );
+    return catalog.readMenu(pool, {
+      management: false,
+      now: now(),
+      ...(query.orderType ? { orderType: query.orderType } : {}),
+    });
+  });
 
   app.get('/menu/catalog', { config: { permission: 'menu.manage' } }, async () =>
     catalog.readMenu(pool, { management: true, now: now() }),

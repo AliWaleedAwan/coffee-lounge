@@ -261,6 +261,8 @@ Each race runs ×10 per commit and ×100 nightly. Any single failure blocks the 
 | PT-07 | Invoice: `total = subtotal − discounts + tax(0) + rounding` for random carts and discounts |
 | PT-08 | Money: half-up rounding to 2 dp; formatting/parsing round-trip without loss |
 
+**Harness (built in Phase 3, step 3.2):** `apps/server/test/support/random.ts`, a seeded generator with no extra dependency. Runs per property come from `CL_PROP_RUNS`; a failure names its seed and `CL_PROP_SEED=<seed>` replays it exactly. Before a phase exit: `CL_PROP_RUNS=100 corepack pnpm test`. Phase 3 runs PT-01 without receipts and counts (they arrive in Phase 4) and PT-02 on the costing functions; the PT-01 test fails when release forgets to lower the reserved quantity (checked by hand).
+
 ## 8. Non-functional acceptance (target hardware)
 
 | ID | Criterion | Measured on |

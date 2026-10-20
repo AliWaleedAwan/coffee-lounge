@@ -171,20 +171,23 @@ describe('job queue', () => {
     expect(await count('cl.outbox_events')).toBe(1);
   });
 
-  it('schedules both housekeeping tasks hourly, each with a handler', () => {
+  it('schedules housekeeping hourly and the stock check nightly, each with a handler', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_outbox',
+      'stock:reconcile',
     ]);
     const schedule = parseCrontab(CRONTAB);
     expect(schedule.map((c) => c.task)).toEqual([
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_outbox',
+      'stock:reconcile',
     ]);
     expect(CRONTAB.split('\n').map((line) => line.split(' ').slice(0, 5).join(' '))).toEqual([
       '5 * * * *',
       '35 * * * *',
+      '10 4 * * *',
     ]);
   });
 });

@@ -11,6 +11,7 @@ import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
 import { shopTimeZone } from '../../platform/settings.ts';
+import { stockAvailability, type OrderType } from '../stock/index.ts';
 import { bestPromotion, localMoment, type PromotionRule } from './promotions.ts';
 
 export interface Who {
@@ -1043,80 +1044,87 @@ export interface MenuOptions {
   /** true: the management view (inactive rows too, with versions); false: what can be ordered. */
   management: boolean;
   now: Date;
+  /** Order type for stock availability (takeaway adds cups and lids…); default dine-in. */
+  orderType?: OrderType;
 }
 
-/** The menu tree. Availability is manual-only until the stock model arrives (step 3.2). */
+/**
+ * The menu tree. A size is unavailable when someone marked it so (that wins) or when stock
+ * cannot cover one unit of its recipe; a choice when its ingredient is short.
+ */
 export async function readMenu(db: pg.Pool, options: MenuOptions) {
   // A pool (not a transaction client): the reads below run in parallel.
   const live = !options.management;
-  const [categories, items, variants, groups, opts, links, rules, timeZone] = await Promise.all([
-    db.query<{ id: string; name: string; sort: number; is_active: boolean; version: number }>(
-      `SELECT id::text, name, sort, is_active, version FROM cl.menu_categories
+  const [categories, items, variants, groups, opts, links, rules, timeZone, stock] =
+    await Promise.all([
+      db.query<{ id: string; name: string; sort: number; is_active: boolean; version: number }>(
+        `SELECT id::text, name, sort, is_active, version FROM cl.menu_categories
         WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, id`,
-    ),
-    db.query<{
-      id: string;
-      category_id: string;
-      name: string;
-      description: string | null;
-      dietary_tags: string[];
-      allow_dine_in: boolean;
-      allow_takeaway: boolean;
-      allow_delivery: boolean;
-      sort: number;
-      is_active: boolean;
-      version: number;
-    }>(
-      `SELECT id::text, category_id::text, name, description, dietary_tags, allow_dine_in, allow_takeaway,
+      ),
+      db.query<{
+        id: string;
+        category_id: string;
+        name: string;
+        description: string | null;
+        dietary_tags: string[];
+        allow_dine_in: boolean;
+        allow_takeaway: boolean;
+        allow_delivery: boolean;
+        sort: number;
+        is_active: boolean;
+        version: number;
+      }>(
+        `SELECT id::text, category_id::text, name, description, dietary_tags, allow_dine_in, allow_takeaway,
               allow_delivery, sort, is_active, version
          FROM cl.menu_items WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, id`,
-    ),
-    db.query<{
-      id: string;
-      item_id: string;
-      name: string;
-      price: string;
-      is_default: boolean;
-      sort: number;
-      is_active: boolean;
-      version: number;
-      manual_unavailable: boolean;
-      unavailable_note: string | null;
-      stock_mode: string;
-    }>(
-      `SELECT id::text, item_id::text, name, price::text, is_default, sort, is_active, version,
+      ),
+      db.query<{
+        id: string;
+        item_id: string;
+        name: string;
+        price: string;
+        is_default: boolean;
+        sort: number;
+        is_active: boolean;
+        version: number;
+        manual_unavailable: boolean;
+        unavailable_note: string | null;
+        stock_mode: string;
+      }>(
+        `SELECT id::text, item_id::text, name, price::text, is_default, sort, is_active, version,
               manual_unavailable, unavailable_note, stock_mode
          FROM cl.menu_variants WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, id`,
-    ),
-    db.query<{
-      id: string;
-      name: string;
-      min_select: number;
-      max_select: number;
-      is_active: boolean;
-      version: number;
-    }>(
-      `SELECT id::text, name, min_select, max_select, is_active, version FROM cl.modifier_groups
+      ),
+      db.query<{
+        id: string;
+        name: string;
+        min_select: number;
+        max_select: number;
+        is_active: boolean;
+        version: number;
+      }>(
+        `SELECT id::text, name, min_select, max_select, is_active, version FROM cl.modifier_groups
         ${live ? 'WHERE is_active' : ''} ORDER BY name, id`,
-    ),
-    db.query<{
-      id: string;
-      group_id: string;
-      name: string;
-      price_delta: string;
-      sort: number;
-      is_active: boolean;
-      version: number;
-    }>(
-      `SELECT id::text, group_id::text, name, price_delta::text, sort, is_active, version
+      ),
+      db.query<{
+        id: string;
+        group_id: string;
+        name: string;
+        price_delta: string;
+        sort: number;
+        is_active: boolean;
+        version: number;
+      }>(
+        `SELECT id::text, group_id::text, name, price_delta::text, sort, is_active, version
          FROM cl.modifier_options ${live ? 'WHERE is_active' : ''} ORDER BY sort, id`,
-    ),
-    db.query<{ item_id: string; group_id: string }>(
-      'SELECT item_id::text, group_id::text FROM cl.menu_item_modifier_groups ORDER BY sort, group_id',
-    ),
-    loadPromotionRules(db),
-    shopTimeZone(db),
-  ]);
+      ),
+      db.query<{ item_id: string; group_id: string }>(
+        'SELECT item_id::text, group_id::text FROM cl.menu_item_modifier_groups ORDER BY sort, group_id',
+      ),
+      loadPromotionRules(db),
+      shopTimeZone(db),
+      stockAvailability(db, { at: options.now, orderType: options.orderType ?? 'dine_in' }),
+    ]);
   const moment = localMoment(options.now, timeZone);
 
   const optionsByGroup = new Map<string, typeof opts.rows>();
@@ -1161,8 +1169,12 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
         promotionPrice: promo ? money.format(promo.price) : null,
         promotionId: promo ? promo.promotionId : null,
         isDefault: v.is_default,
-        available: !v.manual_unavailable,
-        unavailableReason: v.manual_unavailable ? 'marked_unavailable' : null,
+        available: !v.manual_unavailable && stock.variantAvailable(v.id),
+        unavailableReason: v.manual_unavailable
+          ? 'marked_unavailable'
+          : stock.variantAvailable(v.id)
+            ? null
+            : 'out_of_stock',
         unavailableNote: v.unavailable_note,
         ...(options.management
           ? { sort: v.sort, isActive: v.is_active, version: v.version, stockMode: v.stock_mode }
@@ -1182,7 +1194,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
             id: o.id,
             name: o.name,
             priceDelta: money2(o.price_delta),
-            available: true,
+            available: stock.optionAvailable(item.id, o.id),
             ...(options.management
               ? { sort: o.sort, isActive: o.is_active, version: o.version }
               : {}),

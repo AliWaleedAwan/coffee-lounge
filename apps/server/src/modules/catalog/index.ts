@@ -6,4 +6,11 @@ export {
   type ModifierGroupRule,
 } from './modifiers.ts';
 export { bestPromotion, localMoment, type PromotionRule } from './promotions.ts';
-export { loadPromotionRules, readMenu } from './service.ts';
+export {
+  createCategory,
+  createItem,
+  createModifierGroup,
+  loadPromotionRules,
+  readMenu,
+  type Who,
+} from './service.ts';

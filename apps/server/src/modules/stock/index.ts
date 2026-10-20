@@ -1,0 +1,40 @@
+/** Public interface of the stock module (other modules import only from here). */
+export { stockAvailability, type StockAvailability } from './availability.ts';
+export {
+  consume,
+  findStockMismatches,
+  postOpeningBalance,
+  raiseMismatchAlerts,
+  release,
+  reserve,
+  wasteIngredient,
+  WASTE_REASONS,
+  type Shortage,
+  type StockContext,
+  type StockMismatch,
+  type Take,
+} from './ledger.ts';
+export {
+  explodeRecipe,
+  issueValue,
+  ORDER_TYPES,
+  requirement,
+  type ModifierRecipeRule,
+  type OrderType,
+  type RecipeComponent,
+} from './math.ts';
+export {
+  activateRecipe,
+  createRecipeDraft,
+  loadActiveRecipes,
+  loadModifierRules,
+  rulesForVariant,
+  setStockMode,
+  type ComponentInput,
+} from './recipes.ts';
+export {
+  addModifierRule,
+  createInventoryItem,
+  type InventoryItemInput,
+  type ModifierRuleInput,
+} from './items.ts';

@@ -113,7 +113,11 @@ interface Call {
   body: unknown;
 }
 
-function serve(me: object, writes: (call: Call) => Response = () => json(200, {})) {
+function serve(
+  me: object,
+  writes: (call: Call) => Response = () => json(200, {}),
+  staffMenu: () => Menu = () => menuData(false),
+) {
   const calls: Call[] = [];
   vi.stubGlobal(
     'fetch',
@@ -126,7 +130,7 @@ function serve(me: object, writes: (call: Call) => Response = () => json(200, {}
       if (url.endsWith('/events')) return new Promise<Response>(() => undefined);
       if (method !== 'GET') return Promise.resolve(writes({ method, url, body }));
       if (url.endsWith('/menu/catalog')) return Promise.resolve(json(200, menuData(true)));
-      if (url.endsWith('/menu')) return Promise.resolve(json(200, menuData(false)));
+      if (url.endsWith('/menu')) return Promise.resolve(json(200, staffMenu()));
       if (url.endsWith('/promotions')) return Promise.resolve(json(200, { items: [] }));
       return Promise.resolve(json(404, { code: 'NOT_FOUND', detail: 'x' }));
     }),
@@ -250,5 +254,20 @@ describe('menu screen', () => {
         },
       });
     });
+  });
+
+  it('shows a size out of stock and still offers the manual switch, never "Mark available"', async () => {
+    const outOfStock = (): Menu => {
+      const m = menuData(false);
+      const v = m.categories[0]?.items[0]?.variants[0];
+      if (v) Object.assign(v, { available: false, unavailableReason: 'out_of_stock' });
+      return m;
+    };
+    serve(meWith('cashier', ['menu.read', 'menu.availability_toggle']), undefined, outOfStock);
+    renderMenu();
+    const row = await screen.findByRole('row', { name: /Latte/ });
+    expect(within(row).getByText('Out of stock')).toBeTruthy();
+    expect(within(row).getByRole('button', { name: /^Mark unavailable/ })).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: /^Mark available/ })).toBeNull();
   });
 });

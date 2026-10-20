@@ -25,3 +25,23 @@ export async function readSetting<S extends z.ZodType>(
 export function shopTimeZone(db: Queryable): Promise<string> {
   return readSetting(db, 'shop.timezone', z.string().min(1));
 }
+
+/**
+ * The business date of an instant: shop-local date shifted back by the day cutoff
+ * (D-22: 04:00), as `YYYY-MM-DD`. Written once with a record and never recomputed.
+ */
+export async function businessDateOf(db: Queryable, at: Date): Promise<string> {
+  const timeZone = await shopTimeZone(db);
+  const cutoff = await readSetting(
+    db,
+    'shop.business_day_cutoff',
+    z.string().regex(/^\d{2}:\d{2}$/),
+  );
+  const { rows } = await db.query<{ d: string }>(
+    'SELECT cl.business_date($1, $2, $3::time)::text AS d',
+    [at, timeZone, cutoff],
+  );
+  const d = rows[0]?.d;
+  if (d === undefined) throw new Error('business date not computed');
+  return d;
+}

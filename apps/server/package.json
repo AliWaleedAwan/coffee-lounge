@@ -15,7 +15,8 @@
     "dev": "node --watch --env-file=../../.env src/main.ts",
     "admin": "node --env-file=../../.env src/cli/admin.ts",
     "certs": "node src/cli/certs.ts",
-    "worker": "node --env-file=../../.env src/worker.ts"
+    "worker": "node --env-file=../../.env src/worker.ts",
+    "sample-shop": "node --env-file=../../.env scripts/sample-shop.ts"
   },
   "dependencies": {
     "@cl/shared": "workspace:*",
