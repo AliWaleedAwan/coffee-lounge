@@ -9,6 +9,7 @@
     "start": "node --env-file=../../.env src/main.ts",
     "dev": "node --watch --env-file=../../.env src/main.ts",
     "admin": "node --env-file=../../.env src/cli/admin.ts",
+    "certs": "node src/cli/certs.ts",
     "worker": "node --env-file=../../.env src/worker.ts"
   },
   "dependencies": {

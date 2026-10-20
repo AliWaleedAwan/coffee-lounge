@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { runMigrations as runJobQueueMigrations } from 'graphile-worker';
 import pg from 'pg';
 import { loadMigrations, migrate } from './migrate.ts';
+import { adoptJobQueue } from '../jobs.ts';
 import { createPool } from './pool.ts';
 
 const url = process.env['DATABASE_URL'];
@@ -26,6 +27,7 @@ try {
   const pool = createPool({ connectionString: url, max: 2 });
   try {
     await runJobQueueMigrations({ pgPool: pool });
+    await adoptJobQueue(pool);
     console.log('Job queue schema is up to date.');
   } finally {
     await pool.end();

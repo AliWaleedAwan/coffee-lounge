@@ -18,6 +18,7 @@ import { buildApps } from '../src/platform/app.ts';
 import { loadMigrations, migrate } from '../src/platform/db/migrate.ts';
 import { createPool } from '../src/platform/db/pool.ts';
 import { HealthMonitor } from '../src/platform/health.ts';
+import { adoptJobQueue } from '../src/platform/jobs.ts';
 import { LiveHub } from '../src/platform/live-hub.ts';
 import { Readiness, runStartupChecks } from '../src/platform/readiness.ts';
 import { SERVER_VERSION } from '../src/platform/version.ts';
@@ -41,8 +42,13 @@ const facts = { correlationId: randomUUID() };
 const db = await createTestDatabase('empty');
 const migrations = await loadMigrations(MIGRATIONS_DIR);
 await migrate(db.client, migrations);
-const pool = createPool({ connectionString: urlFor(db.name), max: 10 });
-await runJobQueueMigrations({ pgPool: pool });
+// Installing the job queue needs the owner; everything after runs with only the
+// application role's privileges, as the installed services do.
+const ownerPool = createPool({ connectionString: urlFor(db.name), max: 2 });
+await runJobQueueMigrations({ pgPool: ownerPool });
+await adoptJobQueue(ownerPool);
+await ownerPool.end();
+const pool = createPool({ connectionString: urlFor(db.name), max: 10, sessionRole: 'cl_app' });
 
 // Test users: an owner (password), a waiter and a cashier (password and PIN).
 const password = `e2e-${randomUUID()}`;
@@ -100,7 +106,7 @@ const health = new HealthMonitor({
 const hub = new LiveHub({
   pool,
   connectListener: async () => {
-    const client = new pg.Client({ connectionString: urlFor(db.name) });
+    const client = new pg.Client({ connectionString: urlFor(db.name), options: '-c role=cl_app' });
     await client.connect();
     return client;
   },

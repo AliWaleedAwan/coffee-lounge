@@ -1,7 +1,9 @@
 import { X509Certificate } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ConfigError, loadDesktopConfig, parseDesktopConfig } from '../src/config.ts';
 import { chainOf, chromiumAcceptable, pinnedVerdict } from '../src/pinning.ts';
@@ -98,6 +100,43 @@ describe('certificate pinning to the shop root', () => {
       'R',
     ]);
     expect(chainOf({ data: 'L' })).toEqual(['L']);
+  });
+});
+
+describe('certificates made by the shop certificate tool (installer)', () => {
+  it('are pinned and accepted for both server addresses', () => {
+    const out = join(dir, 'from-tool');
+    const pass = 'correct horse battery';
+    const run = (args: string[], input: string) =>
+      spawnSync(process.execPath, ['src/cli/certs.ts', ...args], {
+        cwd: fileURLToPath(new URL('../../server', import.meta.url)),
+        input,
+        encoding: 'utf8',
+      });
+    expect(run(['create-ca', '--out', join(out, 'ca')], `${pass}\n${pass}\n`).status).toBe(0);
+    expect(
+      run(
+        [
+          'issue-server',
+          '--ca-dir',
+          join(out, 'ca'),
+          '--out',
+          join(out, 'srv'),
+          '--ip',
+          '192.168.100.250',
+          '--ip',
+          '127.0.0.1',
+        ],
+        `${pass}\n`,
+      ).status,
+    ).toBe(0);
+    const root = new X509Certificate(readFileSync(join(out, 'ca', 'coffee-lounge-root.pem')));
+    const leaf = readFileSync(join(out, 'srv', 'server.pem'), 'utf8');
+    for (const host of ['127.0.0.1', '192.168.100.250']) {
+      expect(pinnedVerdict({ hostname: host, chain: [leaf] }, { host, root })).toEqual({
+        ok: true,
+      });
+    }
   });
 });
 

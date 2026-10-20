@@ -6,6 +6,7 @@ import { runMigrations as runJobQueueMigrations } from 'graphile-worker';
 import pg from 'pg';
 import { loadMigrations, migrate } from '../src/platform/db/migrate.ts';
 import { createPool } from '../src/platform/db/pool.ts';
+import { adoptJobQueue } from '../src/platform/jobs.ts';
 import { silentLogger } from '../src/worker/runner.ts';
 import { adminDdl, MIGRATIONS_DIR, TEMPLATE_DB, urlFor, withAdmin } from './support/db.ts';
 
@@ -20,6 +21,7 @@ export default async function setup(): Promise<void> {
     const pool = createPool({ connectionString: urlFor(TEMPLATE_DB), max: 2 });
     try {
       await runJobQueueMigrations({ pgPool: pool, logger: silentLogger });
+      await adoptJobQueue(pool);
     } finally {
       await pool.end();
     }

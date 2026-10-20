@@ -13,9 +13,16 @@ export interface PlatformFixture {
   close(): Promise<void>;
 }
 
-export async function platformFixture(poolSize = 20): Promise<PlatformFixture> {
+export async function platformFixture(
+  poolSize = 20,
+  sessionRole?: 'cl_app',
+): Promise<PlatformFixture> {
   const db = await createTestDatabase();
-  const pool = createPool({ connectionString: urlFor(db.name), max: poolSize });
+  const pool = createPool({
+    connectionString: urlFor(db.name),
+    max: poolSize,
+    ...(sessionRole ? { sessionRole } : {}),
+  });
   return {
     db,
     pool,

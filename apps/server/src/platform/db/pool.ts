@@ -15,12 +15,23 @@ export interface PoolOptions {
   connectionString: string;
   max?: number;
   onError?: (error: Error) => void;
+  /**
+   * Act as this role on every connection (SET ROLE at connect). Tests use it to run
+   * with exactly the application's privileges; production logs in as a member of it.
+   */
+  sessionRole?: 'cl_app' | 'cl_readonly';
 }
 
-export function createPool({ connectionString, max = 10, onError }: PoolOptions): pg.Pool {
+export function createPool({
+  connectionString,
+  max = 10,
+  onError,
+  sessionRole,
+}: PoolOptions): pg.Pool {
   const pool = new pg.Pool({
     connectionString,
     max,
+    ...(sessionRole ? { options: `-c role=${sessionRole}` } : {}),
     application_name: 'coffeelounge',
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,

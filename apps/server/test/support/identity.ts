@@ -37,6 +37,8 @@ export interface FixtureOptions {
   live?: StaffRouteDeps['live'];
   /** Health probe overrides; the internet probe is always stubbed offline unless given. */
   probes?: Partial<HealthProbes>;
+  /** Run every query with only the application role's privileges. */
+  sessionRole?: 'cl_app';
 }
 
 export interface IdentityFixture extends PlatformFixture {
@@ -85,7 +87,7 @@ function clientFor(app: FastifyInstance, initial: Record<string, string> = {}): 
 }
 
 export async function identityFixture(options: FixtureOptions = {}): Promise<IdentityFixture> {
-  const base = await platformFixture(20);
+  const base = await platformFixture(20, options.sessionRole);
   const routes: CollectedRoute[] = [];
   const hub =
     options.makeHub?.(base.pool) ??

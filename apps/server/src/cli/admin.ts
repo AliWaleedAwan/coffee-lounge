@@ -11,9 +11,8 @@
  * Usage (from apps/server): corepack pnpm admin <command> [options]
  */
 import { randomUUID } from 'node:crypto';
-import { createInterface } from 'node:readline';
-import { Writable } from 'node:stream';
 import { parseArgs } from 'node:util';
+import { lineReader } from './input.ts';
 import { loadConfig } from '../platform/config.ts';
 import { createPool } from '../platform/db/pool.ts';
 import { AppError } from '../platform/errors.ts';
@@ -26,33 +25,6 @@ import {
 } from '../modules/identity/index.ts';
 
 const facts = { correlationId: randomUUID() };
-
-/** Reads lines from stdin; hides typing when attached to a terminal. */
-function lineReader(): { ask(prompt: string, secret?: boolean): Promise<string>; close(): void } {
-  let muted = false;
-  const output = new Writable({
-    write(chunk: Buffer, _encoding, done) {
-      if (!muted) process.stdout.write(chunk);
-      done();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output, terminal: process.stdin.isTTY });
-  const lines = rl[Symbol.asyncIterator]();
-  return {
-    async ask(prompt, secret = false) {
-      process.stdout.write(prompt);
-      muted = secret && process.stdin.isTTY;
-      const next = await lines.next();
-      muted = false;
-      if (secret && process.stdin.isTTY) process.stdout.write('\n');
-      if (next.done) throw new Error('No input');
-      return next.value;
-    },
-    close: () => {
-      rl.close();
-    },
-  };
-}
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
