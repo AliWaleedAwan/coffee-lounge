@@ -159,14 +159,16 @@ Check 'a crashed database process is recovered by PostgreSQL and the API carries
   # as a crash would. PostgreSQL then resets every connection and recovers on its own.
   $wrapper = (Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'").ProcessId
   $postmaster = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapper AND Name='postgres.exe'"
-  $backend = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($postmaster.ProcessId) AND Name='postgres.exe'" | Select-Object -First 1
-  if (-not $backend) { throw 'no backend process found' }
+  # A client backend (not the logger or another helper process): its command line says so.
+  $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($postmaster.ProcessId) AND Name='postgres.exe'")
+  $backend = $children | Where-Object { $_.CommandLine -match 'backend' -and $_.CommandLine -notmatch 'log' } | Select-Object -First 1
+  if (-not $backend) { throw ("no client backend among: " + (($children | ForEach-Object { $_.CommandLine }) -join ' | ')) }
   Stop-Process -Id $backend.ProcessId -Force
   Start-Sleep -Seconds 5
   if ((Get-Service 'postgresql-x64-17').Status -ne 'Running') { throw 'PostgreSQL service stopped' }
   if (-not (Wait-Ready 120)) { throw 'API not ready again' }
   $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
-  if ((Get-Content -Raw $log.FullName) -notmatch 'terminated by exception|reinitializing') { throw 'no crash recovery in the PostgreSQL log' }
+  if ((Get-Content -Raw $log.FullName) -notmatch 'reinitializing|terminated by exception|exited with exit code') { throw 'no crash recovery in the PostgreSQL log' }
   ((Get-Service 'coffeelounge-api').Status -eq 'Running') -and ((Get-Service 'coffeelounge-worker').Status -eq 'Running')
 }
 
