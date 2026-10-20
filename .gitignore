@@ -23,3 +23,6 @@ print-captures/
 
 # browser end-to-end test state (test credentials)
 .e2e/
+
+# The client quotation (commercial document): kept on this Mac only, never committed
+Quotation/
