@@ -48,7 +48,7 @@ jobs:
   windows:
     name: Install on Windows (AT-47)
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: powershell
@@ -69,12 +69,26 @@ jobs:
             sc.exe delete $_.Name | Out-Null
             Write-Host "removed $($_.Name)"
           }
+      - name: Create the Counter Windows account (H-9, done by the technician before installing)
+        run: |
+          $password = ConvertTo-SecureString ('Ci1!' + [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+          New-LocalUser -Name Counter -Password $password -PasswordNeverExpires -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -Group Users -Member Counter
       - name: Build the offline bundle
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-bundle.ps1
-      - name: Install (unattended)
+      - name: Build CoffeeLounge-Setup.exe (NSIS)
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
+      - name: Install with CoffeeLounge-Setup.exe (unattended)
         run: |
-          $passphrase = 'ci-' + [guid]::NewGuid().ToString('N')
-          powershell -ExecutionPolicy Bypass -File out\CoffeeLounge\setup\install.ps1 -Unattended -SkipHostSettings -CaExportDir "$env:RUNNER_TEMP\owner-usb" -CaPassphrase $passphrase
+          $env:CL_CA_PASSPHRASE = 'ci-' + [guid]::NewGuid().ToString('N')
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb") -Wait -PassThru
+          Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+      - name: Check the counter app's fuses
+        working-directory: apps/desktop
+        run: |
+          node scripts\fuses.mjs check 'C:\Program Files\CoffeeLounge\desktop\CoffeeLounge.exe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
@@ -89,9 +103,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (Test-Path 'C:\Program Files\CoffeeLounge') { throw 'program files left behind' }
           if (Get-Service -Name 'coffeelounge-api' -ErrorAction SilentlyContinue) { throw 'service left behind' }
+          if (Get-ScheduledTask -TaskName 'Coffee Lounge counter app' -ErrorAction SilentlyContinue) { throw 'start-up task left behind' }
+          if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge') { throw 'Add/Remove Programs entry left behind' }
           if (-not (Test-Path 'C:\ProgramData\CoffeeLounge\pgdata\PG_VERSION')) { throw 'database removed' }
-          powershell -ExecutionPolicy Bypass -File out\CoffeeLounge\setup\install.ps1 -Unattended -SkipHostSettings
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
           powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $url = (Get-Content 'C:\ProgramData\CoffeeLounge\config\server.env' | Where-Object { $_ -like 'DATABASE_URL=*' }).Substring(13)
@@ -106,5 +123,6 @@ jobs:
           name: windows-logs
           path: |
             C:\ProgramData\CoffeeLounge\logs
+            C:\Users\runneradmin\AppData\Roaming\Coffee Lounge\desktop.log
             C:\ProgramData\CoffeeLounge\pgdata\log
           if-no-files-found: ignore

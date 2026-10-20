@@ -5,10 +5,12 @@
  * pinned to the shop root, no permissions, no downloads, no new windows. If the server
  * cannot be reached it shows its own "Server unavailable" screen and keeps retrying.
  *
- * Environment: CL_DESKTOP_CONFIG (config file; default on Windows
+ * Development and tests only (ignored by the installed app, so nobody can point it
+ * elsewhere): CL_DESKTOP_CONFIG (config file; default on Windows
  * %ProgramData%\CoffeeLounge\desktop\desktop.json, elsewhere <userData>/desktop.json),
  * CL_USER_DATA_DIR (separate profile, used by tests).
  */
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, ipcMain, Menu, net, session, type Session } from 'electron';
@@ -30,7 +32,10 @@ const CERT_FAILURE_WINDOW_MS = 10_000;
 
 type Reason = FailureKind | 'config';
 
-if (process.env['CL_USER_DATA_DIR']) app.setPath('userData', process.env['CL_USER_DATA_DIR']);
+const devOverride = (name: string): string | undefined =>
+  app.isPackaged ? undefined : process.env[name] || undefined;
+const userDataOverride = devOverride('CL_USER_DATA_DIR');
+if (userDataOverride) app.setPath('userData', userDataOverride);
 if (!app.requestSingleInstanceLock()) app.quit();
 app.enableSandbox();
 
@@ -40,8 +45,18 @@ let showing: 'app' | Reason | null = null;
 let probeTimer: NodeJS.Timeout | undefined;
 let lastCertFailure: { at: number; reason: string } | null = null;
 
+const LOG_LIMIT = 1_000_000;
+/** JSON lines to stdout and to desktop.log in the profile folder (support, Windows CI). */
 const log = (msg: string, extra: Record<string, unknown> = {}): void => {
-  console.log(JSON.stringify({ time: new Date().toISOString(), name: 'desktop', msg, ...extra }));
+  const line = JSON.stringify({ time: new Date().toISOString(), name: 'desktop', msg, ...extra });
+  console.log(line);
+  try {
+    const file = join(app.getPath('userData'), 'desktop.log');
+    if (existsSync(file) && statSync(file).size > LOG_LIMIT) renameSync(file, `${file}.1`);
+    appendFileSync(file, `${line}\n`);
+  } catch {
+    // logging must never stop the app
+  }
 };
 
 function recentCertFailure(): boolean {
@@ -200,6 +215,15 @@ function createWindow(cfg: DesktopConfig | null): BrowserWindow {
     log('app failed to load', { code, description, kind });
     showUnavailable(kind);
   });
+  win.webContents.on('did-finish-load', () => {
+    const url = new URL(win.webContents.getURL());
+    log('page loaded', {
+      page:
+        url.protocol === 'file:'
+          ? `local:${url.searchParams.get('reason') ?? ''}`
+          : `${url.origin}${url.pathname}`,
+    });
+  });
   win.webContents.on('render-process-gone', (_event, details) => {
     log('page crashed; reloading', { reason: details.reason });
     if (showing === 'app') void showApp();
@@ -240,7 +264,9 @@ app.on('window-all-closed', () => {
 
 void app.whenReady().then(async () => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
-  const file = process.env['CL_DESKTOP_CONFIG'] ?? defaultConfigFile();
+  mkdirSync(app.getPath('userData'), { recursive: true });
+  log('starting', { version: app.getVersion(), packaged: app.isPackaged });
+  const file = devOverride('CL_DESKTOP_CONFIG') ?? defaultConfigFile();
   let configProblem: string | null = null;
   try {
     config = await loadDesktopConfig(file);

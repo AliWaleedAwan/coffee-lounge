@@ -31,6 +31,11 @@ if (Get-Service -Name 'postgresql-x64-17' -ErrorAction SilentlyContinue) {
   Write-Step 'Removed service postgresql-x64-17 (the database files stay)'
 }
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+Unregister-ScheduledTask -TaskName 'Coffee Lounge counter app' -Confirm:$false -ErrorAction SilentlyContinue
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk')
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge'
+Write-Step 'Removed the counter app start-up task, shortcut and Add/Remove Programs entry'
 foreach ($dir in @($InstallDir, $PgDir)) {
   if (Test-Path $dir) { Remove-Item -Recurse -Force $dir; Write-Step "Removed $dir" }
 }

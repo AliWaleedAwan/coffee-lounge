@@ -178,6 +178,24 @@ describe('live hub delivery (AT-73, topic filtering part)', () => {
 });
 
 describe('reconnect replay and resync (AT-43, stream part)', () => {
+  it('never sends a reconnected client anything it already has, even if the hub is behind', async () => {
+    // A hub that has not fetched yet (not started): its watermark is still 0.
+    hub = new LiveHub({
+      pool: fx.pool,
+      connectListener: () => Promise.reject(new Error('not listening')),
+    });
+    const a = await publishCommitted(event({ entityId: '21' }));
+    const b = await publishCommitted(event({ entityId: '22' }));
+    const sub = collector();
+    expect(await hub.subscribe(sub, b)).toBe('replayed');
+    await hub.fetch(); // now the hub delivers a and b to its subscribers
+    expect(sub.ids()).toEqual([]);
+    expect(sub.ids()).not.toContain(a);
+    const c = await publishCommitted(event({ entityId: '23' }));
+    await hub.fetch();
+    expect(sub.ids()).toEqual([c]);
+  });
+
   it('replays events after the last one the client saw', async () => {
     await startHub();
     const a = await publishCommitted(event({ entityId: '11' }));

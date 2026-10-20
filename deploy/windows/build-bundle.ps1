@@ -9,6 +9,7 @@
 #   runtime\  node.exe (pinned)
 #   pgsql\    PostgreSQL binaries (bin, lib, share; pinned)
 #   winsw\    WinSW-x64.exe (pinned)
+#   desktop\  counter app (Electron, asar, fuses)
 #   setup\    install.ps1, uninstall.ps1, lib.ps1, service templates
 param(
   [string]$Out = (Join-Path $PSScriptRoot '..\..\out\CoffeeLounge'),
@@ -45,6 +46,12 @@ foreach ($extra in @('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'node_modules\.bin
   if (Test-Path $p) { Remove-Item -Recurse -Force $p }
 }
 Copy-Item -Recurse -Path (Join-Path $repo 'apps\web\dist') -Destination (Join-Path $Out 'web')
+
+Write-Step 'Packaging the counter app (Electron, asar, fuses)'
+Invoke-Native -FilePath 'corepack' -Arguments @('pnpm', '--filter', '@cl/desktop', 'build') | Out-Null
+$desktopOut = Join-Path $Cache 'desktop-package'
+Invoke-Native -FilePath 'node' -Arguments @((Join-Path $repo 'apps\desktop\scripts\package.mjs'), 'win32', $desktopOut) | Out-Null
+Copy-Item -Recurse -Path (Join-Path $desktopOut 'CoffeeLounge-win32-x64') -Destination (Join-Path $Out 'desktop')
 
 Write-Step 'Adding the pinned runtime, PostgreSQL and service wrapper'
 $tmp = Join-Path $Cache 'extract'

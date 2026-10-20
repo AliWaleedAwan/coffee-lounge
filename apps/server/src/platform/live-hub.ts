@@ -60,6 +60,8 @@ interface SubscriberState {
   buffering: boolean;
   buffer: OutboxRow[];
   recent: Set<string>;
+  /** After a replay: the client already has everything up to here; never send it again. */
+  seenThrough: bigint | null;
 }
 
 export type SubscribeResult = 'live' | 'replayed' | 'resync';
@@ -200,6 +202,7 @@ export class LiveHub {
 
   private send(state: SubscriberState, row: OutboxRow): void {
     if (state.recent.has(row.id)) return;
+    if (state.seenThrough !== null && BigInt(row.id) <= state.seenThrough) return;
     const topics = row.topics.filter((t) => state.subscriber.canSee(t));
     if (topics.length === 0) return;
     state.recent.add(row.id);
@@ -219,6 +222,7 @@ export class LiveHub {
       buffering: lastEventId !== undefined,
       buffer: [],
       recent: new Set(),
+      seenThrough: null,
     };
     this.subscribers.set(subscriber.id, state);
     if (lastEventId === undefined) return 'live';
@@ -230,8 +234,16 @@ export class LiveHub {
       this.options.onError?.(error, 'replay failed');
       result = 'resync';
     }
-    if (result === 'resync')
+    if (result === 'resync') {
       subscriber.write(controlFrame('resync', { reason: 'reload your views' }));
+    } else {
+      // Rows the hub has not delivered yet may be older than what the client already
+      // has (replayed or received before it reconnected): never send those again.
+      state.seenThrough = BigInt(lastEventId);
+      for (const id of state.recent) {
+        if (BigInt(id) > state.seenThrough) state.seenThrough = BigInt(id);
+      }
+    }
     for (const row of state.buffer) this.send(state, row);
     state.buffer = [];
     state.buffering = false;

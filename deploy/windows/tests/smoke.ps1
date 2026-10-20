@@ -6,7 +6,8 @@ param(
   [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
   [string]$CaExportDir = '',
-  [int]$PgPort = 5432
+  [int]$PgPort = 5432,
+  [string]$CounterUser = 'Counter'
 )
 . (Join-Path $PSScriptRoot '..\lib.ps1')
 
@@ -16,6 +17,7 @@ $RootCa = Join-Path $Tls 'coffee-lounge-root.pem'
 $HttpGet = Join-Path $PSScriptRoot 'http-get.mjs'
 $WaitReady = Join-Path $InstallDir 'setup\wait-ready.mjs'
 $script:Failures = New-Object System.Collections.Generic.List[string]
+$CounterExe = Join-Path $InstallDir 'desktop\CoffeeLounge.exe'
 
 function Check([string]$Name, [scriptblock]$Test) {
   try {
@@ -139,6 +141,53 @@ Check 'the shop CA key is not on this PC (exported for the owner)' {
 Check 'the counter app settings point at the server through the loopback address' {
   $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
   ($settings.serverUrl -eq 'https://127.0.0.1:8443') -and (Test-Path (Join-Path $DataDir 'desktop\coffee-lounge-root.pem'))
+}
+
+# ------------------------------------------------------------------ counter app (step 2.9b)
+Check "the counter app is installed and opens at the $CounterUser login in full screen" {
+  if (-not (Test-Path $CounterExe)) { throw 'CoffeeLounge.exe is missing' }
+  $task = Get-ScheduledTask -TaskName 'Coffee Lounge counter app' -ErrorAction Stop
+  $trigger = @($task.Triggers)[0]
+  if ($trigger.CimClass.CimClassName -ne 'MSFT_TaskLogonTrigger') { throw "trigger is $($trigger.CimClass.CimClassName)" }
+  if ($trigger.UserId -notmatch "\\$CounterUser$") { throw "starts for $($trigger.UserId)" }
+  if ($task.Principal.RunLevel -ne 'Limited') { throw "runs with $($task.Principal.RunLevel) rights" }
+  if (@($task.Actions)[0].Execute -ne $CounterExe) { throw "starts $(@($task.Actions)[0].Execute)" }
+  $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
+  if (-not $settings.fullscreen) { throw 'not full screen' }
+  if (-not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk'))) { throw 'no Start menu shortcut' }
+  $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge' -ErrorAction Stop
+  ($entry.DisplayName -eq 'Coffee Lounge') -and ($entry.UninstallString -match 'uninstall\.ps1')
+}
+Check 'the installed counter app cannot be used as a Node.js shell (RunAsNode fuse)' {
+  $marker = Join-Path $env:TEMP 'cl-runasnode.txt'
+  Remove-Item $marker -ErrorAction SilentlyContinue
+  $env:ELECTRON_RUN_AS_NODE = '1'
+  try {
+    Start-Process -FilePath $CounterExe -ArgumentList @('-e', "require('fs').writeFileSync(process.env.TEMP+'/cl-runasnode.txt','node')") | Out-Null
+  } finally { Remove-Item Env:\ELECTRON_RUN_AS_NODE }
+  Start-Sleep -Seconds 10
+  Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+  if (Test-Path $marker) { throw 'ELECTRON_RUN_AS_NODE ran Node.js code' }
+  $true
+}
+Check 'the installed counter app opens the staff app over the pinned HTTPS connection' {
+  $log = Join-Path $env:APPDATA 'Coffee Lounge\desktop.log'
+  Remove-Item $log -ErrorAction SilentlyContinue
+  Start-Process -FilePath $CounterExe | Out-Null
+  try {
+    $deadline = (Get-Date).AddSeconds(90)
+    $text = ''
+    do {
+      Start-Sleep -Seconds 2
+      if (Test-Path $log) { $text = Get-Content -Raw $log }
+    } while ($text -notmatch '"page loaded","page":"https://127\.0\.0\.1:8443/' -and (Get-Date) -lt $deadline)
+    ($text -split "`n") | Select-Object -Last 6 | ForEach-Object { if ($_) { Write-Step "  app log: $_" } }
+    if ($text -match 'certificate refused') { throw 'the app refused the shop certificate' }
+    if ($text -notmatch '"page loaded","page":"https://127\.0\.0\.1:8443/') { throw 'the app did not open the staff app' }
+    $true
+  } finally {
+    Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+  }
 }
 
 # ------------------------------------------------------------------ recovery

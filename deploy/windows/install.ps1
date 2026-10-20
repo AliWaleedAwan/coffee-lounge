@@ -5,8 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File setup\install.ps1 -CaExportDir E:\CoffeeLounge-Keys
 #
 # First install needs -CaExportDir: the owner's separate USB key. The shop CA's private
-# key is written there and removed from this PC. Not yet automated (step 2.9b / Phase 7):
-# static IP (H-1), counter app files and auto-start (H-11), test print, setup sheet print.
+# key is written there and removed from this PC. Not automated: static IP and network
+# profile (H-1, H-2), test print and setup sheet (Phase 3/7).
 param(
   [string]$Source = (Split-Path -Parent $PSScriptRoot),
   [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
@@ -17,6 +17,8 @@ param(
   # Unattended installs only (tests); otherwise typed without echo.
   [string]$CaPassphrase = '',
   [int]$PgPort = 5432,
+  # Windows account the counter app starts for at login (H-9, H-11).
+  [string]$CounterUser = 'Counter',
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
   [switch]$Unattended
@@ -33,6 +35,8 @@ $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Psql = Join-Path $PgDir 'bin\psql.exe'
 
 if (-not (Test-Admin)) { throw 'Run the installer as an Administrator.' }
+# Unattended runs through CoffeeLounge-Setup.exe pass the CA passphrase in the environment.
+if (-not $CaPassphrase -and $env:CL_CA_PASSPHRASE) { $CaPassphrase = $env:CL_CA_PASSPHRASE }
 foreach ($d in @($DataDir, $Config, (Join-Path $DataDir 'logs'), (Join-Path $DataDir 'files'), (Join-Path $DataDir 'desktop'))) {
   New-Item -ItemType Directory -Force -Path $d | Out-Null
 }
@@ -70,8 +74,10 @@ function Copy-Tree([string]$From, [string]$To) {
   & robocopy.exe $From $To /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "Copying $From to $To failed (robocopy $LASTEXITCODE)" }
 }
+# A running counter app keeps its files open.
+Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
 Write-Step "Copying program files to $InstallDir"
-foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup')) { Copy-Tree (Join-Path $Source $part) (Join-Path $InstallDir $part) }
+foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) { Copy-Tree (Join-Path $Source $part) (Join-Path $InstallDir $part) }
 Copy-Item (Join-Path $Source 'VERSION.txt') $InstallDir -Force
 
 # ------------------------------------------------------------------ 3. PostgreSQL
@@ -273,6 +279,45 @@ $desktopDir = Join-Path $DataDir 'desktop'
 Copy-Item $RootCa (Join-Path $desktopDir 'coffee-lounge-root.pem') -Force
 Set-Content -Path (Join-Path $desktopDir 'desktop.json') -Encoding UTF8 -Value '{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }'
 Set-RestrictedAcl -Path $desktopDir -Read @('*S-1-5-32-545') # Users: read only
+
+$counterExe = Join-Path $InstallDir 'desktop\CoffeeLounge.exe'
+$shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk'
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut($shortcut)
+$link.TargetPath = $counterExe
+$link.WorkingDirectory = Join-Path $InstallDir 'desktop'
+$link.Description = 'Coffee Lounge counter app'
+$link.Save()
+
+# H-11: the counter app opens (full screen, per desktop.json) when the Counter user logs in.
+$taskName = 'Coffee Lounge counter app'
+if (Get-LocalUser -Name $CounterUser -ErrorAction SilentlyContinue) {
+  $account = "$env:COMPUTERNAME\$CounterUser"
+  $task = New-ScheduledTask `
+    -Action (New-ScheduledTaskAction -Execute $counterExe -WorkingDirectory (Join-Path $InstallDir 'desktop')) `
+    -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $account) `
+    -Principal (New-ScheduledTaskPrincipal -UserId $account -LogonType Interactive -RunLevel Limited) `
+    -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew)
+  Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
+  Write-Step "Counter app starts at the login of $account"
+} else {
+  Write-Step "Windows user '$CounterUser' not found: create it (H-9), then run the installer again so the counter app starts at its login."
+}
+
+# Add/Remove Programs
+$uninstallKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge'
+New-Item -Path $uninstallKey -Force | Out-Null
+$versionLine = (Get-Content (Join-Path $InstallDir 'VERSION.txt') -TotalCount 1)
+foreach ($pair in @(
+    @('DisplayName', 'Coffee Lounge'),
+    @('DisplayVersion', ($versionLine -replace '^Coffee Lounge (\S+).*$', '$1')),
+    @('Publisher', 'Coffee Lounge'),
+    @('InstallLocation', $InstallDir),
+    @('DisplayIcon', $counterExe),
+    @('UninstallString', ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f (Join-Path $InstallDir 'setup\uninstall.ps1')))
+  )) { Set-ItemProperty -Path $uninstallKey -Name $pair[0] -Value $pair[1] }
+Set-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -Type DWord
+Set-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -Type DWord
 
 # ------------------------------------------------------------------ 11. health check
 $waitReady = Join-Path $InstallDir 'setup\wait-ready.mjs'

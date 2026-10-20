@@ -12,3 +12,5 @@ saveExact: true
 # official GitHub release and checks it against the checksums shipped in the package.
 allowBuilds:
   electron: true
+  # Works without its install script (the binary comes from its platform package).
+  esbuild: false
