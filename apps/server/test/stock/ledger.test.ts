@@ -25,6 +25,7 @@ import {
 import { withTransaction, type Tx } from '../../src/platform/db/tx.ts';
 import { makeTasks } from '../../src/worker/runner.ts';
 import { urlFor } from '../support/db.ts';
+import { testOrderLines } from '../support/orders.ts';
 import { identityFixture, OWNER, type Client, type IdentityFixture } from '../support/identity.ts';
 
 const NOW = new Date('2026-10-21T12:00:00+05:00');
@@ -88,8 +89,7 @@ async function openAlerts(itemId: string): Promise<string[]> {
   return rows.map((r) => r.kind);
 }
 
-let lineCounter = 1000;
-const nextLine = () => String((lineCounter += 1));
+const nextLine = async (): Promise<string> => (await testOrderLines(fx.pool, fx.ownerId))[0] ?? '';
 
 describe('opening balances (D-29)', () => {
   it('posts the first quantity and cost once and switches the item to stock control', async () => {
@@ -117,7 +117,7 @@ describe('reserve, consume and release', () => {
   it('refuses a shortfall with per-ingredient detail and reserves nothing', async () => {
     const milk = await newItem({ qty: '300', cost: '0.3' });
     const beans = await newItem({ qty: '100', cost: '9' });
-    const line = nextLine();
+    const line = await nextLine();
     const attempt = tx((t) =>
       reserve(t, {
         orderLineId: line,
@@ -137,7 +137,7 @@ describe('reserve, consume and release', () => {
 
   it('consumes part, then the exact rest, freezing each cost; the drain rule leaves no value', async () => {
     const milk = await newItem({ qty: '315', cost: '0.26833333' }); // value 84.5250
-    const line = nextLine();
+    const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('315')]]) }));
     expect(await balance(milk)).toMatchObject({ on_hand: '315.0000', reserved: '315.0000' });
 
@@ -178,7 +178,7 @@ describe('reserve, consume and release', () => {
 
   it('never consumes the same event twice (unique source key)', async () => {
     const milk = await newItem({ qty: '500', cost: '0.3' });
-    const line = nextLine();
+    const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('300')]]) }));
     const once = () =>
       tx((t) =>
@@ -195,7 +195,7 @@ describe('reserve, consume and release', () => {
 
   it('releases units cancelled before they were made, and refuses taking more than is open', async () => {
     const milk = await newItem({ qty: '500', cost: '0.3' });
-    const line = nextLine();
+    const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('300')]]) }));
     await tx((t) => release(t, { orderLineId: line, takes: [{ itemId: milk, qty: d('100') }] }));
     expect(await balance(milk)).toMatchObject({ on_hand: '500.0000', reserved: '200.0000' });
@@ -208,7 +208,7 @@ describe('reserve, consume and release', () => {
 
   it('never blocks a pickup the book cannot cover: posts found stock first and alerts the owner', async () => {
     const milk = await newItem({ qty: '300', cost: '0.3' });
-    const line = nextLine();
+    const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('300')]]) }));
     // Spilled stock recorded while the drink was waiting: book now below reserved.
     await tx((t) =>
@@ -460,7 +460,7 @@ describe('recipes and stock mode (D-29)', () => {
 
     expect((await view()).variant).toMatchObject({ available: true, unavailableReason: null });
     expect((await view()).option?.available).toBe(false); // 50 ml oat < 150 ml
-    const line = nextLine();
+    const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[cups, d('1')]]) }));
     expect((await view('takeaway')).variant).toMatchObject({
       available: false,

@@ -21,7 +21,7 @@ export const AREAS: readonly Area[] = [
     label: 'Approvals',
     path: '/approvals',
     anyOf: ['orders.accept'],
-    ready: false,
+    ready: true,
   },
   { id: 'pickup', label: 'Pickup', path: '/pickup', anyOf: ['kitchen.pickup'], ready: false },
   {

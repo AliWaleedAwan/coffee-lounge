@@ -53,9 +53,17 @@ const health = new HealthMonitor({
 });
 const webRoot = config.WEB_DIST_DIR ?? DEV_WEB_DIST;
 const staffWebRoot = webAppAvailable(webRoot) ? webRoot : undefined;
+const customerWebRoot = webAppAvailable(webRoot, 'guest.html') ? webRoot : undefined;
 let hubStarted = false;
 const { customer, staff } = buildApps(
-  { config, pool, readiness, health, ...(staffWebRoot ? { staffWebRoot } : {}) },
+  {
+    config,
+    pool,
+    readiness,
+    health,
+    ...(staffWebRoot ? { staffWebRoot } : {}),
+    ...(customerWebRoot ? { customerWebRoot } : {}),
+  },
   {
     customer: (app) => registerCustomerRoutes(app, { pool }),
     staff: (app) =>

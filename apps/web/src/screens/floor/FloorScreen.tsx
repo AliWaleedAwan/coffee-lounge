@@ -4,6 +4,7 @@
  * an empty session, assign a waiter. Owners also manage tables and print QR codes.
  */
 import { useState, type SubmitEvent } from 'react';
+import { Link } from 'react-router';
 import { permissionSet } from '../../auth/session.ts';
 import { Field, SelectField } from '../../components/Field.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
@@ -196,6 +197,11 @@ function TableCard({
         ) : null}
       </dl>
       <div className="row">
+        {session ? (
+          <Link className="btn btn-primary" to={`/sessions/${session.id}`}>
+            Orders <span className="visually-hidden">for {table.name}</span>
+          </Link>
+        ) : null}
         {table.state === 'available' && can.open ? (
           <button
             type="button"

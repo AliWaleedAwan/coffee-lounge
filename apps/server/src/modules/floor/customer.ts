@@ -53,10 +53,29 @@ async function activeEntry(
 
 const toEntryPoint = (e: EntryRow): EntryPoint => ({ id: e.id, kind: e.kind, tableId: e.table_id });
 
-function setGuestCookie(reply: FastifyReply, name: string, value: string, maxAge: number): void {
+export function setGuestCookie(
+  reply: FastifyReply,
+  name: string,
+  value: string,
+  maxAge: number,
+): void {
   // Plain HTTP on the shop Wi-Fi (SECURITY.md SR-3): httpOnly, never Secure; Lax so the
   // cookie also travels when the phone's camera app opens the QR link.
   void reply.setCookie(name, value, { httpOnly: true, sameSite: 'lax', path: '/', maxAge });
+}
+
+/**
+ * The entry point behind a phone's entry cookie: valid signature, under 12 hours old,
+ * QR code still in use, table not archived. Null otherwise.
+ */
+export async function resolveEntry(
+  pool: pg.Pool,
+  cookieValue: unknown,
+  now: Date,
+): Promise<EntryPoint | null> {
+  const entryPointId = verifyEntry(await entryKey(pool), cookieValue, now);
+  const entry = entryPointId ? await activeEntry(pool, 'q.id = $1', entryPointId) : undefined;
+  return entry ? toEntryPoint(entry) : null;
 }
 
 export interface CustomerFloorOptions {
@@ -117,7 +136,8 @@ export async function customerFloorRoutes(
           };
         }
       } catch {
-        // an ended visit: this scan starts fresh
+        // An ended visit: forget its token so this scan starts fresh.
+        void reply.clearCookie(GUEST_COOKIE, { path: '/' });
       }
     }
     if (!session && entry.availability === 'active') {
@@ -154,26 +174,5 @@ export async function customerFloorRoutes(
         .map((c) => ({ ...c, items: c.items.filter(allowed) }))
         .filter((c) => c.items.length > 0),
     };
-  });
-
-  app.get('/session', { config: { auth: 'public' } }, async (request, reply) => {
-    parseInput(z.object({}).strict(), request.query);
-    const token = request.cookies[GUEST_COOKIE];
-    if (token === undefined) throw new AppError('NOT_FOUND', 'Nothing ordered from this phone yet');
-    try {
-      const guest = await guestFromToken(pool, looksLikeToken(token) ? token : 'x'.repeat(22));
-      return {
-        session: {
-          sessionNo: guest.session.session_no,
-          orderType: guest.session.order_type,
-          status: guest.session.status,
-          openedAt: guest.session.opened_at.toISOString(),
-        },
-      };
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'VISIT_ENDED')
-        void reply.clearCookie(GUEST_COOKIE, { path: '/' });
-      throw error;
-    }
   });
 }

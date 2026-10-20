@@ -37,3 +37,36 @@ export class FailureThrottle {
     for (const [key, entry] of this.failures) if (entry.resetAt <= now) this.failures.delete(key);
   }
 }
+
+/**
+ * Fixed-window request limit (API.md §2 "Rate limits": guest submissions per minute, guest
+ * requests per IP). `take` counts the request and says how long to wait if it is over.
+ */
+export class RequestLimiter {
+  private readonly limit: number;
+  private readonly windowMs: number;
+  private readonly now: () => number;
+  private readonly windows = new Map<string, { count: number; resetAt: number }>();
+
+  constructor(limit: number, windowMs: number, now: () => number = () => Date.now()) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+    this.now = now;
+  }
+
+  /** 0 when allowed (and counted); otherwise milliseconds until the window resets. */
+  take(key: string): number {
+    const now = this.now();
+    if (this.windows.size > 10_000) {
+      for (const [k, w] of this.windows) if (w.resetAt <= now) this.windows.delete(k);
+    }
+    const w = this.windows.get(key);
+    if (!w || w.resetAt <= now) {
+      this.windows.set(key, { count: 1, resetAt: now + this.windowMs });
+      return 0;
+    }
+    if (w.count >= this.limit) return w.resetAt - now;
+    w.count += 1;
+    return 0;
+  }
+}

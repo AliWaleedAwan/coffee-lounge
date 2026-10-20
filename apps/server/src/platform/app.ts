@@ -28,6 +28,8 @@ export interface PlatformDeps {
   health?: HealthMonitor;
   /** Built staff web app to serve on the staff listener (apps/web/dist). */
   staffWebRoot?: string;
+  /** Built web app holding guest.html, served on the customer listener. */
+  customerWebRoot?: string;
   /** false silences logs (tests). */
   logging?: boolean;
 }
@@ -64,8 +66,9 @@ function createListener(
   }
   const app = Fastify(options) as unknown as FastifyInstance;
 
-  const webRoot = name === 'staff' ? deps.staffWebRoot : undefined;
-  registerErrorHandling(app, webRoot ? appShellFallback : undefined);
+  const webRoot = name === 'staff' ? deps.staffWebRoot : deps.customerWebRoot;
+  const shell = name === 'staff' ? 'index.html' : 'guest.html';
+  registerErrorHandling(app, webRoot ? appShellFallback(shell) : undefined);
 
   app.addHook('onRequest', async (request, reply) => {
     // Only the API waits for readiness: the web app loads and shows "Server starting…".
@@ -106,7 +109,7 @@ function createListener(
     return { status: 'ready', database, warnings: state.warnings };
   });
 
-  if (webRoot) registerWebApp(app, webRoot);
+  if (webRoot) registerWebApp(app, webRoot, shell);
   if (routes) void app.register(routes, { prefix });
   return app;
 }

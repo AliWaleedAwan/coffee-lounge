@@ -5,16 +5,38 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { customerFloorRoutes } from './modules/floor/index.ts';
+import { customerOrderRoutes } from './modules/orders/index.ts';
+import { AppError } from './platform/errors.ts';
+import { RequestLimiter } from './platform/rate-limit.ts';
 
 export interface CustomerRouteDeps {
   pool: pg.Pool;
   /** Clock for entry cookies and promotions (tests). */
   now?: () => Date;
+  /** Requests per minute per IP (API.md §2: 60); guest submissions per minute (10). */
+  limits?: { perIp?: number; submissions?: number };
 }
 
 export async function registerCustomerRoutes(
   app: FastifyInstance,
   deps: CustomerRouteDeps,
 ): Promise<void> {
-  await customerFloorRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  const perIp = new RequestLimiter(deps.limits?.perIp ?? 60, 60_000);
+  app.addHook('onRequest', async (request, reply) => {
+    const wait = perIp.take(request.ip);
+    if (wait > 0) {
+      void reply.header('Retry-After', String(Math.ceil(wait / 1000)));
+      throw new AppError(
+        'RATE_LIMITED',
+        'Too many requests from this phone. Please wait a moment.',
+      );
+    }
+  });
+  const clock = deps.now ? { now: deps.now } : {};
+  await customerFloorRoutes(app, { pool: deps.pool, ...clock });
+  await customerOrderRoutes(app, {
+    pool: deps.pool,
+    ...clock,
+    ...(deps.limits?.submissions ? { submissionsPerMinute: deps.limits.submissions } : {}),
+  });
 }

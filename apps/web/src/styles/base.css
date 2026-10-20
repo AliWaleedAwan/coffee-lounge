@@ -687,3 +687,106 @@ fieldset legend {
     width: 55mm;
   }
 }
+
+/* ---------------------------------------------------------------- order composer */
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .composer {
+    grid-template-columns: 1fr;
+  }
+}
+
+.menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.menu-row {
+  width: 100%;
+  min-height: var(--touch-primary);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-row:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.menu-row-name {
+  font-weight: 600;
+}
+
+.menu-row-price {
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: 600;
+}
+
+.cart ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cart-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cart-line-flagged {
+  border-left: 4px solid var(--danger-text);
+  padding-left: var(--space-2);
+}
+
+.cart-price {
+  min-width: 70px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.round-card .data td {
+  vertical-align: top;
+}
+
+/* ---------------------------------------------------------------- guest app */
+.guest {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.guest .main {
+  padding: var(--space-4);
+}
+
+ol.stack,
+ul.stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

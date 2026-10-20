@@ -5,7 +5,7 @@ export {
   describeModifierProblem,
   type ModifierGroupRule,
 } from './modifiers.ts';
-export { bestPromotion, localMoment, type PromotionRule } from './promotions.ts';
+export { bestPromotion, discountedPrice, localMoment, type PromotionRule } from './promotions.ts';
 export {
   createCategory,
   createItem,

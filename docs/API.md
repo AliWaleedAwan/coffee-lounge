@@ -75,6 +75,8 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only |
 | `GET /events` | SSE stream for this session | — | §7 |
 
+**Guest rounds (step 3.4):** `POST /rounds` uses the phone's guest token, or for its first order the entry cookie, whose table session it opens or joins (S1, CT-03); the guest token cookie is set only when the order is saved. `GET /session` returns the session with every round of the table (`mine` marks this phone's, D-09) and the accepted total. Limits: 60 requests a minute and 10 submissions a minute per phone address (each phone has its own address on the shop Wi-Fi), and at most 3 rounds waiting per session (`429 RATE_LIMITED`, AT-125). The customer listener also serves the guest app (`guest.html`) at `/t/<token>` and `/order`.
+
 **Guest cookies (step 3.3):** `cl_entry` = `<entryPointId>.<issuedAt>.<HMAC-SHA256>` with a server key kept in `cl.signing_keys`, 12 h; `cl_guest` = the guest token, 24 h at most and revoked with the visit. Both httpOnly, `SameSite=Lax` (they must travel when the camera app opens the QR link), not `Secure` (plain HTTP, SECURITY.md SR-3). `GET /menu` needs a valid entry cookie, else `401 VISIT_ENDED`; `GET /session` answers `404` before the first order and `401 VISIT_ENDED` once the visit is over. Customer routes accept no ids and no unknown query parameters (AT-127).
 
 ### 5.2 Staff API (`/api/staff/v1`): authentication & devices
@@ -120,6 +122,9 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /rounds/{roundId}/accept-and-pay` **[I]** | `orders.accept` + `payments.collect` | R3+I2+P1+I4 | Takeaway pay-first in one transaction; body includes payments |
 | `POST /lines/{lineId}/pickup` **[I]** | `kitchen.pickup` | L1 | **Picked up** = consumption; `qty` |
 | `POST /tickets/{ticketId}/pickup` **[I]** | `kitchen.pickup` | L1 × n | Pick up all remaining quantities on a ticket |
+| `GET /sessions/{sessionId}` | `tables.read` | — | Session with every round, its lines and states, and the accepted total |
+
+**Rounds as built (step 3.4).** Body `{lines: [{variantId, qty 1–20, modifierOptionIds (repeat an id to pick it twice), notes?, quotedUnitPrice?}]}`, at most 30 lines. Prices are computed on the server: size price − the best promotion (D-14) + choices. `quotedUnitPrice` is what the client showed for one unit; if it differs the round is refused with `409 STALE_STATE` and the current `lines[].unitPrice`. Notes keep 120 characters after control characters become spaces (AT-124). At acceptance the promotion chosen at submission applies to the charged price; the price lock (D-08) compares the size price. A staff round that cannot be made answers `422 INSUFFICIENT_STOCK` with `shortages[]` (`itemId`, `name`, `needed`, `available`, `lineNos`) and saves nothing (AT-26). An accept by someone outside the acceptance scope is `403 NOT_IN_ACCEPTANCE_SCOPE` even after the round was decided (AT-48); otherwise later decisions get `409 ROUND_ALREADY_DECIDED` with `status`, `decidedBy`, `decidedAt` (a guest withdrawing is told only the status).
 | `POST /lines/{lineId}/serve` **[I]** | `orders.serve` | L2 | Served / collected |
 | `POST /lines/{lineId}/cancel` **[I]** | `orders.void` / `orders.void_prepared` | L3/L4 | `qty`, `alreadyMade` (required yes/no), `reason`; step-up if `alreadyMade` and caller lacks `orders.void_prepared` |
 | `POST /lines/{lineId}/void-prepared` **[I]** | `orders.void_prepared` | L5 | Spilled/refused after pickup; reason |

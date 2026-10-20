@@ -42,6 +42,7 @@ export interface FixtureOptions {
   sessionRole?: 'cl_app';
   /** Clock for time-dependent reads such as promotions. */
   now?: () => Date;
+  customerLimits?: { perIp?: number; submissions?: number };
 }
 
 export interface IdentityFixture extends PlatformFixture {
@@ -113,6 +114,8 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
         registerCustomerRoutes(app, {
           pool: base.pool,
           ...(options.now ? { now: options.now } : {}),
+          // Tests send many requests from one address; the limits have their own tests.
+          limits: options.customerLimits ?? { perIp: 100_000, submissions: 100_000 },
         }),
       staff: async (app) => {
         app.addHook('onRoute', (route) => {

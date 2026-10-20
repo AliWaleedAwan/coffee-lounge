@@ -21,6 +21,7 @@ import {
 import { AppError } from '../../src/platform/errors.ts';
 import { withTransaction } from '../../src/platform/db/tx.ts';
 import { platformFixture, type PlatformFixture } from '../support/platform.ts';
+import { testOrderLines } from '../support/orders.ts';
 import { forEachSeed, propRuns, type Random } from '../support/random.ts';
 
 let fx: PlatformFixture;
@@ -38,7 +39,6 @@ afterAll(async () => {
 });
 
 let sequence = 0;
-let lineNo = 0;
 
 /** Errors the services are expected to answer with; anything else fails the property. */
 function expected(error: unknown): boolean {
@@ -71,7 +71,6 @@ async function step(random: Random, items: string[]): Promise<string> {
   try {
     await withTransaction(fx.pool, async (tx) => {
       if (kind === 'reserve') {
-        lineNo += 1;
         const chosen = items.filter(() => random.chance(0.6));
         const need = new Map(
           (chosen.length > 0 ? chosen : [random.pick(items)]).map((id) => [
@@ -79,7 +78,8 @@ async function step(random: Random, items: string[]): Promise<string> {
             new Decimal(random.decimal(0.0001, 400, 4)),
           ]),
         );
-        await reserve(tx, { orderLineId: String(lineNo), requirement: need });
+        const [line = ''] = await testOrderLines(fx.pool, ownerId);
+        await reserve(tx, { orderLineId: line, requirement: need });
       } else if (kind === 'consume') {
         const line = random.pick(lines);
         await consume(tx, ctx, {

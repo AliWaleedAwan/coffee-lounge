@@ -1,7 +1,8 @@
 /**
- * Serves the built staff web app (apps/web/dist) on the staff listener, same origin as
- * the API (API.md §1), so cookies stay SameSite=Strict and the CSP can be 'self' only.
- * Client-side routes (/login, /devices, …) fall back to index.html; hashed assets are
+ * Serves the built web app (apps/web/dist) on a listener, same origin as its API (API.md
+ * §1), so cookies stay first-party and the CSP can be 'self' only. The staff listener's
+ * shell is index.html; the customer listener's is guest.html (the guest app, P3-2).
+ * Client-side routes (/login, /t/<token>, …) fall back to the shell; hashed assets are
  * cached for a year, everything else is never cached (a new version must load at once).
  */
 import { existsSync } from 'node:fs';
@@ -23,8 +24,8 @@ export const WEB_CSP = [
 ].join('; ');
 
 /** Whether a built app exists at `root` (it is optional in development). */
-export function webAppAvailable(root: string): boolean {
-  return existsSync(join(root, 'index.html'));
+export function webAppAvailable(root: string, shell = 'index.html'): boolean {
+  return existsSync(join(root, shell));
 }
 
 function isAppRoute(url: string): boolean {
@@ -33,7 +34,7 @@ function isAppRoute(url: string): boolean {
 }
 
 /** Registers on the listener root so the not-found fallback can use `reply.sendFile`. */
-export function registerWebApp(app: FastifyInstance, root: string): void {
+export function registerWebApp(app: FastifyInstance, root: string, shell = 'index.html'): void {
   void app.register(fastifyStatic, {
     root,
     index: false,
@@ -50,9 +51,7 @@ export function registerWebApp(app: FastifyInstance, root: string): void {
   });
 
   // The root is a directory to the static plugin; it is the app shell to the browser.
-  app.get('/', (_request, reply) =>
-    reply.header('cache-control', 'no-store').sendFile('index.html'),
-  );
+  app.get('/', (_request, reply) => reply.header('cache-control', 'no-store').sendFile(shell));
 
   app.addHook('onSend', async (_request, reply) => {
     const type = reply.getHeader('content-type');
@@ -63,13 +62,12 @@ export function registerWebApp(app: FastifyInstance, root: string): void {
   });
 }
 
-/** Not-found fallback: client-side routes get the app shell (index.html). */
-export function appShellFallback(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): FastifyReply | undefined {
-  if ((request.method === 'GET' || request.method === 'HEAD') && isAppRoute(request.url)) {
-    return reply.header('cache-control', 'no-store').sendFile('index.html');
-  }
-  return undefined;
+/** Not-found fallback: client-side routes get the app shell. */
+export function appShellFallback(shell = 'index.html') {
+  return (request: FastifyRequest, reply: FastifyReply): FastifyReply | undefined => {
+    if ((request.method === 'GET' || request.method === 'HEAD') && isAppRoute(request.url)) {
+      return reply.header('cache-control', 'no-store').sendFile(shell);
+    }
+    return undefined;
+  };
 }

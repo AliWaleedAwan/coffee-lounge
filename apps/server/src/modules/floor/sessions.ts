@@ -274,6 +274,36 @@ export async function cancelSession(
       status: session.status,
     });
   }
+  const { rows: billable } = await tx.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM cl.order_lines l JOIN cl.order_rounds r ON r.id = l.round_id
+      WHERE l.session_id = $1 AND r.status = 'accepted'
+        AND l.qty - l.qty_cancelled_unprepared - l.qty_cancelled_prepared > 0`,
+    [session.id],
+  );
+  if ((billable[0]?.n ?? 0) > 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Items were already accepted for this table. Cancel them first, or take payment.',
+    );
+  }
+  const { rows: pending } = await tx.query<{ id: string }>(
+    `UPDATE cl.order_rounds SET status = 'cancelled', decided_at = now(), decided_by = $2
+      WHERE session_id = $1 AND status = 'pending_approval' RETURNING id::text`,
+    [session.id, who.actor.userId],
+  );
+  for (const r of pending) {
+    await tx.query(
+      `INSERT INTO cl.order_events (round_id, event_type, actor_kind, actor_user_id, reason, event_key, correlation_id)
+       VALUES ($1, 'round_cancelled', 'user', $2, $3, $4, $5)`,
+      [
+        r.id,
+        who.actor.userId,
+        reason,
+        `round_cancelled:session_cancel:${session.id}:${r.id}`,
+        who.correlationId,
+      ],
+    );
+  }
   await tx.query(
     `UPDATE cl.dining_sessions SET status = 'cancelled', closed_at = now(), close_reason = $2 WHERE id = $1`,
     [session.id, reason],
@@ -326,13 +356,17 @@ export interface EntryPoint {
   tableId: string | null;
 }
 
-async function issueGuestToken(tx: Tx, sessionId: string, entryPointId: string): Promise<string> {
+async function issueGuestToken(
+  tx: Tx,
+  sessionId: string,
+  entryPointId: string,
+): Promise<{ token: string; tokenId: string }> {
   const { token, hash } = newToken();
-  await tx.query(
-    'INSERT INTO cl.session_guest_tokens (session_id, entry_point_id, token_hash) VALUES ($1, $2, $3)',
+  const { rows } = await tx.query<{ id: string }>(
+    'INSERT INTO cl.session_guest_tokens (session_id, entry_point_id, token_hash) VALUES ($1, $2, $3) RETURNING id::text',
     [sessionId, entryPointId, hash],
   );
-  return token;
+  return { token, tokenId: rows[0]?.id ?? '' };
 }
 
 /**
@@ -349,7 +383,7 @@ export async function joinIfActive(
     await tx.lock('dining_tables', [tableId]);
     const session = await activeSessionAt(tx, tableId);
     if (!session) return null;
-    const token = await issueGuestToken(tx, session.id, entry.id);
+    const { token } = await issueGuestToken(tx, session.id, entry.id);
     await sessionChanged(tx, session);
     return { session, token };
   });
@@ -362,7 +396,7 @@ export async function joinIfActive(
 export async function openOrJoinFromQr(
   tx: Tx,
   entry: EntryPoint,
-): Promise<{ session: SessionRow; token: string; opened: boolean }> {
+): Promise<{ session: SessionRow; token: string; tokenId: string; opened: boolean }> {
   if (entry.kind !== 'table' || entry.tableId === null) {
     throw new Error('counter takeaway sessions arrive in step 3.9');
   }
@@ -371,9 +405,9 @@ export async function openOrJoinFromQr(
   const session =
     existing ??
     (await insertSession(tx, { tableId: entry.tableId, via: 'qr', entryPointId: entry.id }));
-  const token = await issueGuestToken(tx, session.id, entry.id);
+  const { token, tokenId } = await issueGuestToken(tx, session.id, entry.id);
   await sessionChanged(tx, session);
-  return { session, token, opened: !existing };
+  return { session, token, tokenId, opened: !existing };
 }
 
 export interface GuestContext {

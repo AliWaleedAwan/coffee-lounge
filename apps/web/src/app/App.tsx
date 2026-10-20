@@ -9,7 +9,9 @@ import { AREAS, homePath } from '../nav/areas.ts';
 import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
+import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
+import { SessionScreen } from '../screens/session/SessionScreen.tsx';
 import { MenuScreen } from '../screens/menu/MenuScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
@@ -32,11 +34,14 @@ export function createQueryClient(): QueryClient {
 }
 
 const BUILT: Record<string, () => JSX.Element> = {
+  approvals: ApprovalsScreen,
   devices: DevicesScreen,
   floor: FloorScreen,
   health: HealthScreen,
   menu: MenuScreen,
 };
+
+const FLOOR = AREAS.find((a) => a.id === 'floor');
 
 function Home() {
   return <Navigate to={homePath(permissionSet(useSignedIn()))} replace />;
@@ -51,6 +56,16 @@ export function AppRoutes() {
       <Route element={<RequireSession />}>
         <Route index element={<Home />} />
         <Route path="/account" element={<AccountScreen />} />
+        {FLOOR ? (
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              <AreaPage area={FLOOR}>
+                <SessionScreen />
+              </AreaPage>
+            }
+          />
+        ) : null}
         {AREAS.map((area) => {
           const Screen = BUILT[area.id];
           return (

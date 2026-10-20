@@ -262,38 +262,66 @@ export interface Shortage {
   name: string;
   needed: string;
   available: string;
+  /** Keys of the lines that needed the ingredient (order line ids, or the caller's keys). */
+  lineKeys: string[];
 }
 
 /**
- * Reserves a line's ingredients at acceptance (V1). Refuses with INSUFFICIENT_STOCK and
- * the shortages when any ingredient's available quantity (on hand − reserved) is short;
- * nothing is reserved then.
+ * One line's needs at acceptance: ingredient id → quantity for the whole line. `key` is
+ * the order line id, or any caller key when the lines are not inserted yet.
  */
-export async function reserve(
-  tx: Tx,
-  input: { orderLineId: string; requirement: ReadonlyMap<string, Decimal> },
-): Promise<void> {
-  const needs = [...input.requirement].filter(([, q]) => q.greaterThan(0));
-  if (needs.length === 0) return;
-  const balances = await lockBalances(
-    tx,
-    needs.map(([id]) => id),
-  );
+export interface LineRequirement {
+  key: string;
+  requirement: ReadonlyMap<string, Decimal>;
+}
+
+export interface StockHold {
+  /** Writes the reservations; `lineIdOf` maps each key to its order line id. */
+  commit(lineIdOf?: (key: string) => string): Promise<void>;
+}
+
+/**
+ * First half of a reservation (V1): locks the balances once, in ascending item id, and
+ * checks them against the **total** need of all the lines. When any ingredient is short
+ * it throws INSUFFICIENT_STOCK with each short ingredient and the keys of the lines that
+ * needed it, and nothing is written. The caller then inserts its lines (taking document
+ * numbers last, DATABASE.md §14) and commits the hold.
+ */
+export async function holdStock(tx: Tx, lines: readonly LineRequirement[]): Promise<StockHold> {
+  const total = new Map<string, Decimal>();
+  const users = new Map<string, string[]>();
+  for (const line of lines) {
+    for (const [itemId, q] of line.requirement) {
+      if (q.lessThanOrEqualTo(0)) continue;
+      total.set(itemId, (total.get(itemId) ?? new Decimal(0)).plus(q));
+      users.set(itemId, [...(users.get(itemId) ?? []), line.key]);
+    }
+  }
+  if (total.size === 0) return { commit: () => Promise.resolve() };
+  const itemIds = [...total.keys()];
+  const balances = await lockBalances(tx, itemIds);
   const { rows: untracked } = await tx.query<{ name: string }>(
     'SELECT name FROM cl.inventory_items WHERE id = ANY($1::bigint[]) AND NOT stock_control_active',
-    [needs.map(([id]) => id)],
+    [itemIds],
   );
   if (untracked.length > 0) {
     // Cannot happen through the services: a recipe goes live only when every ingredient is counted.
     throw new Error(`not stock-controlled: ${untracked.map((r) => r.name).join(', ')}`);
   }
   const shortages: Shortage[] = [];
-  for (const [itemId, q] of needs) {
+  for (const [itemId, q] of total) {
     const b = balances.get(itemId);
     if (!b) continue;
     const available = b.onHand.minus(b.reserved);
-    if (available.lessThan(q))
-      shortages.push({ itemId, name: '', needed: q.toFixed(4), available: available.toFixed(4) });
+    if (available.lessThan(q)) {
+      shortages.push({
+        itemId,
+        name: '',
+        needed: q.toFixed(4),
+        available: available.toFixed(4),
+        lineKeys: users.get(itemId) ?? [],
+      });
+    }
   }
   if (shortages.length > 0) {
     const { rows } = await tx.query<{ id: string; name: string }>(
@@ -301,28 +329,43 @@ export async function reserve(
       [shortages.map((s) => s.itemId)],
     );
     const names = new Map(rows.map((r) => [r.id, r.name]));
-    for (const s of shortages) s.name = names.get(s.itemId) ?? '';
+    for (const sh of shortages) sh.name = names.get(sh.itemId) ?? '';
     throw new AppError(
       'INSUFFICIENT_STOCK',
-      `Not enough ${shortages.map((s) => s.name).join(', ')}`,
+      `Not enough ${shortages.map((sh) => sh.name).join(', ')}`,
       { shortages },
     );
   }
-  for (const [itemId, q] of needs) {
-    const b = balances.get(itemId);
-    if (!b) continue;
-    await tx.query(
-      'INSERT INTO cl.stock_reservations (order_line_id, item_id, qty_reserved) VALUES ($1, $2, $3)',
-      [input.orderLineId, itemId, q.toFixed(4)],
-    );
-    b.reserved = b.reserved.plus(q);
-    await saveBalance(tx, b);
-    await evaluateAlerts(tx, b);
-  }
-  await announce(
-    tx,
-    needs.map(([id]) => id),
-  );
+  return {
+    async commit(lineIdOf = (key) => key) {
+      for (const line of lines) {
+        for (const [itemId, q] of line.requirement) {
+          if (q.lessThanOrEqualTo(0)) continue;
+          await tx.query(
+            'INSERT INTO cl.stock_reservations (order_line_id, item_id, qty_reserved) VALUES ($1, $2, $3)',
+            [lineIdOf(line.key), itemId, q.toFixed(4)],
+          );
+        }
+      }
+      for (const [itemId, q] of total) {
+        const b = balances.get(itemId);
+        if (!b) continue;
+        b.reserved = b.reserved.plus(q);
+        await saveBalance(tx, b);
+        await evaluateAlerts(tx, b);
+      }
+      await announce(tx, itemIds);
+    },
+  };
+}
+
+/** Holds and commits at once, for lines that already exist (keys are order line ids). */
+export async function reserve(
+  tx: Tx,
+  input: { orderLineId: string; requirement: ReadonlyMap<string, Decimal> },
+): Promise<void> {
+  const hold = await holdStock(tx, [{ key: input.orderLineId, requirement: input.requirement }]);
+  await hold.commit();
 }
 
 /** One ingredient to consume or release: a quantity, or 'rest' for the line's last units. */

@@ -176,6 +176,7 @@ describe('job queue', () => {
     expect(Object.keys(tasks).sort()).toEqual([
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_outbox',
+      'orders:escalate',
       'sessions:stale_scan',
       'stock:reconcile',
     ]);
@@ -183,12 +184,14 @@ describe('job queue', () => {
     expect(schedule.map((c) => c.task)).toEqual([
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_outbox',
+      'orders:escalate',
       'sessions:stale_scan',
       'stock:reconcile',
     ]);
     expect(CRONTAB.split('\n').map((line) => line.split(' ').slice(0, 5).join(' '))).toEqual([
       '5 * * * *',
       '35 * * * *',
+      '* * * * *',
       '*/10 * * * *',
       '10 4 * * *',
     ]);

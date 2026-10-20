@@ -76,7 +76,7 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 8; i++) {
+for (let i = 1; i <= 12; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },
@@ -121,6 +121,7 @@ const apps = buildApps(
     readiness,
     health,
     staffWebRoot: WEB_ROOT,
+    customerWebRoot: WEB_ROOT,
   },
   {
     customer: (app) => registerCustomerRoutes(app, { pool }),
