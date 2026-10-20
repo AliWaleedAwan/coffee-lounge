@@ -1,0 +1,26 @@
+<!--
+  WinSW service definition (WINDOWS_DEPLOYMENT.md §2). install.ps1 fills in the {{…}}
+  placeholders, saves it next to a copy of WinSW named coffeelounge-worker.exe, and
+  then sets the virtual service account (NT SERVICE\coffeelounge-worker) with sc.exe.
+-->
+<service>
+  <id>coffeelounge-worker</id>
+  <name>Coffee Lounge worker</name>
+  <description>Coffee Lounge background jobs: printing, reports, housekeeping.</description>
+  <executable>{{INSTALL_DIR}}\runtime\node.exe</executable>
+  <arguments>--env-file="{{DATA_DIR}}\config\server.env" "{{INSTALL_DIR}}\app\dist\worker.js"</arguments>
+  <workingdirectory>{{INSTALL_DIR}}\app</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <depend>postgresql-x64-17</depend>
+  <!-- Ctrl+C reaches Node as SIGINT: it finishes requests and closes the database cleanly. -->
+  <stoptimeout>20 sec</stoptimeout>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 day</resetfailure>
+  <logpath>{{DATA_DIR}}\logs</logpath>
+  <log mode="roll-by-time">
+    <pattern>yyyyMMdd</pattern>
+  </log>
+</service>

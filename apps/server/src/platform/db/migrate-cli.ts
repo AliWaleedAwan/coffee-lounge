@@ -2,11 +2,11 @@
  * Applies pending migrations to DATABASE_URL.
  * Usage (from apps/server): corepack pnpm db:migrate
  */
-import { fileURLToPath } from 'node:url';
 import { runMigrations as runJobQueueMigrations } from 'graphile-worker';
 import pg from 'pg';
 import { loadMigrations, migrate } from './migrate.ts';
 import { adoptJobQueue } from '../jobs.ts';
+import { MIGRATIONS_DIR } from '../paths.ts';
 import { createPool } from './pool.ts';
 
 const url = process.env['DATABASE_URL'];
@@ -15,7 +15,7 @@ if (!url) {
   process.exit(1);
 }
 
-const migrationsDir = fileURLToPath(new URL('../../../migrations', import.meta.url));
+const migrationsDir = MIGRATIONS_DIR;
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {

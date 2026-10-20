@@ -3,12 +3,12 @@
  * Waits until the database is reachable and its schema matches this version, then runs
  * the job queue and writes a heartbeat every 15 s.
  */
-import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Runner } from 'graphile-worker';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
+import { MIGRATIONS_DIR } from './platform/paths.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
 import { Heartbeat } from './worker/maintenance.ts';
@@ -28,7 +28,7 @@ const pool = createPool({
     log('error', 'database connection error', { err: error.message });
   },
 });
-const migrations = await loadMigrations(fileURLToPath(new URL('../migrations', import.meta.url)));
+const migrations = await loadMigrations(MIGRATIONS_DIR);
 
 const stop = new AbortController();
 let heartbeat: Heartbeat | undefined;

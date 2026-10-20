@@ -3,13 +3,13 @@
  * Starts both listeners immediately; business routes answer 503 until startup checks pass,
  * and the checks are retried every few seconds (e.g. while PostgreSQL is still starting).
  */
-import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { buildApps } from './platform/app.ts';
 import { ClockJumpDetector } from './platform/clock.ts';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
+import { DEV_WEB_DIST, MIGRATIONS_DIR } from './platform/paths.ts';
 import { HealthMonitor, parseInternetTarget } from './platform/health.ts';
 import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
@@ -29,7 +29,7 @@ const pool = createPool({
     customer.log.error({ err: error }, 'database connection error');
   },
 });
-const migrations = await loadMigrations(fileURLToPath(new URL('../migrations', import.meta.url)));
+const migrations = await loadMigrations(MIGRATIONS_DIR);
 const secureCookies = config.STAFF_TLS_CERT !== undefined;
 const hub = new LiveHub({
   pool,
@@ -50,7 +50,7 @@ const health = new HealthMonitor({
   ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
   internetTarget: parseInternetTarget(config.INTERNET_CHECK_TARGET),
 });
-const webRoot = config.WEB_DIST_DIR ?? fileURLToPath(new URL('../../web/dist', import.meta.url));
+const webRoot = config.WEB_DIST_DIR ?? DEV_WEB_DIST;
 const staffWebRoot = webAppAvailable(webRoot) ? webRoot : undefined;
 let hubStarted = false;
 const { customer, staff } = buildApps(

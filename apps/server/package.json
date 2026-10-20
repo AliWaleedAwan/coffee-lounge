@@ -3,8 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
+    "bundle": "node scripts/bundle.ts",
     "db:migrate": "node --env-file=../../.env src/platform/db/migrate-cli.ts",
     "start": "node --env-file=../../.env src/main.ts",
     "dev": "node --watch --env-file=../../.env src/main.ts",
@@ -22,6 +27,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "esbuild": "0.28.2"
   }
 }
