@@ -52,8 +52,6 @@ jobs:
     defaults:
       run:
         shell: powershell
-    env:
-      OWNER_USB: ${{ runner.temp }}\owner-usb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -76,7 +74,7 @@ jobs:
       - name: Install (unattended)
         run: |
           $passphrase = 'ci-' + [guid]::NewGuid().ToString('N')
-          powershell -ExecutionPolicy Bypass -File out\CoffeeLounge\setup\install.ps1 -Unattended -SkipHostSettings -CaExportDir $env:OWNER_USB -CaPassphrase $passphrase
+          powershell -ExecutionPolicy Bypass -File out\CoffeeLounge\setup\install.ps1 -Unattended -SkipHostSettings -CaExportDir "$env:RUNNER_TEMP\owner-usb" -CaPassphrase $passphrase
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
@@ -84,7 +82,7 @@ jobs:
           "$password`n$password`n" | & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
-        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir $env:OWNER_USB
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb"
       - name: Uninstall keeps the data; reinstalling picks it up
         run: |
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
