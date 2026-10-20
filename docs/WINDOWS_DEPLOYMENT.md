@@ -130,3 +130,35 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 | Server unavailable | Branded screen with what to check and "Try again now"; probes `/health/live` every 3 s and opens the app as soon as it answers. A certificate problem shows "Server not trusted" (do not enter passwords) and is never bypassed. Missing or invalid settings show "Counter app not set up" |
 | Preload API | `window.coffeeLounge = { version, retryNow() }` only. First-run address entry (`setHostAddress` in 02-architecture §2.11) was dropped: the installer writes the settings, so staff cannot point the app elsewhere |
 | Still to do on Windows (step 2.9) | Installer, auto-start at `Counter` login (H-11), full screen, Electron fuses (no `RunAsNode`, no `NODE_OPTIONS`, cookie encryption, app only from the signed asar), and the drills above on the iMac |
+
+## 11. Windows install (step 2.9a, as built; proven in CI on Windows Server 2022)
+
+**Build** (`deploy/windows/build-bundle.ps1`, on Windows): the web app, the server bundled with esbuild (`apps/server/dist`) plus production `node_modules` from `pnpm deploy`, and three pinned downloads checked by SHA-256 (`deploy/windows/components.json`): Node 24.22.0 (hash from nodejs.org), PostgreSQL 17.11 binaries and WinSW 2.12.0. EDB and WinSW publish no checksums, so those two hashes were taken from the first CI download on 20 Oct 2026 and must be re-checked when the versions change. Nothing is downloaded at install time.
+
+**Install** (`setup\install.ps1`, Windows PowerShell 5.1, as Administrator; re-running it is the upgrade path and keeps the data):
+
+| Step | As built |
+|---|---|
+| PostgreSQL | Binaries copied to `C:\Program Files\PostgreSQL\17`; cluster created with `initdb` (UTF8, scram-sha-256) instead of the EDB installer; listens on `localhost` only; `pg_hba` allows password logins from this PC only; `wal_sync_method = fsync` (H-8: `fsync_writethrough` is rejected by this build; the power-cut drill measures the choice); logs in `pgdata\log`; service `postgresql-x64-17` as NetworkService with recovery 10 s / 30 s / 60 s |
+| Secrets | Superuser, `cl_migrator` and `cl_service` passwords are random, sealed with DPAPI (machine scope) in `config\*.secret`; never on a command line or in a log |
+| Logins | `cl_migrator` (owns the database, runs migrations) and `cl_service` (member of `cl_app` only; the API and worker log in as it). DATABASE.md §15 |
+| Certificates | Shop root CA (10 years, P-256, encrypted key) and server certificate for the shop address and `127.0.0.1`; the CA key and certificate go to `-CaExportDir` (the owner's USB key) and the CA key is deleted from the PC. The passphrase is typed, or passed to unattended runs in an environment variable (PowerShell 5.1 garbles piped stdin) |
+| Services | WinSW wrappers `coffeelounge-api` / `-worker`: automatic (delayed), depend on PostgreSQL, own virtual accounts (`NT SERVICE\…`), recovery 5 s / 10 s / 30 s with reset after 1 day, stop with Ctrl+C (Node shuts down cleanly), daily log files |
+| Permissions | `config` (secrets, TLS key) readable by SYSTEM, Administrators and the two service accounts only; `logs` and `files` writable by the services; `desktop` settings readable by Users |
+| Firewall | 8080 and 8443 inbound from the local subnet, private profile only |
+| Host settings | H-4, H-5, H-12, H-15 and the Defender exclusion (H-13), skippable with `-SkipHostSettings` (test machines) |
+| Counter app settings | `desktop\desktop.json` and the public root certificate (§10) |
+| Health | Waits for `/health/ready` on 8443 (trusting only the shop root) and 8080; on a first interactive install, creates the owner account |
+
+**Uninstall** (`setup\uninstall.ps1`) removes the services, firewall rules and program files and keeps `C:\ProgramData\CoffeeLounge`; removing the data also needs `-RemoveData -ConfirmShopName "Coffee Lounge"`.
+
+**Evidence (AT-47, `deploy/windows/tests/smoke.ps1`, every push):** services running with the right start type, accounts, dependencies and recovery actions; PostgreSQL listening on this PC only; staff HTTPS trusted only through the shop root, customer HTTP ready, staff app served with its CSP; worker heartbeat fresh; `cl_service` cannot change the schema; secrets not readable by ordinary users; CA key not on the PC; a killed API restarted by Windows; a killed database process recovered by PostgreSQL with the API carrying on (AT-17 on Windows); uninstall keeps the database and a reinstall serves the same owner account.
+
+**Open points**
+
+| # | Point | Proposal |
+|---|---|---|
+| W-1 | If the PostgreSQL **postmaster itself** dies, `pg_ctl`'s service wrapper reports a clean stop, so Windows does not apply the recovery actions; the database stays down until a restart or reboot (the health page shows it). A crashed database *process* is handled by PostgreSQL itself (tested) | Decide at the iMac dry run: either accept (very rare event), or run `postgres.exe` under WinSW like the API so Windows restarts it |
+| W-2 | The CI machine is Windows Server 2022, not Windows 10, has no Boot Camp and cannot reboot or lose power | The iMac dry run covers Windows 10, auto-login, power cuts and the clock |
+| W-3 | WinSW rolls logs daily but does not delete old ones | Housekeeping job in the worker (30 days) in a later step |
+| W-4 | Not automated yet: static IP and network profile (H-1, H-2), counter app installation, auto-start and full screen (H-11), Electron fuses, the NSIS wrapper (`CoffeeLounge-Setup.exe`), test print, setup sheet | Step 2.9b (counter app, NSIS) and Phase 3/7 (printing, setup sheet) |
