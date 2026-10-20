@@ -18,5 +18,8 @@ playwright-report/
 .DS_Store
 Thumbs.db
 
+# printer simulator captures
+print-captures/
+
 # browser end-to-end test state (test credentials)
 .e2e/

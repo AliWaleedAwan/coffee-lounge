@@ -31,7 +31,7 @@ Windows-specific work (services, installer, spooler printing, clock check) must 
 | 2.7 ✅ | Web app shell: Vite + React, design tokens (UI_UX.md §2), fonts self-hosted, device registration, login, PIN switch, role-based navigation from `/auth/me`, connection banner, SSE client with refetch | AT-86 (shell screens), E2E login journey | 2.4, 2.5 |
 | 2.8 ✅ | Electron shell: hardened (context isolation, sandbox, CSP, origin lock, certificate pinning), "server unavailable" screen | AT-46 | 2.7 |
 | 2.9 | Windows skeleton: WinSW service definitions (API, worker), dependency on PostgreSQL, recovery policies; installer skeleton (writes `BACKUP_DRIVE_PATH=B:\` and `DISK_CHECK_PATH` to the config, grants the app login what `graphile_worker` needs); local CA + server certificate generation tool (SANs `192.168.100.250` and `127.0.0.1`, SHA-256); counter app installer, settings file, auto-start, full screen and Electron fuses (WINDOWS_DEPLOYMENT.md §10) | AT-47 on Windows | 2.6, Windows environment |
-| 2.10 | Test harness: disposable database per test file, concurrency harness with barriers, ESC/POS printer simulator (TCP 9100 + byte capture), API route × role generator | Harness self-tests | 2.1 (grows with each step) |
+| 2.10 ✅ | Test harness: disposable database per test file, concurrency harness with barriers, ESC/POS printer simulator (TCP 9100 + byte capture), API route × role generator | Harness self-tests | 2.1 (grows with each step) |
 
 ## 3. Working rules for the build
 
