@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
-import { lineReader } from './input.ts';
+import { lineReader, secret } from './input.ts';
 import { loadConfig } from '../platform/config.ts';
 import { createPool } from '../platform/db/pool.ts';
 import { AppError } from '../platform/errors.ts';
@@ -48,9 +48,7 @@ function required(value: string | undefined, flag: string): string {
 
 try {
   if (command === 'create-owner') {
-    const password = await input.ask('New owner password: ', true);
-    const again = await input.ask('Repeat password: ', true);
-    if (password !== again) throw new Error('Passwords do not match');
+    const password = await secret(input, 'CL_OWNER_PASSWORD', 'New owner password: ', true);
     const { recoveryCode } = await createOwner(
       pool,
       {

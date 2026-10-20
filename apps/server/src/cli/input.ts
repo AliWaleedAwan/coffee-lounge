@@ -31,3 +31,23 @@ export function lineReader(): {
     },
   };
 }
+
+/**
+ * A secret for an unattended run (installer, CI) from an environment variable of this
+ * process, or else typed by the person at the keyboard (twice when `confirm`).
+ */
+export async function secret(
+  input: ReturnType<typeof lineReader>,
+  envName: string,
+  prompt: string,
+  confirm = false,
+): Promise<string> {
+  const fromEnv = process.env[envName];
+  if (fromEnv) return fromEnv;
+  const first = await input.ask(prompt, true);
+  if (confirm) {
+    const again = await input.ask('Repeat: ', true);
+    if (first !== again) throw new Error('The two entries do not match');
+  }
+  return first;
+}

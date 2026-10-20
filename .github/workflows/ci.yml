@@ -78,8 +78,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
-          $password = 'ci-owner-' + [guid]::NewGuid().ToString('N')
-          "$password`n$password`n" | & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
+          $env:CL_OWNER_PASSWORD = 'ci-owner-' + [guid]::NewGuid().ToString('N')
+          & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb"

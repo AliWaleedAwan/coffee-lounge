@@ -221,5 +221,18 @@ describe('certs command line', () => {
     expect(again.stderr).toMatch(/EEXIST/);
     const mismatch = run(['create-ca', '--out', join(dir, 'x')], `${PASS}\nsomething else\n`);
     expect(mismatch.stderr).toMatch(/do not match/);
+
+    // Unattended (installer): the passphrase comes from the environment, not stdin.
+    const viaEnv = spawnSync(
+      process.execPath,
+      ['src/cli/certs.ts', 'create-ca', '--out', join(dir, 'env-ca')],
+      {
+        cwd: SERVER_DIR,
+        input: '',
+        encoding: 'utf8',
+        env: { ...process.env, CL_CA_PASSPHRASE: PASS },
+      },
+    );
+    expect(viaEnv.status, viaEnv.stderr).toBe(0);
   });
 });

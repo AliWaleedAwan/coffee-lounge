@@ -188,9 +188,10 @@ if ($needCertificates) {
   Set-RestrictedAcl -Path $caTemp
   try {
     $certs = Join-Path $InstallDir 'app\dist\certs.js'
-    Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -InputText "$CaPassphrase`n$CaPassphrase`n" -Hide @($CaPassphrase) | Out-Null
+    $caEnv = @{ CL_CA_PASSPHRASE = $CaPassphrase }
+    Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
     Invoke-Native -FilePath $Node -Arguments @($certs, 'issue-server', '--ca-dir', $caTemp, '--out', $Tls, '--ip', $ShopIp, '--ip', '127.0.0.1') `
-      -InputText "$CaPassphrase`n" -Hide @($CaPassphrase) | Out-Null
+      -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
     New-Item -ItemType Directory -Force -Path $CaExportDir | Out-Null
     Copy-Item (Join-Path $caTemp 'coffee-lounge-root.pem') $CaExportDir -Force
     Copy-Item (Join-Path $caTemp 'coffee-lounge-root.key') $CaExportDir -Force

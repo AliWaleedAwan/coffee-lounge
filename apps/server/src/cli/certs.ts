@@ -7,14 +7,15 @@
  *                                                  → server.pem, server.key
  *   show           <certificate.pem>
  *
- * The CA passphrase is typed without echo, or piped by the installer (twice for create-ca).
+ * The CA passphrase is typed without echo, or given to unattended runs (installer) in
+ * the CL_CA_PASSPHRASE environment variable.
  * Usage (from apps/server): corepack pnpm certs <command> [options]
  */
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRootCa, describeCertificate, issueServerCertificate } from '../platform/x509.ts';
-import { lineReader } from './input.ts';
+import { lineReader, secret } from './input.ts';
 
 export const ROOT_CERT = 'coffee-lounge-root.pem';
 export const ROOT_KEY = 'coffee-lounge-root.key';
@@ -48,9 +49,12 @@ const input = lineReader();
 try {
   if (command === 'create-ca') {
     const out = required(values.out, 'out');
-    const passphrase = await input.ask('New CA passphrase (keep it with the USB key): ', true);
-    const again = await input.ask('Repeat passphrase: ', true);
-    if (passphrase !== again) throw new Error('Passphrases do not match');
+    const passphrase = await secret(
+      input,
+      'CL_CA_PASSPHRASE',
+      'New CA passphrase (keep it with the USB key): ',
+      true,
+    );
     const ca = createRootCa({ passphrase });
     await mkdir(out, { recursive: true });
     await writeFile(join(out, ROOT_CERT), ca.certificatePem, { flag: 'wx' });
@@ -63,7 +67,7 @@ try {
     const out = required(values.out, 'out');
     const ips = values.ip ?? [];
     if (ips.length === 0) throw new Error('--ip is required (repeat it for each address)');
-    const caPassphrase = await input.ask('CA passphrase: ', true);
+    const caPassphrase = await secret(input, 'CL_CA_PASSPHRASE', 'CA passphrase: ');
     const issued = issueServerCertificate({
       caCertificatePem: await readFile(join(caDir, ROOT_CERT), 'utf8'),
       caPrivateKeyPem: await readFile(join(caDir, ROOT_KEY), 'utf8'),
