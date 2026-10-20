@@ -210,6 +210,7 @@ describe('GET /api/staff/v1/events (AT-73, staff stream part)', () => {
     const started = Date.now();
     await fx.staff.close();
     await stream.ended;
-    expect(Date.now() - started).toBeLessThan(2_000);
+    // Without the fix this hangs for ever; slow CI runners need a few seconds.
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 });

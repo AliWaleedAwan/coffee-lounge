@@ -24,6 +24,9 @@ Set-Location $repo
 $nodeZip = Get-Component -Spec $components.node -CacheDir $Cache
 $pgZip = Get-Component -Spec $components.postgresql -CacheDir $Cache
 $winsw = Get-Component -Spec $components.winsw -CacheDir $Cache
+if ($script:MissingPins.Count -gt 0) {
+  throw ("Downloads without a pinned sha256 (review each and pin it in components.json):`n" + ($script:MissingPins -join "`n"))
+}
 
 if (Test-Path $Out) { Remove-Item -Recurse -Force $Out }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null

@@ -10,6 +10,7 @@ Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $script:LogFile = $null
+$script:MissingPins = @()
 
 function Write-Step([string]$Message) {
   $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
@@ -67,7 +68,8 @@ function Get-Component {
   }
   $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
   if (-not $Spec.sha256) {
-    throw "No pinned sha256 for $($Spec.url). Downloaded file has sha256 $hash. Review it and pin it in components.json."
+    $script:MissingPins += "$($Spec.url) has sha256 $hash"
+    return $null
   }
   if ($hash -ne $Spec.sha256.ToLowerInvariant()) {
     Remove-Item -Force $file
