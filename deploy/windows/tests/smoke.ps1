@@ -43,10 +43,16 @@ function Invoke-ServiceSql([string]$Sql) {
   $url = $envLine.Substring('DATABASE_URL='.Length)
   $password = ([Uri]$url).UserInfo.Split(':')[1]
   $env:PGPASSWORD = $password
+  # Expected SQL errors arrive on stderr; 5.1 would turn them into exceptions under 'Stop'.
+  $savedPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   try {
     $out = & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U cl_service -d coffee_lounge -At -c $Sql 2>&1
     return [pscustomobject]@{ Code = $LASTEXITCODE; Output = (($out | ForEach-Object { "$_" }) -join "`n") }
-  } finally { Remove-Item Env:\PGPASSWORD }
+  } finally {
+    $ErrorActionPreference = $savedPreference
+    Remove-Item Env:\PGPASSWORD
+  }
 }
 
 function Get-ServiceNodePid([string]$Name) {
@@ -148,18 +154,20 @@ Check 'a crashed API is restarted by Windows and serves again' {
   if (-not $after -or $after -eq $before) { throw 'not restarted' }
   Wait-Ready 90
 }
-Check 'a crashed database is restarted and the API recovers without help (AT-17)' {
-  Get-Process -Name postgres -ErrorAction SilentlyContinue | Stop-Process -Force
+Check 'a crashed database process is recovered by PostgreSQL and the API carries on (AT-17)' {
+  # The postmaster is the child of the pg_ctl service process; kill one of its backends,
+  # as a crash would. PostgreSQL then resets every connection and recovers on its own.
+  $wrapper = (Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'").ProcessId
+  $postmaster = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapper AND Name='postgres.exe'"
+  $backend = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($postmaster.ProcessId) AND Name='postgres.exe'" | Select-Object -First 1
+  if (-not $backend) { throw 'no backend process found' }
+  Stop-Process -Id $backend.ProcessId -Force
   Start-Sleep -Seconds 5
-  $deadline = (Get-Date).AddSeconds(120)
-  do {
-    Start-Sleep -Seconds 3
-    $state = (Get-Service 'postgresql-x64-17').Status
-  } while ($state -ne 'Running' -and (Get-Date) -lt $deadline)
-  if ($state -ne 'Running') { throw "PostgreSQL is $state" }
+  if ((Get-Service 'postgresql-x64-17').Status -ne 'Running') { throw 'PostgreSQL service stopped' }
   if (-not (Wait-Ready 120)) { throw 'API not ready again' }
-  if ((Get-Service 'coffeelounge-api').Status -ne 'Running') { throw 'API service stopped' }
-  $true
+  $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
+  if ((Get-Content -Raw $log.FullName) -notmatch 'terminated by exception|reinitializing') { throw 'no crash recovery in the PostgreSQL log' }
+  ((Get-Service 'coffeelounge-api').Status -eq 'Running') -and ((Get-Service 'coffeelounge-worker').Status -eq 'Running')
 }
 
 if ($script:Failures.Count -gt 0) {
