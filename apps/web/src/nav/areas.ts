@@ -9,7 +9,7 @@ export interface Area {
   path: string;
   /** Visible when the user has any of these permissions. */
   anyOf: readonly string[];
-  /** Built in Phase 2; the others show a placeholder until their phase. */
+  /** Built so far; the others show a placeholder until their phase. */
   ready: boolean;
 }
 
@@ -49,8 +49,15 @@ export const AREAS: readonly Area[] = [
     id: 'menu',
     label: 'Menu & recipes',
     path: '/menu',
-    anyOf: ['menu.manage', 'recipes.manage', 'recipes.read'],
-    ready: false,
+    anyOf: [
+      'menu.manage',
+      'menu.price_change',
+      'menu.availability_toggle',
+      'promotions.manage',
+      'recipes.manage',
+      'recipes.read',
+    ],
+    ready: true,
   },
   {
     id: 'reports',

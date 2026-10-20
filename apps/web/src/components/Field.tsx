@@ -65,3 +65,70 @@ export function SelectField({ label, value, options, onChange, disabled }: Selec
     </div>
   );
 }
+
+export interface TextAreaFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  hint?: ReactNode;
+  rows?: number;
+  maxLength?: number;
+}
+
+export function TextAreaField({
+  label,
+  value,
+  onChange,
+  hint,
+  rows = 3,
+  maxLength,
+}: TextAreaFieldProps) {
+  const id = useId();
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <textarea
+        id={id}
+        rows={rows}
+        value={value}
+        maxLength={maxLength}
+        aria-describedby={hint ? `${id}-hint` : undefined}
+        onChange={(e) => {
+          onChange(e.target.value);
+        }}
+      />
+      {hint ? (
+        <span id={`${id}-hint`} className="field-hint">
+          {hint}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** A checkbox with its label; large enough to tap (UI_UX.md §5). */
+export function CheckField({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="check">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => {
+          onChange(e.target.checked);
+        }}
+      />
+      {label}
+    </label>
+  );
+}

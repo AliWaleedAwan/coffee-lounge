@@ -39,6 +39,8 @@ export interface FixtureOptions {
   probes?: Partial<HealthProbes>;
   /** Run every query with only the application role's privileges. */
   sessionRole?: 'cl_app';
+  /** Clock for time-dependent reads such as promotions. */
+  now?: () => Date;
 }
 
 export interface IdentityFixture extends PlatformFixture {
@@ -122,6 +124,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
           hub,
           health,
           ...(options.live ? { live: options.live } : {}),
+          ...(options.now ? { now: options.now } : {}),
         });
       },
     },

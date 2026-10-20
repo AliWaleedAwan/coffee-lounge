@@ -155,6 +155,10 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /menu` | `menu.read` | Staff menu with availability and prices |
 | `POST /menu/variants/{variantId}/availability` | `menu.availability_toggle` | Temporarily unavailable on/off with reason |
 | Catalog CRUD: `/menu/categories`, `/menu/items`, `/menu/items/{id}/variants`, `/modifier-groups`, `/modifier-options`, `/promotions`, `/tables`, `/qr-entry-points`, `/riders` | `menu.manage`, `menu.price_change`, `promotions.manage`, `tables.manage`, `riders.manage` | Standard pattern: `GET` list, `POST` create, `PATCH /{id}` with `expectedVersion`, `POST /{id}/archive`. No hard deletes. Price changes write price history. |
+| `GET /menu/catalog` | `menu.manage` | Management view of the menu: inactive rows too, with `version` on every row, and all modifier groups |
+| `POST /menu/variants/{variantId}/price` | `menu.price_change` | `{expectedVersion, price, reason}`; writes price history. Menu prices are whole rupees (D-16). Changing a modifier option's `priceDelta` through `PATCH /modifier-options/{id}` also needs `menu.price_change` |
+| `GET /menu/variants/{variantId}/price-history` | `menu.manage` | Newest first, with who and why |
+| `POST /modifier-groups/{groupId}/options` | `menu.manage` | Adds a choice to a group |
 | `GET /print-jobs?status=open` | `printers.manage` or `kitchen.reprint` | Failed / uncertain jobs |
 | `POST /print-jobs/{jobId}/retry` | same | Retry a failed job (same job, not a reprint) |
 | `POST /print-jobs/{jobId}/resolve-uncertain` | same | `printed` (mark sent) or `reprint` (new labelled copy) |
@@ -257,6 +261,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `invoice.changed` | I1–I4, discounts | `session:<id>`, `cashier` |
 | `payment.recorded` | P1, P2 | `cashier`, `session:<id>` |
 | `delivery.changed` | D0–D6 | `deliveries`, `cashier` |
+| `menu.changed` | Catalogue edit: category, item, size, price, choice or promotion | `menu` |
 | `availability.changed` | Stock-driven or manual availability change | `menu` |
 | `print_job.changed` | Failure, uncertain, recovery | `printers` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |

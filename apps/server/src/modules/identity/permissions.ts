@@ -45,25 +45,26 @@ export async function loadEffectivePermissions(
   db: Queryable,
   userId: string,
 ): Promise<Map<string, Grant>> {
-  const [user, grants, overrides, protectedRows] = await Promise.all([
-    db.query<{ is_owner: boolean }>(
-      `SELECT is_owner FROM cl.users WHERE id = $1 AND status = 'active'`,
-      [userId],
-    ),
-    db.query<{ key: string; role: string; scope: Scope | null }>(
-      `SELECT rp.permission_key AS key, r.key AS role, rp.scope
-         FROM cl.user_roles ur
-         JOIN cl.roles r ON r.id = ur.role_id
-         JOIN cl.role_permissions rp ON rp.role_id = ur.role_id
-        WHERE ur.user_id = $1`,
-      [userId],
-    ),
-    db.query<{ key: string; effect: 'grant' | 'deny' }>(
-      `SELECT permission_key AS key, effect FROM cl.user_permission_overrides WHERE user_id = $1`,
-      [userId],
-    ),
-    db.query<{ key: string }>(`SELECT key FROM cl.permissions WHERE is_protected`),
-  ]);
+  // One after another: db may be a transaction client, which runs one query at a time.
+  const user = await db.query<{ is_owner: boolean }>(
+    `SELECT is_owner FROM cl.users WHERE id = $1 AND status = 'active'`,
+    [userId],
+  );
+  const grants = await db.query<{ key: string; role: string; scope: Scope | null }>(
+    `SELECT rp.permission_key AS key, r.key AS role, rp.scope
+       FROM cl.user_roles ur
+       JOIN cl.roles r ON r.id = ur.role_id
+       JOIN cl.role_permissions rp ON rp.role_id = ur.role_id
+      WHERE ur.user_id = $1`,
+    [userId],
+  );
+  const overrides = await db.query<{ key: string; effect: 'grant' | 'deny' }>(
+    `SELECT permission_key AS key, effect FROM cl.user_permission_overrides WHERE user_id = $1`,
+    [userId],
+  );
+  const protectedRows = await db.query<{ key: string }>(
+    `SELECT key FROM cl.permissions WHERE is_protected`,
+  );
   const row = user.rows[0];
   if (!row) return new Map();
   return resolveEffective({
