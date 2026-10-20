@@ -283,7 +283,7 @@ if (-not $SkipHostSettings) {
 # ------------------------------------------------------------------ 10. counter app settings (WINDOWS_DEPLOYMENT.md §10)
 $desktopDir = Join-Path $DataDir 'desktop'
 Copy-Item $RootCa (Join-Path $desktopDir 'coffee-lounge-root.pem') -Force
-Set-Content -Path (Join-Path $desktopDir 'desktop.json') -Encoding UTF8 -Value '{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }'
+Write-Utf8NoBom (Join-Path $desktopDir 'desktop.json') '{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }'
 Set-RestrictedAcl -Path $desktopDir -Read @('*S-1-5-32-545') # Users: read only
 
 $counterExe = Join-Path $InstallDir 'desktop\CoffeeLounge.exe'

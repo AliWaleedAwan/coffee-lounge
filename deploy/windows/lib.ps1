@@ -144,3 +144,9 @@ function Show-ServiceFailure([string]$Name, [string[]]$Providers = @()) {
     Write-Step ("  {0} {1} [{2}] {3}" -f $e.TimeCreated.ToString('HH:mm:ss'), $e.ProviderName, $e.Id, ($e.Message -replace '\s+', ' '))
   }
 }
+
+# Writes UTF-8 without a byte-order mark (Set-Content -Encoding UTF8 in 5.1 adds one,
+# which JSON parsers reject).
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+  [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
+}

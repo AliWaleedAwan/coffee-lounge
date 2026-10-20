@@ -160,6 +160,12 @@ describe('configuration', () => {
     expect(cfg.root?.subject).toContain('Coffee Lounge Test Root');
   });
 
+  it('reads a settings file saved with a byte-order mark (Notepad, PowerShell 5.1)', async () => {
+    const file = join(dir, 'bom.json');
+    writeFileSync(file, '\uFEFF' + JSON.stringify({ serverUrl: 'http://127.0.0.1:8443' }));
+    expect((await loadDesktopConfig(file)).serverOrigin).toBe('http://127.0.0.1:8443');
+  });
+
   it('refuses https without a root, a non-CA root, paths, other schemes, remote http', async () => {
     const bad = async (raw: Record<string, unknown>, read = readRoot) =>
       parseDesktopConfig(raw, read).catch((e: unknown) => e);

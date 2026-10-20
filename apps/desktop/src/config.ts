@@ -36,7 +36,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function loadDesktopConfig(file: string): Promise<DesktopConfig> {
   let raw: unknown;
   try {
-    raw = JSON.parse(await readFile(file, 'utf8'));
+    // Windows tools (Notepad, PowerShell 5.1) may start the file with a byte-order mark.
+    raw = JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''));
   } catch (error) {
     throw new ConfigError(`Cannot read ${file}: ${(error as Error).message}`);
   }
