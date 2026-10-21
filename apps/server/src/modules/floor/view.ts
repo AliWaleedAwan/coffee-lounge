@@ -1,7 +1,7 @@
 /**
  * The floor (API.md §5.3 `GET /floor`): every table with its derived state, the waiter
- * it is assigned to, and its session. Pending-approval and uncollected counts join in
- * steps 3.4 and 3.5, when rounds and pickups exist.
+ * it is assigned to, and its session with orders waiting for approval and accepted units
+ * not yet picked up.
  */
 import { z } from 'zod';
 import type { Queryable } from '../../platform/db/pool.ts';
@@ -29,12 +29,19 @@ export async function readFloor(db: Queryable, now: Date) {
     guest_count: number | null;
     opened_at: Date | null;
     guest_phones: number;
+    pending_rounds: number;
+    uncollected: number;
   }>(
     `SELECT t.id::text, t.code, t.name, t.area, t.seats, t.layout_x, t.layout_y, t.availability,
             a.user_id::text AS waiter_id, u.display_name AS waiter_name,
             s.id::text AS session_id, s.session_no, s.status AS session_status, s.guest_count, s.opened_at,
             COALESCE((SELECT count(*)::int FROM cl.session_guest_tokens g
-                       WHERE g.session_id = s.id AND g.revoked_at IS NULL), 0) AS guest_phones
+                       WHERE g.session_id = s.id AND g.revoked_at IS NULL), 0) AS guest_phones,
+            COALESCE((SELECT count(*)::int FROM cl.order_rounds r
+                       WHERE r.session_id = s.id AND r.status = 'pending_approval'), 0) AS pending_rounds,
+            COALESCE((SELECT sum(l.qty - l.qty_picked_up - l.qty_cancelled_unprepared)::int
+                        FROM cl.order_lines l JOIN cl.order_rounds r ON r.id = l.round_id
+                       WHERE l.session_id = s.id AND r.status = 'accepted'), 0) AS uncollected
        FROM cl.dining_tables t
        LEFT JOIN cl.table_assignments a ON a.table_id = t.id AND a.ended_at IS NULL
        LEFT JOIN cl.users u ON u.id = a.user_id
@@ -74,6 +81,8 @@ export async function readFloor(db: Queryable, now: Date) {
                 guestCount: r.guest_count,
                 openedAt: r.opened_at.toISOString(),
                 guestPhones: r.guest_phones,
+                pendingRounds: r.pending_rounds,
+                notPickedUp: r.uncollected,
                 stale: r.opened_at.getTime() < staleBefore,
               }
             : null,

@@ -89,6 +89,9 @@ async function loadRounds(db: Queryable, where: string, params: unknown[]) {
 function lineView(l: LineRow, mods: ModRow[]) {
   const unit = new Decimal(l.unit_price ?? l.unit_price_quoted);
   const gross = unit.plus(l.modifiers_unit_total).times(l.qty);
+  // ORDER_STATE_MACHINE.md §3: billable = qty − cancelled (unmade and made); comps stay billable.
+  const billable = l.qty - l.qty_cancelled_unprepared - l.qty_cancelled_prepared;
+  const net = gross.minus(l.promotion_discount).dividedBy(l.qty).times(billable);
   return {
     id: l.id,
     lineNo: l.line_no,
@@ -103,10 +106,14 @@ function lineView(l: LineRow, mods: ModRow[]) {
     unitPrice: money.format(unit),
     priceLocked: l.price_locked,
     promotionDiscount: l.promotion_discount,
-    lineTotal: money.format(gross.minus(l.promotion_discount)),
+    lineTotal: money.format(net),
     pickedUp: l.qty_picked_up,
     served: l.qty_served,
     cancelled: l.qty_cancelled_unprepared + l.qty_cancelled_prepared,
+    /** Accepted units not yet picked up or cancelled. */
+    open: l.qty - l.qty_picked_up - l.qty_cancelled_unprepared,
+    /** Picked-up units that can still be voided. */
+    voidable: l.qty_picked_up - l.qty_cancelled_prepared,
   };
 }
 

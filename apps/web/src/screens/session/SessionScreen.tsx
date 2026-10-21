@@ -12,6 +12,7 @@ import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { roundBody, rupees, type CartLine, type MenuCategory } from '../../order/cart.ts';
 import { Composer } from '../../order/Composer.tsx';
 import { RoundList, type Round } from '../../order/RoundList.tsx';
+import { LineActions } from './LineActions.tsx';
 
 interface SessionDetail {
   session: {
@@ -116,7 +117,10 @@ export function SessionScreen() {
             <strong>Accepted so far {rupees(detail.data.acceptedTotal)}</strong>
           ) : null}
         </div>
-        <RoundList rounds={detail.data?.rounds ?? []} />
+        <RoundList
+          rounds={detail.data?.rounds ?? []}
+          lineActions={(l) => <LineActions line={l} sessionId={sessionId} />}
+        />
       </section>
     </>
   );

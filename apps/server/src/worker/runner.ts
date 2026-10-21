@@ -5,8 +5,8 @@
 import { Logger, parseCrontab, run, type Runner, type TaskList } from 'graphile-worker';
 import type pg from 'pg';
 import { scanStaleSessions } from '../modules/floor/index.ts';
-import { escalateOverdue } from '../modules/orders/index.ts';
-import { raiseMismatchAlerts } from '../modules/stock/index.ts';
+import { escalateOverdue, scanUncollected } from '../modules/orders/index.ts';
+import { raiseMismatchAlerts, raiseStaleReservationAlerts } from '../modules/stock/index.ts';
 import { withTransaction } from '../platform/db/tx.ts';
 import { pruneIdempotencyKeys, pruneOutbox } from './maintenance.ts';
 
@@ -24,6 +24,18 @@ export function makeTasks(pool: pg.Pool): TaskList {
     'orders:escalate': async (_payload, helpers) => {
       const escalated = await withTransaction(pool, (tx) => escalateOverdue(tx, new Date()));
       if (escalated > 0) helpers.logger.info(`escalated ${String(escalated)} waiting orders`);
+    },
+    // T3 (D-33): accepted items nobody picked up.
+    'orders:uncollected_scan': async (_payload, helpers) => {
+      const raised = await scanUncollected(pool, new Date());
+      if (raised > 0) helpers.logger.info(`raised ${String(raised)} uncollected-item alerts`);
+    },
+    // ORDER_STATE_MACHINE.md §5: reservations open longer than 12 hours.
+    'stock:stale_reservations': async (_payload, helpers) => {
+      const items = await withTransaction(pool, (tx) =>
+        raiseStaleReservationAlerts(tx, new Date()),
+      );
+      if (items > 0) helpers.logger.info(`${String(items)} ingredients have stale reservations`);
     },
     // ORDER_STATE_MACHINE.md T1: alert once per session open too long; no state change.
     'sessions:stale_scan': async (_payload, helpers) => {
@@ -50,7 +62,9 @@ export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
   '35 * * * * maintenance:prune_outbox',
   '* * * * * orders:escalate',
+  '*/5 * * * * orders:uncollected_scan',
   '*/10 * * * * sessions:stale_scan',
+  '15 * * * * stock:stale_reservations',
   '10 4 * * * stock:reconcile',
 ].join('\n');
 

@@ -11,7 +11,11 @@ import { handleCommand, IDEMPOTENCY_HEADER } from '../../platform/idempotency.ts
 import { parseInput } from '../../platform/validation.ts';
 import { lockActiveSession } from '../floor/index.ts';
 import { authOf, factsOf } from '../identity/index.ts';
+import { readSetting } from '../../platform/settings.ts';
+import { WASTE_REASONS } from '../stock/index.ts';
+import { cancelUnits, pickUp, serve, voidUnits } from './lines.ts';
 import { acceptRound, rejectRound, submitRound, type CommandContext } from './rounds.ts';
+import { pickupQueue, ticketView } from './tickets.ts';
 import { linesSchema } from './schema.ts';
 import { approvals, sessionRounds } from './views.ts';
 
@@ -154,4 +158,148 @@ export async function orderRoutes(app: FastifyInstance, options: OrderRouteOptio
       );
     },
   );
+
+  // ------------------------------------------------------------ kitchen and pickup (step 3.5)
+  const qty = z.number().int().min(1).max(20);
+  const stepUpId = z
+    .string()
+    .regex(/^\d{1,18}$/)
+    .optional();
+
+  app.get('/pickup', { config: { permission: 'kitchen.pickup' } }, async () =>
+    pickupQueue(
+      pool,
+      now(),
+      await readSetting(pool, 'orders.uncollected_alert_minutes', z.number().positive()),
+    ),
+  );
+
+  app.get('/tickets/:id', { config: { permission: 'kitchen.read' } }, async (request) => {
+    const ticket = await ticketView(pool, idParam(request));
+    if (!ticket) throw new AppError('NOT_FOUND', 'Ticket not found');
+    return ticket;
+  });
+
+  app.post(
+    '/lines/:id/pickup',
+    { config: { permission: 'kitchen.pickup' } },
+    async (request, reply) => {
+      const lineId = idParam(request);
+      const body = parseInput(z.object({ qty }).strict(), request.body);
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'line.pickup', actorRef: `user:${auth.user.id}`, payload: { lineId, ...body } },
+        async (tx) => ({
+          status: 200,
+          body: await pickUp(tx, ctx, auth, [{ lineId, qty: body.qty }]),
+        }),
+      );
+    },
+  );
+
+  app.post(
+    '/tickets/:id/pickup',
+    { config: { permission: 'kitchen.pickup' } },
+    async (request, reply) => {
+      const ticketId = idParam(request);
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'line.pickup', actorRef: `user:${auth.user.id}`, payload: { ticketId } },
+        async (tx) => {
+          const { rows } = await tx.query<{ id: string }>(
+            `SELECT kl.order_line_id::text AS id FROM cl.kitchen_ticket_lines kl JOIN cl.kitchen_tickets k ON k.id = kl.ticket_id
+            WHERE k.id = $1 AND k.kind IN ('new','supplement') ORDER BY kl.order_line_id`,
+            [ticketId],
+          );
+          if (rows.length === 0) throw new AppError('NOT_FOUND', 'Ticket not found');
+          return {
+            status: 200,
+            body: await pickUp(
+              tx,
+              ctx,
+              auth,
+              rows.map((r) => ({ lineId: r.id, qty: 'rest' as const })),
+            ),
+          };
+        },
+      );
+    },
+  );
+
+  app.post(
+    '/lines/:id/serve',
+    { config: { permission: 'orders.serve' } },
+    async (request, reply) => {
+      const lineId = idParam(request);
+      const body = parseInput(z.object({ qty }).strict(), request.body);
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'line.serve', actorRef: `user:${auth.user.id}`, payload: { lineId, ...body } },
+        async (tx) => ({ status: 200, body: await serve(tx, ctx, auth, lineId, body.qty) }),
+      );
+    },
+  );
+
+  app.post(
+    '/lines/:id/cancel',
+    { config: { permission: 'orders.void' } },
+    async (request, reply) => {
+      const lineId = idParam(request);
+      const body = parseInput(
+        z
+          .object({ qty, made: z.boolean(), reason: z.string().trim().min(3).max(200), stepUpId })
+          .strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'line.cancel', actorRef: `user:${auth.user.id}`, payload: { lineId, ...body } },
+        async (tx) => ({
+          status: 200,
+          body: await cancelUnits(tx, ctx, auth, { lineId, ...body }),
+        }),
+      );
+    },
+  );
+
+  app.post('/lines/:id/void', { config: { permission: 'orders.void' } }, async (request, reply) => {
+    const lineId = idParam(request);
+    const body = parseInput(
+      z
+        .object({
+          qty,
+          reasonCode: z.enum(WASTE_REASONS),
+          note: z.string().trim().max(200).optional(),
+          stepUpId,
+        })
+        .strict(),
+      request.body,
+    );
+    const auth = authOf(request);
+    const ctx = commandContext(request, now());
+    return handleCommand(
+      pool,
+      request,
+      reply,
+      { scope: 'line.void', actorRef: `user:${auth.user.id}`, payload: { lineId, ...body } },
+      async (tx) => ({ status: 200, body: await voidUnits(tx, ctx, auth, { lineId, ...body }) }),
+    );
+  });
 }

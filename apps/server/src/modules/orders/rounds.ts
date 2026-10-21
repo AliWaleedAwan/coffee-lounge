@@ -29,6 +29,7 @@ import {
   type OrderType,
 } from '../stock/index.ts';
 import { priceLines, type LineInput, type PricedLine } from './pricing.ts';
+import { ticketsForRound } from './tickets.ts';
 
 export const MAX_PENDING_PER_SESSION = 3;
 
@@ -278,7 +279,10 @@ export async function submitRound(
         }
       : { kind: 'guest' };
   await orderEvent(tx, ctx, { roundId, type: 'round_submitted', actor });
-  if (accepted) await orderEvent(tx, ctx, { roundId, type: 'round_accepted', actor });
+  if (accepted) {
+    await orderEvent(tx, ctx, { roundId, type: 'round_accepted', actor });
+    await ticketsForRound(tx, roundId, session.id, ctx.now); // K1, numbered last
+  }
   await writeAudit(
     tx,
     { actor, correlationId: ctx.correlationId, ...(ctx.ip ? { ip: ctx.ip } : {}) },
@@ -580,6 +584,7 @@ export async function acceptRound(
   const actor: Actor = { kind: 'user', userId: auth.user.id, deviceId: auth.device.id };
   const priceLockedLines = [...pricing.values()].filter((p) => p.locked).length;
   await orderEvent(tx, ctx, { roundId, type: 'round_accepted', actor, data: { priceLockedLines } });
+  await ticketsForRound(tx, roundId, session.id, ctx.now); // K1, numbered last
   await writeAudit(
     tx,
     { actor, correlationId: ctx.correlationId, ...(ctx.ip ? { ip: ctx.ip } : {}) },

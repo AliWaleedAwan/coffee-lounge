@@ -790,3 +790,34 @@ ul.stack {
   margin: 0;
   padding: 0;
 }
+
+/* ---------------------------------------------------------------- held-action toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-5);
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: min(560px, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--text-primary);
+  color: var(--surface-raised);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 20%);
+}
+
+.toast .btn-ghost {
+  color: var(--surface-raised);
+}
+
+.toast-danger {
+  background: var(--danger-text);
+}
+
+.line-status {
+  flex-basis: 100%;
+  font-size: 14px;
+}

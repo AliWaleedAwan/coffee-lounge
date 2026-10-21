@@ -140,7 +140,13 @@ async function announce(tx: Tx, itemIds: Iterable<string>): Promise<void> {
 
 // ---------------------------------------------------------------- alerts
 
-type AlertKind = 'low' | 'zero' | 'reservation_shortfall' | 'found_stock' | 'balance_mismatch';
+type AlertKind =
+  | 'low'
+  | 'zero'
+  | 'reservation_shortfall'
+  | 'found_stock'
+  | 'balance_mismatch'
+  | 'stale_reservation';
 
 async function openAlert(tx: Tx, itemId: string, kind: AlertKind, detail: object): Promise<void> {
   const { rows } = await tx.query<{ id: string }>(
@@ -382,21 +388,40 @@ interface ReservationRow {
   qty_released: string;
 }
 
-async function lockReservations(tx: Tx, orderLineId: string, itemIds: readonly string[]) {
+/** One order line's share of a pickup or a cancellation. */
+export interface LineTakes {
+  orderLineId: string;
+  takes: readonly Take[];
+}
+
+const pair = (lineId: string, itemId: string) => `${lineId}:${itemId}`;
+
+/** Locks the reservations of several lines at once, in ascending id (DATABASE.md §14). */
+async function lockReservations(
+  tx: Tx,
+  lines: readonly LineTakes[],
+): Promise<Map<string, ReservationRow>> {
+  const lineIds = lines.flatMap((l) => l.takes.map(() => l.orderLineId));
+  const itemIds = lines.flatMap((l) => l.takes.map((t) => t.itemId));
   const { rows: ids } = await tx.query<{ id: string }>(
-    'SELECT id::text FROM cl.stock_reservations WHERE order_line_id = $1 AND item_id = ANY($2::bigint[])',
-    [orderLineId, itemIds],
+    `SELECT r.id::text FROM cl.stock_reservations r
+       JOIN unnest($1::bigint[], $2::bigint[]) AS w(line_id, item_id)
+         ON r.order_line_id = w.line_id AND r.item_id = w.item_id`,
+    [lineIds, itemIds],
   );
-  const rows = await tx.lock<ReservationRow>(
+  const rows = await tx.lock<ReservationRow & { order_line_id: string }>(
     'stock_reservations',
     ids.map((r) => r.id),
   );
-  const byItem = new Map(rows.map((r) => [r.item_id, r]));
-  for (const itemId of itemIds) {
-    if (!byItem.has(itemId))
-      throw new Error(`line ${orderLineId} has no reservation for item ${itemId}`);
+  const byPair = new Map(rows.map((r) => [pair(r.order_line_id, r.item_id), r]));
+  for (const l of lines) {
+    for (const t of l.takes) {
+      if (!byPair.has(pair(l.orderLineId, t.itemId))) {
+        throw new Error(`line ${l.orderLineId} has no reservation for item ${t.itemId}`);
+      }
+    }
   }
-  return byItem;
+  return byPair;
 }
 
 function openQty(r: ReservationRow): Decimal {
@@ -426,100 +451,120 @@ async function moveReservation(
       WHERE id = $1`,
     [r.id, q.toFixed(4)],
   );
+  // Several takes of one reservation in one call see their own updates.
+  if (column === 'qty_consumed') r.qty_consumed = new Decimal(r.qty_consumed).plus(q).toFixed(4);
+  else r.qty_released = new Decimal(r.qty_released).plus(q).toFixed(4);
 }
 
+const byItemId = (a: Take, b: Take) =>
+  BigInt(a.itemId) < BigInt(b.itemId) ? -1 : BigInt(a.itemId) > BigInt(b.itemId) ? 1 : 0;
+
 /**
- * Consumes reserved ingredients when units are picked up (V2, D-33). Each ingredient is
- * issued at the current average and its value frozen in `order_line_costs`. If the book
- * quantity is short (only after a count recorded too little) the pickup is never blocked:
- * the missing quantity is first posted as found stock and the owner is alerted.
- * `eventKey` makes the movements idempotent (unique source keys).
+ * Consumes reserved ingredients when units are picked up (V2, D-33), for one line or a
+ * whole ticket at once. Each ingredient is issued at the current average and its value
+ * frozen in `order_line_costs`. If the book quantity is short (only after a count
+ * recorded too little) the pickup is never blocked: the missing quantity is first posted
+ * as found stock and the owner is alerted. `eventKey` makes the movements idempotent
+ * (unique source keys). Returns the value consumed, in total and per line.
  */
 export async function consume(
   tx: Tx,
   ctx: StockContext,
-  input: { orderLineId: string; eventKey: string; takes: readonly Take[] },
-): Promise<{ value: Decimal }> {
-  const itemIds = input.takes.map((t) => t.itemId);
+  input: { eventKey: string } & (LineTakes | { lines: readonly LineTakes[] }),
+): Promise<{ value: Decimal; byLine: Map<string, Decimal> }> {
+  const lines =
+    'lines' in input ? input.lines : [{ orderLineId: input.orderLineId, takes: input.takes }];
+  const itemIds = [...new Set(lines.flatMap((l) => l.takes.map((t) => t.itemId)))];
+  const byLine = new Map<string, Decimal>();
+  if (itemIds.length === 0) return { value: new Decimal(0), byLine };
   const balances = await lockBalances(tx, itemIds);
-  const reservations = await lockReservations(tx, input.orderLineId, itemIds);
+  const reservations = await lockReservations(tx, lines);
   let total = new Decimal(0);
-  for (const take of [...input.takes].sort((a, b) =>
-    BigInt(a.itemId) < BigInt(b.itemId) ? -1 : 1,
-  )) {
-    const b = balances.get(take.itemId);
-    const r = reservations.get(take.itemId);
-    if (!b || !r) continue;
-    const q = takeQty(r, take);
-    if (q.isZero()) continue;
-    const key = `consume:${input.eventKey}:item:${take.itemId}:lot:0`;
+  for (const line of lines) {
+    for (const take of [...line.takes].sort(byItemId)) {
+      const b = balances.get(take.itemId);
+      const r = reservations.get(pair(line.orderLineId, take.itemId));
+      if (!b || !r) continue;
+      const q = takeQty(r, take);
+      if (q.isZero()) continue;
+      const key = `${input.eventKey}:line:${line.orderLineId}:item:${take.itemId}`;
 
-    if (b.onHand.lessThan(q)) {
-      const missing = q.minus(b.onHand);
-      const cost = foundStockUnitCost(b, b.lastUnitCost) ?? new Decimal(0);
-      const value = round4(missing.times(cost));
-      await insertMovement(tx, ctx, {
+      if (b.onHand.lessThan(q)) {
+        const missing = q.minus(b.onHand);
+        const cost = foundStockUnitCost(b, b.lastUnitCost) ?? new Decimal(0);
+        const value = round4(missing.times(cost));
+        await insertMovement(tx, ctx, {
+          itemId: take.itemId,
+          type: 'count_adjustment',
+          qtyDelta: missing,
+          unitCost: cost,
+          valueDelta: value,
+          sourceType: 'order_line',
+          sourceId: line.orderLineId,
+          sourceKey: `found:${key}`,
+          flags: ['auto_found_stock'],
+        });
+        b.onHand = b.onHand.plus(missing);
+        b.value = b.value.plus(value);
+        await openAlert(tx, take.itemId, 'found_stock', {
+          orderLineId: line.orderLineId,
+          qty: missing.toFixed(4),
+          unitCost: cost.toFixed(8),
+        });
+      }
+
+      const { value, unitCost } = issue(b, q);
+      const movementId = await insertMovement(tx, ctx, {
         itemId: take.itemId,
-        type: 'count_adjustment',
-        qtyDelta: missing,
-        unitCost: cost,
-        valueDelta: value,
+        type: 'consumption',
+        qtyDelta: q.negated(),
+        unitCost,
+        valueDelta: value.negated(),
         sourceType: 'order_line',
-        sourceId: input.orderLineId,
-        sourceKey: `found:${input.eventKey}:item:${take.itemId}`,
-        flags: ['auto_found_stock'],
+        sourceId: line.orderLineId,
+        sourceKey: `consume:${key}:lot:0`,
       });
-      b.onHand = b.onHand.plus(missing);
-      b.value = b.value.plus(value);
-      await openAlert(tx, take.itemId, 'found_stock', {
-        orderLineId: input.orderLineId,
-        qty: missing.toFixed(4),
-        unitCost: cost.toFixed(8),
-      });
+      await tx.query(
+        'INSERT INTO cl.order_line_costs (order_line_id, item_id, movement_id, qty_base, value) VALUES ($1, $2, $3, $4, $5)',
+        [line.orderLineId, take.itemId, movementId, q.toFixed(4), value.toFixed(4)],
+      );
+      b.reserved = b.reserved.minus(q);
+      await moveReservation(tx, r, 'qty_consumed', q);
+      total = total.plus(value);
+      byLine.set(line.orderLineId, (byLine.get(line.orderLineId) ?? new Decimal(0)).plus(value));
     }
-
-    const { value, unitCost } = issue(b, q);
-    const movementId = await insertMovement(tx, ctx, {
-      itemId: take.itemId,
-      type: 'consumption',
-      qtyDelta: q.negated(),
-      unitCost,
-      valueDelta: value.negated(),
-      sourceType: 'order_line',
-      sourceId: input.orderLineId,
-      sourceKey: key,
-    });
-    await tx.query(
-      'INSERT INTO cl.order_line_costs (order_line_id, item_id, movement_id, qty_base, value) VALUES ($1, $2, $3, $4, $5)',
-      [input.orderLineId, take.itemId, movementId, q.toFixed(4), value.toFixed(4)],
-    );
-    b.reserved = b.reserved.minus(q);
+  }
+  for (const b of balances.values()) {
     await saveBalance(tx, b);
-    await moveReservation(tx, r, 'qty_consumed', q);
     await evaluateAlerts(tx, b);
-    total = total.plus(value);
   }
   await announce(tx, itemIds);
-  return { value: total };
+  return { value: total, byLine };
 }
 
 /** Releases reserved ingredients for units cancelled before they were made (V3). */
 export async function release(
   tx: Tx,
-  input: { orderLineId: string; takes: readonly Take[] },
+  input: LineTakes | { lines: readonly LineTakes[] },
 ): Promise<void> {
-  const itemIds = input.takes.map((t) => t.itemId);
+  const lines = 'lines' in input ? input.lines : [input];
+  const itemIds = [...new Set(lines.flatMap((l) => l.takes.map((t) => t.itemId)))];
+  if (itemIds.length === 0) return;
   const balances = await lockBalances(tx, itemIds);
-  const reservations = await lockReservations(tx, input.orderLineId, itemIds);
-  for (const take of input.takes) {
-    const b = balances.get(take.itemId);
-    const r = reservations.get(take.itemId);
-    if (!b || !r) continue;
-    const q = takeQty(r, take);
-    if (q.isZero()) continue;
-    b.reserved = b.reserved.minus(q);
+  const reservations = await lockReservations(tx, lines);
+  for (const line of lines) {
+    for (const take of line.takes) {
+      const b = balances.get(take.itemId);
+      const r = reservations.get(pair(line.orderLineId, take.itemId));
+      if (!b || !r) continue;
+      const q = takeQty(r, take);
+      if (q.isZero()) continue;
+      b.reserved = b.reserved.minus(q);
+      await moveReservation(tx, r, 'qty_released', q);
+    }
+  }
+  for (const b of balances.values()) {
     await saveBalance(tx, b);
-    await moveReservation(tx, r, 'qty_released', q);
     await evaluateAlerts(tx, b);
   }
   await announce(tx, itemIds);
@@ -655,4 +700,30 @@ export async function raiseMismatchAlerts(tx: Tx): Promise<StockMismatch[]> {
   for (const [itemId, problems] of byItem)
     await openAlert(tx, itemId, 'balance_mismatch', { problems });
   return mismatches;
+}
+
+/**
+ * Reservations open longer than 12 hours (ORDER_STATE_MACHINE.md §5, INV-016): one
+ * `stale_reservation` alert per ingredient, listing the lines, for a manager to pick up
+ * or cancel. Reservations never expire by themselves; the alert resolves when none is left.
+ */
+export async function raiseStaleReservationAlerts(tx: Tx, now: Date, hours = 12): Promise<number> {
+  const { rows } = await tx.query<{ item_id: string; lines: string[] }>(
+    `SELECT item_id::text, array_agg(DISTINCT order_line_id::text) AS lines
+       FROM cl.stock_reservations
+      WHERE status = 'active' AND created_at < $1::timestamptz - make_interval(hours => $2)
+      GROUP BY item_id ORDER BY item_id`,
+    [now, hours],
+  );
+  for (const r of rows)
+    await openAlert(tx, r.item_id, 'stale_reservation', { orderLineIds: r.lines });
+  await tx.query(
+    `UPDATE cl.inventory_alerts a SET state = 'resolved', resolved_at = now()
+      WHERE a.kind = 'stale_reservation' AND a.state <> 'resolved'
+        AND NOT EXISTS (SELECT 1 FROM cl.stock_reservations r
+                         WHERE r.item_id = a.item_id AND r.status = 'active'
+                           AND r.created_at < $1::timestamptz - make_interval(hours => $2))`,
+    [now, hours],
+  );
+  return rows.length;
 }

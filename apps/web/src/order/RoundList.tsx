@@ -1,4 +1,5 @@
 /** The rounds of a visit with their state, for staff and for the guest's status view. */
+import type { ReactNode } from 'react';
 import { rupees } from './cart.ts';
 
 export interface RoundLine {
@@ -10,6 +11,27 @@ export interface RoundLine {
   modifiers: { name: string; qty: number }[];
   lineTotal: string;
   priceLocked: boolean;
+  pickedUp: number;
+  served: number;
+  cancelled: number;
+  open: number;
+  voidable: number;
+}
+
+/** Where an accepted line is (ORDER_STATE_MACHINE.md §3, derived display status). */
+export function lineStatus(
+  l: Pick<RoundLine, 'qty' | 'pickedUp' | 'served' | 'cancelled' | 'open'>,
+): string {
+  if (l.cancelled >= l.qty) return 'Cancelled';
+  const cancelled = l.cancelled > 0 ? ` · ${String(l.cancelled)} cancelled` : '';
+  if (l.open > 0) {
+    return (
+      (l.pickedUp === 0
+        ? 'Being prepared'
+        : `Picked up ${String(l.pickedUp)}, ${String(l.open)} to come`) + cancelled
+    );
+  }
+  return (l.pickedUp > 0 && l.served >= l.pickedUp ? 'Served' : 'Picked up') + cancelled;
 }
 
 export interface Round {
@@ -38,9 +60,12 @@ const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digi
 export function RoundList({
   rounds,
   onWithdraw,
+  lineActions,
 }: {
   rounds: Round[];
   onWithdraw?: (round: Round) => void;
+  /** Staff: actions for each line of an accepted round. */
+  lineActions?: (line: RoundLine) => ReactNode;
 }) {
   if (rounds.length === 0) return <p className="muted">No orders yet.</p>;
   return (
@@ -82,6 +107,10 @@ export function RoundList({
                     {rupees(l.lineTotal)}
                     {l.priceLocked ? <span className="visually-hidden"> (price held)</span> : null}
                   </span>
+                  {r.status === 'accepted' ? (
+                    <span className="muted line-status">{lineStatus(l)}</span>
+                  ) : null}
+                  {r.status === 'accepted' && lineActions ? lineActions(l) : null}
                 </li>
               ))}
             </ul>

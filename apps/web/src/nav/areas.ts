@@ -23,7 +23,7 @@ export const AREAS: readonly Area[] = [
     anyOf: ['orders.accept'],
     ready: true,
   },
-  { id: 'pickup', label: 'Pickup', path: '/pickup', anyOf: ['kitchen.pickup'], ready: false },
+  { id: 'pickup', label: 'Pickup', path: '/pickup', anyOf: ['kitchen.pickup'], ready: true },
   {
     id: 'counter',
     label: 'Bills & payments',

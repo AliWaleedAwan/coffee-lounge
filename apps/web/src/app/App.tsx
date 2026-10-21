@@ -12,6 +12,7 @@ import { HealthScreen } from '../screens/HealthScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
 import { SessionScreen } from '../screens/session/SessionScreen.tsx';
+import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
 import { MenuScreen } from '../screens/menu/MenuScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
@@ -39,6 +40,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   floor: FloorScreen,
   health: HealthScreen,
   menu: MenuScreen,
+  pickup: PickupScreen,
 };
 
 const FLOOR = AREAS.find((a) => a.id === 'floor');
