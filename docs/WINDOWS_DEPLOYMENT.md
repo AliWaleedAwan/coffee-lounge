@@ -162,7 +162,7 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 |---|---|---|
 | W-1 | If the PostgreSQL **postmaster itself** dies, `pg_ctl`'s service wrapper reports a clean stop, so Windows does not apply the recovery actions; the database stays down until a restart or reboot (the health page shows it). A crashed database *process* is handled by PostgreSQL itself (tested) | Decide at the iMac dry run: either accept (very rare event), or run `postgres.exe` under WinSW like the API so Windows restarts it |
 | W-2 | The CI machine is Windows Server 2022, not Windows 10, has no Boot Camp and cannot reboot or lose power | The iMac dry run covers Windows 10, auto-login, power cuts and the clock |
-| W-3 | WinSW rolls logs daily but does not delete old ones | Housekeeping job in the worker (30 days) in a later step |
-| W-4 | Not automated: static IP and network profile (H-1, H-2), test print, setup sheet | Phase 3 (printing) and Phase 7 (site setup) |
+| W-3 | WinSW rolls logs daily but does not delete old ones | **Done (step 3.6):** the worker deletes files in `LOG_DIR` older than 30 days, daily at 03:30 |
+| W-4 | Not automated: static IP and network profile (H-1, H-2), setup sheet. The test print exists (step 3.6): Settings → Printers → Test print, or `admin printer-add` and `admin test-print` on the PC | Phase 7 (site setup) |
 | W-5 | `CoffeeLounge-Setup.exe` and `CoffeeLounge.exe` are not code-signed: Windows SmartScreen will warn when the technician runs the installer | Accept for a single shop (the technician confirms the warning), or buy a code-signing certificate before go-live |
 | W-6 | CI starts the counter app as the CI administrator; nobody logs in as `Counter` there, so the logon task itself has not fired yet | The iMac dry run: log in as `Counter` and confirm the app opens full screen |

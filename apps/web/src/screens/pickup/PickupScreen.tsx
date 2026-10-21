@@ -3,7 +3,9 @@
  * the moment stock is consumed, so it is a single tap held for 5 seconds with Undo
  * (useHeldAction). Items waiting longer than 30 minutes are marked.
  */
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { permissionSet } from '../../auth/session.ts';
+import { useSignedIn } from '../Shell.tsx';
 import { api, messageOf } from '../../api/client.ts';
 import { HeldToast, useHeldAction } from '../../components/HeldAction.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
@@ -41,6 +43,11 @@ export function PickupScreen() {
   const pick = (label: string, path: string, body: object) => {
     hold(label, () => api(path, { method: 'POST', body, idempotencyKey: crypto.randomUUID() }));
   };
+  const canReprint = permissionSet(useSignedIn()).has('kitchen.reprint');
+  const reprint = useMutation({
+    mutationFn: (ticketId: string) =>
+      api(`/tickets/${ticketId}/reprint`, { method: 'POST', body: {} }),
+  });
   const tickets = queue.data?.tickets ?? [];
   return (
     <>
@@ -48,6 +55,11 @@ export function PickupScreen() {
       {queue.isError ? (
         <div role="alert" className="banner banner-danger">
           {messageOf(queue.error)}
+        </div>
+      ) : null}
+      {reprint.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {messageOf(reprint.error)}
         </div>
       ) : null}
       {queue.data && tickets.length === 0 ? (
@@ -65,6 +77,18 @@ export function PickupScreen() {
                 </span>
                 {t.uncollected ? (
                   <span className="chip chip-danger">Waiting over 30 min</span>
+                ) : null}
+                {canReprint ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={!writes || reprint.isPending}
+                    onClick={() => {
+                      reprint.mutate(t.id);
+                    }}
+                  >
+                    Reprint <span className="visually-hidden">ticket {t.ticketNo}</span>
+                  </button>
                 ) : null}
               </div>
               <ul className="stack stack-tight" role="list">

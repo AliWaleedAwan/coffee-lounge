@@ -1059,7 +1059,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
     await Promise.all([
       db.query<{ id: string; name: string; sort: number; is_active: boolean; version: number }>(
         `SELECT id::text, name, sort, is_active, version FROM cl.menu_categories
-        WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, id`,
+        WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, menu_categories.id`,
       ),
       db.query<{
         id: string;
@@ -1076,7 +1076,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
       }>(
         `SELECT id::text, category_id::text, name, description, dietary_tags, allow_dine_in, allow_takeaway,
               allow_delivery, sort, is_active, version
-         FROM cl.menu_items WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, id`,
+         FROM cl.menu_items WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, menu_items.id`,
       ),
       db.query<{
         id: string;
@@ -1093,7 +1093,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
       }>(
         `SELECT id::text, item_id::text, name, price::text, is_default, sort, is_active, version,
               manual_unavailable, unavailable_note, stock_mode
-         FROM cl.menu_variants WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, id`,
+         FROM cl.menu_variants WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, menu_variants.id`,
       ),
       db.query<{
         id: string;
@@ -1104,7 +1104,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
         version: number;
       }>(
         `SELECT id::text, name, min_select, max_select, is_active, version FROM cl.modifier_groups
-        ${live ? 'WHERE is_active' : ''} ORDER BY name, id`,
+        ${live ? 'WHERE is_active' : ''} ORDER BY name, modifier_groups.id`,
       ),
       db.query<{
         id: string;
@@ -1116,10 +1116,10 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
         version: number;
       }>(
         `SELECT id::text, group_id::text, name, price_delta::text, sort, is_active, version
-         FROM cl.modifier_options ${live ? 'WHERE is_active' : ''} ORDER BY sort, id`,
+         FROM cl.modifier_options ${live ? 'WHERE is_active' : ''} ORDER BY sort, modifier_options.id`,
       ),
       db.query<{ item_id: string; group_id: string }>(
-        'SELECT item_id::text, group_id::text FROM cl.menu_item_modifier_groups ORDER BY sort, group_id',
+        'SELECT item_id::text, group_id::text FROM cl.menu_item_modifier_groups ORDER BY sort, menu_item_modifier_groups.group_id',
       ),
       loadPromotionRules(db),
       shopTimeZone(db),

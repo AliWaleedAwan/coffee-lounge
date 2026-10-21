@@ -1,0 +1,11 @@
+TEST PRINT
+Coffee Lounge
+------------------------------------------------
+Printer                          Counter printer
+Connection                               spooler
+Time                           19 Oct 2026 14:02
+------------------------------------------------
+123456789012345678901234567890123456789012345678
+48 characters fit on each line.
+If this page printed and cut cleanly, printing works.
+================================================

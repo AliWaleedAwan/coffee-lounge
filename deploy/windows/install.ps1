@@ -227,6 +227,7 @@ STAFF_TLS_KEY=$Tls\server.key
 WEB_DIST_DIR=$InstallDir\web
 DISK_CHECK_PATH=$env:SystemDrive\
 BACKUP_DRIVE_PATH=B:\
+LOG_DIR=$DataDir\logs
 LOG_LEVEL=info
 "@
 

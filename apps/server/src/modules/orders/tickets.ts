@@ -10,6 +10,7 @@ import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { publish } from '../../platform/outbox.ts';
 import { businessDateOf } from '../../platform/settings.ts';
+import { requestPrint, stationPrinter } from '../printing/index.ts';
 
 export interface TicketDisplay {
   item: string;
@@ -28,7 +29,7 @@ interface LineForTicket {
 
 async function defaultStation(tx: Tx): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
-    `SELECT id::text FROM cl.stations ORDER BY id LIMIT 1`,
+    `SELECT id::text FROM cl.stations ORDER BY stations.id LIMIT 1`,
   );
   const id = rows[0]?.id;
   if (id === undefined) throw new Error('no kitchen station');
@@ -111,6 +112,13 @@ async function insertTicket(
   return rows[0]?.id ?? '';
 }
 
+/** Its print job, if the station has a printer (PRINTING_HARDWARE.md §5). Staff screens show the ticket either way. */
+async function printTicket(tx: Tx, ticketId: string, stationId: string): Promise<void> {
+  const printerId = await stationPrinter(tx, stationId);
+  if (printerId !== null)
+    await requestPrint(tx, { printerId, documentType: 'kitchen_ticket', documentId: ticketId });
+}
+
 /** K1, inside the acceptance transaction (after the stock, before nothing else locks). */
 export async function ticketsForRound(
   tx: Tx,
@@ -145,6 +153,7 @@ export async function ticketsForRound(
         [ticketId, l.id, l.qty, JSON.stringify(display.get(l.id))],
       );
     }
+    await printTicket(tx, ticketId, stationId);
     ids.push(ticketId);
   }
   return ids;
@@ -193,6 +202,7 @@ export async function correctionTicket(
     'INSERT INTO cl.kitchen_ticket_lines (ticket_id, order_line_id, qty, display) VALUES ($1, $2, $3, $4)',
     [ticketId, lineId, qty, JSON.stringify({ ...display.get(lineId), cancelled: true })],
   );
+  await printTicket(tx, ticketId, original.station_id);
   return ticketId;
 }
 

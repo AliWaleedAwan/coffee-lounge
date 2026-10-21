@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client.ts';
 import { permissionSet, recentUsers, roleLabel, useMe, type Me } from '../auth/session.ts';
 import { ConnectionBanner } from '../connection/ConnectionBanner.tsx';
 import { LiveUpdates } from '../live/LiveUpdates.tsx';
+import { PrinterBanner } from './printing/PrinterBanner.tsx';
 import { visibleAreas, type Area } from '../nav/areas.ts';
 
 const MeContext = createContext<Me | null>(null);
@@ -75,7 +76,8 @@ export function RequireSession() {
 function Shell({ me }: { me: Me }) {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const areas = visibleAreas(permissionSet(me));
+  const permissions = permissionSet(me);
+  const areas = visibleAreas(permissions);
   const logout = useMutation({
     mutationFn: () => api<undefined>('/auth/logout', { method: 'POST' }),
     onSettled: () => {
@@ -112,6 +114,11 @@ function Shell({ me }: { me: Me }) {
       </header>
       <div className="status-banners">
         <ConnectionBanner />
+        <PrinterBanner
+          canSee={permissions.has('kitchen.read')}
+          canFix={permissions.has('kitchen.reprint')}
+          canSetUp={permissions.has('printers.manage')}
+        />
       </div>
       <div className="shell-body">
         <nav className="nav" aria-label="Main">

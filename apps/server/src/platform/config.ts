@@ -27,6 +27,8 @@ const schema = z
       .string()
       .regex(/^http:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/, 'must be http://<address>[:port] with no path')
       .optional(),
+    /** Where the services write logs; files older than 30 days are deleted (W-3). Unset: kept. */
+    LOG_DIR: z.string().min(1).optional(),
     /** Built staff web app served on the staff listener. Default: apps/web/dist. */
     WEB_DIST_DIR: z.string().min(1).optional(),
     /** Volume whose free space the health page watches (H-14). Default: the install drive. */

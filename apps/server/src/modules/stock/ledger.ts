@@ -712,7 +712,7 @@ export async function raiseStaleReservationAlerts(tx: Tx, now: Date, hours = 12)
     `SELECT item_id::text, array_agg(DISTINCT order_line_id::text) AS lines
        FROM cl.stock_reservations
       WHERE status = 'active' AND created_at < $1::timestamptz - make_interval(hours => $2)
-      GROUP BY item_id ORDER BY item_id`,
+      GROUP BY item_id ORDER BY stock_reservations.item_id`,
     [now, hours],
   );
   for (const r of rows)

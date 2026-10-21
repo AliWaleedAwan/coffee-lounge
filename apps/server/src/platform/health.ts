@@ -105,6 +105,24 @@ export function diskLevel(freePercent: number): DiskStatus['status'] {
 }
 
 /** Free space on the volume holding `path` (space usable by this service account). */
+/**
+ * The printer as the health page sees it (PRINTING_HARDWARE.md §6): `error` while any
+ * job waits for staff or keeps failing, `unknown` before a printer is set up.
+ */
+export async function printerStatus(
+  db: Queryable,
+): Promise<{ status: 'ok' | 'error' | 'unknown'; openJobs: number }> {
+  const { rows } = await db.query<{ printers: number; open: number; failing: number }>(
+    `SELECT (SELECT count(*)::int FROM cl.printers WHERE is_active) AS printers,
+            count(*) FILTER (WHERE status IN ('queued','sending','retrying','needs_attention'))::int AS open,
+            count(*) FILTER (WHERE status IN ('retrying','needs_attention','uncertain'))::int AS failing
+       FROM cl.print_jobs`,
+  );
+  const r = rows[0];
+  if (!r || r.printers === 0) return { status: 'unknown', openJobs: r?.open ?? 0 };
+  return { status: r.failing > 0 ? 'error' : 'ok', openJobs: r.open };
+}
+
 export async function probeDisk(path: string): Promise<DiskStatus> {
   try {
     const s = await statfs(path);
@@ -205,6 +223,7 @@ export class HealthMonitor {
   private readonly backupDrive: Cached<boolean>;
   private readonly internet: Cached<InternetStatus>;
   private readonly worker: () => Promise<WorkerStatus>;
+  private readonly printer: () => Promise<{ status: 'ok' | 'error' | 'unknown'; openJobs: number }>;
 
   constructor(options: HealthOptions) {
     const { db, probes = {} } = options;
@@ -220,6 +239,7 @@ export class HealthMonitor {
     );
     this.internet = new Cached(60_000, probes.internet ?? (() => probeInternet(target)));
     this.worker = probes.worker ?? (() => workerStatus(db));
+    this.printer = () => printerStatus(db);
   }
 
   /** Database status for `/health/ready` (cached 1 s). */
@@ -246,8 +266,8 @@ export class HealthMonitor {
         status: worker.status,
         lastHeartbeatAt: worker.lastHeartbeatAt?.toISOString() ?? null,
       },
-      // Filled in by the printing phase (print jobs) and the backup phase (dump records).
-      printer: { status: 'unknown', openJobs: 0 },
+      printer: await this.printer(),
+      // Filled in by the backup phase (dump records).
       backup: { lastSuccessAt: null, lastVerifiedAt: null, usbDrivePresent },
       disk,
       internet,

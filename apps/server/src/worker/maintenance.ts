@@ -2,6 +2,8 @@
  * Worker housekeeping: heartbeat (WINDOWS_DEPLOYMENT.md §2) and pruning of expired
  * idempotency keys (API.md §3: 24 h) and old live-update hints (API.md §7: 24 h).
  */
+import { readdir, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import type pg from 'pg';
 import type { Queryable } from '../platform/db/pool.ts';
 
@@ -56,4 +58,29 @@ export class Heartbeat {
   stop(): void {
     clearInterval(this.timer);
   }
+}
+
+export const LOG_RETENTION_DAYS = 30;
+
+/**
+ * W-3 (WINDOWS_DEPLOYMENT.md §8): the service wrapper rolls logs daily but never deletes
+ * them. Deletes files in the log folder not written to for `days`. Only plain files at
+ * the top of the folder; nothing outside it.
+ */
+export async function pruneLogs(
+  dir: string,
+  now: Date,
+  days = LOG_RETENTION_DAYS,
+): Promise<number> {
+  const cutoff = now.getTime() - days * 86_400_000;
+  let removed = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = join(dir, entry.name);
+    if ((await stat(file)).mtimeMs < cutoff) {
+      await rm(file, { force: true });
+      removed += 1;
+    }
+  }
+  return removed;
 }

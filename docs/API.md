@@ -177,9 +177,14 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /menu/variants/{variantId}/price` | `menu.price_change` | `{expectedVersion, price, reason}`; writes price history. Menu prices are whole rupees (D-16). Changing a modifier option's `priceDelta` through `PATCH /modifier-options/{id}` also needs `menu.price_change` |
 | `GET /menu/variants/{variantId}/price-history` | `menu.manage` | Newest first, with who and why |
 | `POST /modifier-groups/{groupId}/options` | `menu.manage` | Adds a choice to a group |
-| `GET /print-jobs?status=open` | `printers.manage` or `kitchen.reprint` | Failed / uncertain jobs |
-| `POST /print-jobs/{jobId}/retry` | same | Retry a failed job (same job, not a reprint) |
-| `POST /print-jobs/{jobId}/resolve-uncertain` | same | `printed` (mark sent) or `reprint` (new labelled copy) |
+| `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
+| `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
+| `PUT /stations/{stationId}/printer` | `printers.manage` | `{printerId \| null}`: where kitchen tickets print |
+| `POST /printers/{id}/test` | `printers.manage` | Queue a test page (W-4) |
+| `GET /print-jobs?status=open` | `kitchen.reprint` | Jobs not yet printed, and uncertain ones |
+| `POST /print-jobs/{jobId}/retry`, `POST /printers/{id}/retry-all` | `kitchen.reprint` | Back to the queue (same job, not a reprint); printed in order, once |
+| `POST /print-jobs/{jobId}/resolve-uncertain` | `kitchen.reprint` | `printed` (mark sent) or `reprint` (new labelled copy) |
+| `POST /tickets/{ticketId}/reprint` | `kitchen.reprint` | K5: a new copy labelled `REPRINT #n` |
 | `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 

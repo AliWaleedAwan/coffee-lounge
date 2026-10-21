@@ -171,35 +171,42 @@ describe('job queue', () => {
     expect(await count('cl.outbox_events')).toBe(1);
   });
 
-  it('schedules every task with a handler: housekeeping, order and stock alerts, the nightly stock check', () => {
+  it('schedules every task with a handler: housekeeping, printing, order and stock alerts, the nightly stock check', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
       'maintenance:prune_idempotency_keys',
+      'maintenance:prune_logs',
       'maintenance:prune_outbox',
       'orders:escalate',
       'orders:uncollected_scan',
+      'print:dispatch',
+      'print:sweep',
       'sessions:stale_scan',
       'stock:reconcile',
       'stock:stale_reservations',
     ]);
-    const schedule = parseCrontab(CRONTAB);
-    expect(schedule.map((c) => c.task)).toEqual([
-      'maintenance:prune_idempotency_keys',
-      'maintenance:prune_outbox',
-      'orders:escalate',
-      'orders:uncollected_scan',
-      'sessions:stale_scan',
-      'stock:stale_reservations',
-      'stock:reconcile',
-    ]);
-    expect(CRONTAB.split('\n').map((line) => line.split(' ').slice(0, 5).join(' '))).toEqual([
-      '5 * * * *',
-      '35 * * * *',
-      '* * * * *',
-      '*/5 * * * *',
-      '*/10 * * * *',
-      '15 * * * *',
-      '10 4 * * *',
-    ]);
+    // print:dispatch is queued per printer by print jobs, not scheduled.
+    expect(parseCrontab(CRONTAB).map((c) => [c.task, c.match.length > 0])).toEqual(
+      CRONTAB.split('\n').map((line) => [line.split(' ')[5], true]),
+    );
+    expect(
+      Object.fromEntries(
+        CRONTAB.split('\n').map((line) => [
+          line.split(' ')[5],
+          line.split(' ').slice(0, 5).join(' '),
+        ]),
+      ),
+    ).toEqual({
+      'maintenance:prune_idempotency_keys': '5 * * * *',
+      'print:sweep': '* * * * *',
+      'maintenance:prune_logs': '30 3 * * *',
+      'maintenance:prune_outbox': '35 * * * *',
+      'orders:escalate': '* * * * *',
+      'orders:uncollected_scan': '*/5 * * * *',
+      'sessions:stale_scan': '*/10 * * * *',
+      'stock:stale_reservations': '15 * * * *',
+      'stock:reconcile': '10 4 * * *',
+    });
+    for (const line of CRONTAB.split('\n')) expect(tasks[line.split(' ')[5] ?? '']).toBeDefined();
   });
 });

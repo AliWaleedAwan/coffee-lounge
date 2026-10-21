@@ -27,7 +27,7 @@ flowchart TD
   C & F & G --> H[Same ESC/POS renderer and job lifecycle]
 ```
 
-**Expected path: USB via the Windows spooler (F).** The printer sits next to the server, so a USB cable is fine. The worker service hands raw ESC/POS bytes to the Windows print queue in **RAW** mode through a small helper (`cl-rawprint.exe`, a few dozen lines calling the Windows print API). The helper is bundled with the installer and returns clear exit codes. A service account must have permission to print to that queue; the installer sets this and the test print proves it.
+**Expected path: USB via the Windows spooler (F).** The printer sits next to the server, so a USB cable is fine. The worker service hands raw ESC/POS bytes to the Windows print queue in **RAW** mode through a small helper (`app\assets\rawprint.ps1`, Windows PowerShell 5.1 calling the Windows print API through inline C#; built in step 3.6 instead of an `.exe`, so nothing extra is compiled or shipped). The worker pipes the job to it and maps its exit codes to the job lifecycle (§5). Windows CI prints through a "Generic / Text Only" queue from the worker service account on every build. A service account must have permission to print to that queue; the installer sets this and the test print proves it.
 
 Rejected: browser printing (`window.print()`), which has no durability, no control over cutting and prints from whichever screen happened to be open.
 

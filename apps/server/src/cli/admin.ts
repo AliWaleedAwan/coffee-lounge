@@ -6,6 +6,9 @@
  *   create-owner        --username <u> --name "<display name>"     (password asked twice)
  *   registration-code   --name "<device>" --kind <kind> --ownership shop|personal
  *   recover-owner       --username <u>                             (recovery code + new password asked)
+ *   printer-add         --name "<printer>" --connection spooler|tcp --address <queue name or host:port>
+ *                       (also makes it the kitchen station's printer)
+ *   test-print          --name "<printer>"                         (W-4: the worker prints a test page)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
  * Usage (from apps/server): corepack pnpm admin <command> [options]
@@ -15,7 +18,9 @@ import { parseArgs } from 'node:util';
 import { lineReader, secret } from './input.ts';
 import { loadConfig } from '../platform/config.ts';
 import { createPool } from '../platform/db/pool.ts';
+import { withTransaction } from '../platform/db/tx.ts';
 import { AppError } from '../platform/errors.ts';
+import { requestPrint } from '../modules/printing/index.ts';
 import {
   createOwner,
   createRegistrationCode,
@@ -33,6 +38,8 @@ const { positionals, values } = parseArgs({
     name: { type: 'string' },
     kind: { type: 'string' },
     ownership: { type: 'string' },
+    connection: { type: 'string' },
+    address: { type: 'string' },
   },
 });
 
@@ -66,7 +73,7 @@ try {
       throw new Error(`--kind must be one of ${DEVICE_KINDS.join(', ')}`);
     const ownership = values.ownership === 'personal' ? 'personal' : 'shop';
     const { rows } = await pool.query<{ id: string }>(
-      `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY id LIMIT 1`,
+      `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY users.id LIMIT 1`,
     );
     const owner = rows[0]?.id;
     if (!owner) throw new Error('Create the owner first');
@@ -87,9 +94,43 @@ try {
     );
     console.log('\nOwner password reset; all owner sessions ended.');
     console.log(`NEW RECOVERY CODE (the old one no longer works): ${next}`);
+  } else if (command === 'printer-add') {
+    const connection = required(values.connection, 'connection');
+    if (connection !== 'spooler' && connection !== 'tcp')
+      throw new Error('--connection must be spooler or tcp');
+    const name = required(values.name, 'name');
+    await withTransaction(pool, async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `INSERT INTO cl.printers (name, connection, address) VALUES ($1, $2, $3)
+         ON CONFLICT (name) DO UPDATE SET connection = EXCLUDED.connection, address = EXCLUDED.address, is_active = true
+         RETURNING id::text`,
+        [name, connection, required(values.address, 'address')],
+      );
+      await tx.query('UPDATE cl.stations SET printer_id = $1 WHERE printer_id IS NULL', [
+        rows[0]?.id,
+      ]);
+    });
+    console.log(`Printer "${name}" saved; kitchen tickets print there.`);
+  } else if (command === 'test-print') {
+    const name = required(values.name, 'name');
+    const jobId = await withTransaction(pool, async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        'SELECT id::text FROM cl.printers WHERE name = $1',
+        [name],
+      );
+      const printerId = rows[0]?.id;
+      if (printerId === undefined) throw new Error(`No printer named "${name}"`);
+      return requestPrint(tx, {
+        printerId,
+        documentType: 'test_page',
+        documentId: printerId,
+        jobKey: `test_page:${printerId}:${randomUUID()}`,
+      });
+    });
+    console.log(`Test print ${String(jobId)} queued; the worker service prints it.`);
   } else {
     console.log(
-      'Commands: create-owner, registration-code, recover-owner (see the header of src/cli/admin.ts)',
+      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print (see the header of src/cli/admin.ts)',
     );
     process.exitCode = 2;
   }

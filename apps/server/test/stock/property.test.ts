@@ -52,7 +52,7 @@ async function step(random: Random, items: string[]): Promise<string> {
   const ctx = { actorUserId: ownerId, businessDate: '2026-10-21' };
   const { rows: open } = await fx.pool.query<{ order_line_id: string; item_id: string }>(
     `SELECT order_line_id::text, item_id::text FROM cl.stock_reservations
-      WHERE status = 'active' AND item_id = ANY($1::bigint[]) ORDER BY order_line_id, item_id`,
+      WHERE status = 'active' AND item_id = ANY($1::bigint[]) ORDER BY stock_reservations.order_line_id, stock_reservations.item_id`,
     [items],
   );
   const lines = [...new Set(open.map((r) => r.order_line_id))];

@@ -116,6 +116,40 @@ Check 'the worker heartbeat is fresh' {
   if ($r.Code -ne 0 -or $r.Output -ne 't') { throw $r.Output }
   $true
 }
+# PRINTING_HARDWARE.md §2 path F: the worker service hands raw ESC/POS bytes to a Windows
+# print queue in RAW mode. A "Generic / Text Only" queue writing to a file stands in for
+# the shop's USB printer (the real printer is AT-85, on site).
+Check 'the worker service prints RAW through a Windows print queue (spooler path)' {
+  $queue = 'CL Test Printer'
+  $dir = 'C:\cl-print'
+  $out = Join-Path $dir 'out.prn'
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  Remove-Item $out -ErrorAction SilentlyContinue
+  Set-Service -Name Spooler -StartupType Automatic
+  Start-Service -Name Spooler
+  if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) { Add-PrinterDriver -Name 'Generic / Text Only' }
+  if (-not (Get-PrinterPort -Name $out -ErrorAction SilentlyContinue)) { Add-PrinterPort -Name $out }
+  if (-not (Get-Printer -Name $queue -ErrorAction SilentlyContinue)) { Add-Printer -Name $queue -DriverName 'Generic / Text Only' -PortName $out }
+  $envFile = Join-Path $DataDir 'config\server.env'
+  $admin = Join-Path $InstallDir 'app\dist\admin.js'
+  & $Node "--env-file=$envFile" $admin printer-add --name $queue --connection spooler --address $queue | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'admin printer-add failed' }
+  & $Node "--env-file=$envFile" $admin test-print --name $queue | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'admin test-print failed' }
+  $deadline = (Get-Date).AddSeconds(120)
+  while ((Get-Date) -lt $deadline) {
+    if ((Test-Path $out) -and ((Get-Item $out).Length -gt 0)) { break }
+    Start-Sleep -Seconds 2
+  }
+  $last = Invoke-ServiceSql "SELECT status || ' ' || coalesce(last_error, '') FROM cl.print_jobs ORDER BY print_jobs.id DESC LIMIT 1"
+  if (-not (Test-Path $out)) { throw "nothing reached the queue; last job: $($last.Output)" }
+  Start-Sleep -Seconds 2 # let the spooler finish writing the file
+  $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($out))
+  if ($text -notmatch 'TEST PRINT') { throw "the queue received other bytes; last job: $($last.Output)" }
+  if ($last.Output.Trim() -ne 'sent') { throw "job status: $($last.Output)" }
+  Write-Step ('  print: {0} bytes through "{1}"' -f (Get-Item $out).Length, $queue)
+  $true
+}
 Check 'the services log in without owner or superuser powers' {
   $who = Invoke-ServiceSql 'SELECT current_user || ''/'' || rolsuper || ''/'' || rolcreaterole FROM pg_roles WHERE rolname = current_user'
   if ($who.Output -ne 'cl_service/false/false') { throw $who.Output }

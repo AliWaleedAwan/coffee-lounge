@@ -10,6 +10,8 @@ export interface EnqueueOptions {
   jobKey?: string;
   runAt?: Date;
   maxAttempts?: number;
+  /** Jobs in one named queue run one at a time, in order (e.g. one printer). */
+  queueName?: string;
 }
 
 /** `area:action` — graphile-worker cron lines do not accept dots in task names. */
@@ -24,13 +26,14 @@ export async function enqueueJob(
   if (!TASK.test(task)) throw new Error(`Invalid task name "${task}"`);
   const { rows } = await db.query<{ id: string }>(
     `SELECT (graphile_worker.add_job($1, $2::json,
-              job_key => $3, run_at => $4, max_attempts => $5)).id::text AS id`,
+              job_key => $3, run_at => $4, max_attempts => $5, queue_name => $6)).id::text AS id`,
     [
       task,
       JSON.stringify(payload),
       options.jobKey ?? null,
       options.runAt ?? null,
       options.maxAttempts ?? 10,
+      options.queueName ?? null,
     ],
   );
   const id = rows[0]?.id;

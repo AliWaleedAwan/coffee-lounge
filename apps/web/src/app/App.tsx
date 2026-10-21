@@ -13,6 +13,8 @@ import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
 import { SessionScreen } from '../screens/session/SessionScreen.tsx';
 import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
+import { PrintJobsScreen } from '../screens/printing/PrintJobsScreen.tsx';
+import { SettingsScreen } from '../screens/settings/SettingsScreen.tsx';
 import { MenuScreen } from '../screens/menu/MenuScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
@@ -41,9 +43,18 @@ const BUILT: Record<string, () => JSX.Element> = {
   health: HealthScreen,
   menu: MenuScreen,
   pickup: PickupScreen,
+  settings: SettingsScreen,
 };
 
 const FLOOR = AREAS.find((a) => a.id === 'floor');
+/** Reached from the printer banner, not the menu. */
+const PRINT_JOBS = {
+  id: 'print-jobs',
+  label: 'Print jobs',
+  path: '/print-jobs',
+  anyOf: ['kitchen.reprint'],
+  ready: true,
+};
 
 function Home() {
   return <Navigate to={homePath(permissionSet(useSignedIn()))} replace />;
@@ -58,6 +69,14 @@ export function AppRoutes() {
       <Route element={<RequireSession />}>
         <Route index element={<Home />} />
         <Route path="/account" element={<AccountScreen />} />
+        <Route
+          path="/print-jobs"
+          element={
+            <AreaPage area={PRINT_JOBS}>
+              <PrintJobsScreen />
+            </AreaPage>
+          }
+        />
         {FLOOR ? (
           <Route
             path="/sessions/:sessionId"

@@ -67,7 +67,7 @@ if (!stop.signal.aborted) {
       err: error instanceof Error ? error.message : String(error),
     });
   });
-  runner = await startRunner({ pool });
+  runner = await startRunner({ pool, logDir: config.LOG_DIR });
   log('info', 'worker started');
   await runner.promise;
 }

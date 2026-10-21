@@ -66,7 +66,7 @@ async function loadRounds(db: Queryable, where: string, params: unknown[]) {
   const { rows: rounds } = await db.query<RoundRow>(
     `SELECT id::text, session_id::text, round_no, round_ref, source, status, submitted_at, quoted_total::text,
             after_bill_request, escalated_at, decided_at, decision_reason, submitted_by_guest_token_id::text
-       FROM cl.order_rounds WHERE ${where} ORDER BY submitted_at, id`,
+       FROM cl.order_rounds WHERE ${where} ORDER BY submitted_at, order_rounds.id`,
     params,
   );
   const roundIds = rounds.map((r) => r.id);
@@ -75,7 +75,7 @@ async function loadRounds(db: Queryable, where: string, params: unknown[]) {
             unit_price_quoted::text, unit_price::text, price_locked, modifiers_unit_total::text,
             promotion_discount::text,
             qty_picked_up, qty_served, qty_cancelled_unprepared, qty_cancelled_prepared
-       FROM cl.order_lines WHERE round_id = ANY($1::bigint[]) ORDER BY round_id, line_no`,
+       FROM cl.order_lines WHERE round_id = ANY($1::bigint[]) ORDER BY order_lines.round_id, line_no`,
     [roundIds],
   );
   const { rows: mods } = await db.query<ModRow>(

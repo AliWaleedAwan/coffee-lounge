@@ -24,6 +24,7 @@ import { Readiness, runStartupChecks } from '../src/platform/readiness.ts';
 import { SERVER_VERSION } from '../src/platform/version.ts';
 import { registerCustomerRoutes } from '../src/customer-routes.ts';
 import { registerStaffRoutes } from '../src/staff-routes.ts';
+import { silentLogger, startRunner } from '../src/worker/runner.ts';
 import { createTestDatabase, MIGRATIONS_DIR, urlFor } from '../test/support/db.ts';
 
 const STAFF_PORT = Number(process.env['E2E_STAFF_PORT'] ?? 18443);
@@ -159,10 +160,14 @@ console.log(
   `e2e shop ready on ${TLS ? 'https' : 'http'}://127.0.0.1:${String(STAFF_PORT)} (database ${db.name})`,
 );
 
+// The real worker, so print jobs are dispatched as in the shop (printer banner, retries).
+const runner = await startRunner({ pool, logger: silentLogger });
+
 let stopping = false;
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
+  await runner.stop();
   await hub.stop();
   await Promise.allSettled([apps.customer.close(), apps.staff.close()]);
   await pool.end();

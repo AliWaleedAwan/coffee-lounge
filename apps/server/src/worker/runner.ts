@@ -8,10 +8,39 @@ import { scanStaleSessions } from '../modules/floor/index.ts';
 import { escalateOverdue, scanUncollected } from '../modules/orders/index.ts';
 import { raiseMismatchAlerts, raiseStaleReservationAlerts } from '../modules/stock/index.ts';
 import { withTransaction } from '../platform/db/tx.ts';
-import { pruneIdempotencyKeys, pruneOutbox } from './maintenance.ts';
+import {
+  dispatchPrinter,
+  defaultTransports,
+  sweepPrinters,
+  type DispatchDeps,
+} from '../modules/printing/index.ts';
+import { pruneIdempotencyKeys, pruneLogs, pruneOutbox } from './maintenance.ts';
 
-export function makeTasks(pool: pg.Pool): TaskList {
+export interface TaskOptions {
+  /** How print jobs reach printers (tests pass fakes). */
+  transports?: DispatchDeps['transports'];
+  /** W-3: the services' log folder. */
+  logDir?: string | undefined;
+}
+
+export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
+  const transports = options.transports ?? defaultTransports();
   return {
+    // PRINTING_HARDWARE.md §5: one dispatcher per printer at a time (queue print-<id>).
+    'print:dispatch': async (payload, helpers) => {
+      const { printerId } = payload as { printerId: string };
+      const sent = await dispatchPrinter(pool, printerId, { transports });
+      if (sent > 0) helpers.logger.info(`printer ${printerId}: ${String(sent)} jobs sent`);
+    },
+    'print:sweep': async () => {
+      await sweepPrinters(pool, new Date());
+    },
+    'maintenance:prune_logs': async (_payload, helpers) => {
+      if (!options.logDir) return;
+      const removed = await pruneLogs(options.logDir, new Date());
+      if (removed > 0)
+        helpers.logger.info(`deleted ${String(removed)} log files older than 30 days`);
+    },
     'maintenance:prune_idempotency_keys': async (_payload, helpers) => {
       const removed = await pruneIdempotencyKeys(pool);
       helpers.logger.info(`pruned ${String(removed)} expired idempotency keys`);
@@ -60,6 +89,8 @@ export function makeTasks(pool: pg.Pool): TaskList {
  */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
+  '* * * * * print:sweep',
+  '30 3 * * * maintenance:prune_logs',
   '35 * * * * maintenance:prune_outbox',
   '* * * * * orders:escalate',
   '*/5 * * * * orders:uncollected_scan',
@@ -74,6 +105,7 @@ export interface WorkerRunOptions {
   pollInterval?: number;
   logger?: Logger;
   taskList?: TaskList;
+  logDir?: string | undefined;
   crontab?: string;
 }
 
@@ -86,7 +118,7 @@ export function startRunner(options: WorkerRunOptions): Promise<Runner> {
       noHandleSignals: true,
       ...(options.logger ? { logger: options.logger } : {}),
     },
-    options.taskList ?? makeTasks(options.pool),
+    options.taskList ?? makeTasks(options.pool, { logDir: options.logDir }),
     parseCrontab(options.crontab ?? CRONTAB),
   );
 }

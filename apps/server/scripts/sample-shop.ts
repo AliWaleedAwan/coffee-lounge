@@ -199,7 +199,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pool = createPool({ connectionString: config.DATABASE_URL, max: 4 });
   try {
     const { rows } = await pool.query<{ id: string }>(
-      `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY id LIMIT 1`,
+      `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY users.id LIMIT 1`,
     );
     const ownerId = rows[0]?.id;
     if (ownerId === undefined)

@@ -99,7 +99,7 @@ async function stockOf(lineId: string) {
     status: string;
   }>(
     `SELECT item_id::text, qty_reserved::text AS reserved, qty_consumed::text AS consumed, qty_released::text AS released, status
-       FROM cl.stock_reservations WHERE order_line_id = $1 ORDER BY item_id`,
+       FROM cl.stock_reservations WHERE order_line_id = $1 ORDER BY stock_reservations.item_id`,
     [lineId],
   );
   return rows;
@@ -112,7 +112,7 @@ async function tickets(roundId: string) {
     status: string;
     ticket_no: string;
   }>(
-    'SELECT id::text, kind, status, ticket_no FROM cl.kitchen_tickets WHERE round_id = $1 ORDER BY id',
+    'SELECT id::text, kind, status, ticket_no FROM cl.kitchen_tickets WHERE round_id = $1 ORDER BY kitchen_tickets.id',
     [roundId],
   );
   return rows;
@@ -244,7 +244,7 @@ describe('pickup (L1)', () => {
       qty_base: string;
       value: string;
     }>(
-      'SELECT item_id::text, qty_base::text, value::text FROM cl.order_line_costs WHERE order_line_id = $1 ORDER BY item_id',
+      'SELECT item_id::text, qty_base::text, value::text FROM cl.order_line_costs WHERE order_line_id = $1 ORDER BY order_line_costs.item_id',
       [lineId],
     );
     expect(costs).toEqual([
@@ -500,7 +500,7 @@ describe('alerts (AT-88)', () => {
       ),
     ).toBeGreaterThanOrEqual(2);
     const stale = await fx.pool.query(
-      `SELECT item_id::text FROM cl.inventory_alerts WHERE kind = 'stale_reservation' AND state = 'open' ORDER BY item_id`,
+      `SELECT item_id::text FROM cl.inventory_alerts WHERE kind = 'stale_reservation' AND state = 'open' ORDER BY inventory_alerts.item_id`,
     );
     expect(stale.rows.map((x: { item_id: string }) => x.item_id)).toEqual(
       expect.arrayContaining([menu.beans, menu.milk]),
