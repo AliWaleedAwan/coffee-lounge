@@ -68,6 +68,7 @@ export function useManagedPrinters() {
       api<{
         items: ManagedPrinter[];
         stations: { id: string; name: string; printerId: string | null }[];
+        tills: { id: string; name: string; printerId: string | null }[];
       }>('/printers', { signal }),
     meta: TOPICS,
   });

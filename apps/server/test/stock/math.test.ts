@@ -50,6 +50,7 @@ describe('weighted-average costing (COST_VALUATION.md §10 worked example)', () 
       let b = { onHand: d(0), value: d(0) };
       let minCost = Infinity;
       let maxCost = -Infinity;
+      let roundings = 0; // since the balance last stood at zero
       for (let step = 0; step < 40; step++) {
         if (b.onHand.isZero() || random.chance(0.35)) {
           const q = d(random.decimal(0.5, 5000, 4));
@@ -57,18 +58,23 @@ describe('weighted-average costing (COST_VALUATION.md §10 worked example)', () 
           minCost = Math.min(minCost, cost);
           maxCost = Math.max(maxCost, cost);
           b = { onHand: b.onHand.plus(q), value: b.value.plus(round4(q.times(cost))) };
+          roundings += 1;
         } else {
           const q = random.chance(0.2)
             ? b.onHand
             : Decimal.min(b.onHand, d(random.decimal(0.0001, 3000, 4)));
           const v = issueValue(b, q);
           b = { onHand: b.onHand.minus(q), value: b.value.minus(v) };
+          roundings += 1;
           expect(b.value.isNegative()).toBe(false);
         }
-        if (b.onHand.isZero()) expect(b.value.isZero()).toBe(true);
-        else {
-          // Value is held to 4 dp, so the average may drift by at most 0.0001 / Q.
-          const slack = 0.0001 / b.onHand.toNumber() + 1e-8;
+        if (b.onHand.isZero()) {
+          expect(b.value.isZero()).toBe(true);
+          roundings = 0;
+        } else {
+          // Value is held to 4 dp: each receipt or issue since the last zero may move it by
+          // up to 0.00005, so the average may drift by that many half-units over Q.
+          const slack = (roundings * 0.00005) / b.onHand.toNumber() + 1e-8;
           const avg = b.value.dividedBy(b.onHand).toNumber();
           expect(avg).toBeGreaterThanOrEqual(minCost - slack);
           expect(avg).toBeLessThanOrEqual(maxCost + slack);

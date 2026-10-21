@@ -16,6 +16,7 @@
 import { Decimal, qty as qtyKind } from '@cl/shared';
 import { z } from 'zod';
 import { writeAudit, type Actor } from '../../platform/audit.ts';
+import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { businessDateOf, readSetting } from '../../platform/settings.ts';
@@ -153,9 +154,9 @@ function billable(session: SessionRow): void {
   }
 }
 
-/** RBAC.md §1.3 own_tables: a waiter may cancel only at tables assigned to them now. */
-async function requireOwnTable(
-  tx: Tx,
+/** RBAC.md §1.3 own_tables: a waiter acts only at tables assigned to them now. */
+export async function requireOwnTable(
+  tx: Queryable,
   auth: StaffAuth,
   permission: string,
   session: SessionRow,

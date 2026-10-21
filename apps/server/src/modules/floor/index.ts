@@ -11,6 +11,8 @@ export {
   lockActiveSession,
   openOrJoinFromQr,
   scanStaleSessions,
+  setCheckoutLocked,
+  settleSession,
   type EntryPoint,
   type GuestContext,
   type SessionRow,

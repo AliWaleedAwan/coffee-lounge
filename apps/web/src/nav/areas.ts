@@ -29,7 +29,7 @@ export const AREAS: readonly Area[] = [
     label: 'Bills & payments',
     path: '/counter',
     anyOf: ['payments.collect', 'invoices.lock'],
-    ready: false,
+    ready: true,
   },
   {
     id: 'deliveries',

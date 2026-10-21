@@ -8,10 +8,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api, ApiError, messageOf } from '../../api/client.ts';
+import { permissionSet } from '../../auth/session.ts';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { roundBody, rupees, type CartLine, type MenuCategory } from '../../order/cart.ts';
 import { Composer } from '../../order/Composer.tsx';
 import { RoundList, type Round } from '../../order/RoundList.tsx';
+import { useSignedIn } from '../Shell.tsx';
 import { LineActions } from './LineActions.tsx';
 
 interface SessionDetail {
@@ -31,6 +33,8 @@ export function SessionScreen() {
   const { sessionId = '' } = useParams();
   const client = useQueryClient();
   const writes = useWritesAllowed();
+  const permissions = permissionSet(useSignedIn());
+  const canBill = permissions.has('payments.collect') || permissions.has('invoices.lock');
   const detail = useQuery({
     queryKey: ['session', sessionId],
     queryFn: ({ signal }) => api<SessionDetail>(`/sessions/${sessionId}`, { signal }),
@@ -81,8 +85,9 @@ export function SessionScreen() {
   const s = detail.data?.session;
   return (
     <>
-      <p>
+      <p className="row">
         <Link to="/floor">← Floor</Link>
+        {canBill ? <Link to={`/counter?session=${sessionId}`}>Bill and payment →</Link> : null}
       </p>
       <h1>{s ? `${s.tableName ?? 'Takeaway'} · ${s.sessionNo}` : 'Table'}</h1>
       {detail.isError ? (

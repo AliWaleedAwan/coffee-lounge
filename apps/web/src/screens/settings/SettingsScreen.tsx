@@ -1,7 +1,8 @@
 /**
  * Settings (UI_UX.md §6). Step 3.6 adds printers (PRINTING_HARDWARE.md §2): the shop's
  * receipt printer by Windows queue name (USB) or network address, which printer takes
- * kitchen tickets, and a test print (W-4). More owner settings follow in step 3.12.
+ * kitchen tickets and which takes receipts (step 3.7), and a test print (W-4). More owner
+ * settings follow in step 3.12.
  */
 import { useState, type SubmitEvent } from 'react';
 import { permissionSet } from '../../auth/session.ts';
@@ -28,6 +29,7 @@ function Printers() {
   const [tested, setTested] = useState<string | null>(null);
   const items = printers.data?.items ?? [];
   const stations = printers.data?.stations ?? [];
+  const tills = printers.data?.tills ?? [];
   return (
     <section className="stack" aria-labelledby="printers">
       <h2 id="printers">Printers</h2>
@@ -126,6 +128,25 @@ function Printers() {
           onChange={(printerId) => {
             act.mutate({
               path: `/stations/${s.id}/printer`,
+              method: 'PUT',
+              body: { printerId: printerId || null },
+            });
+          }}
+        />
+      ))}
+      {tills.map((t) => (
+        <SelectField
+          key={t.id}
+          label={tills.length > 1 ? `Receipts at ${t.name} print on` : 'Receipts print on'}
+          value={t.printerId ?? ''}
+          disabled={!writes || act.isPending}
+          options={[
+            { value: '', label: 'No printer (reprint later)' },
+            ...items.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          onChange={(printerId) => {
+            act.mutate({
+              path: `/tills/${t.id}/printer`,
               method: 'PUT',
               body: { printerId: printerId || null },
             });

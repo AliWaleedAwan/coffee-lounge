@@ -142,15 +142,17 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Permission | SM | Purpose |
 |---|---|---|---|
-| `GET /sessions/{sessionId}/bill` | `invoices.read` | I1 | Live bill (computed) or locked invoice snapshot |
-| `POST /invoices/{invoiceId}/lock` **[I]** | `invoices.lock` | I2 | Returns totals, warnings (unpicked lines), `lockVersion` |
-| `POST /invoices/{invoiceId}/reopen` **[I]** | `invoices.reopen` | I3 | Reason; step-up if payments exist |
-| `POST /invoices/{invoiceId}/discounts` **[I]** | `discounts.apply` / `discounts.comp` | — | Line or bill discount; `stepUpId` if above limit (PROVISIONAL D-14) |
-| `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` | — | Before settlement only |
-| `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | Cash (`tendered`) / card (`reference` optional) / transfer (`provider`, `reference`, `confirmedBy` = caller); `lockVersion` required |
+| `GET /bills` | `invoices.read` | — | The counter's open tables: every active session with its bill status, total and due, the ones asking for the bill first (a waiter limited to own tables sees only those) |
+| `GET /sessions/{sessionId}/bill` | `invoices.read` | I1 | Live bill (computed) or locked invoice snapshot, with discounts, payments, waiting orders and items not yet picked up |
+| `POST /invoices/{invoiceId}/lock` **[I]** | `invoices.lock` | I2 | Returns totals, warnings (unpicked lines), `lockVersion`. `PENDING_ROUNDS_EXIST` while an order waits for approval. A bill of Rs 0 (everything comped) settles at once (`settledNow`) |
+| `POST /invoices/{invoiceId}/reopen` **[I]** | `invoices.reopen` | I3 | Free while nothing is paid; with payments a reason and a step-up (`invoice.reopen_with_payments`) from someone else |
+| `POST /invoices/{invoiceId}/discounts` **[I]** | `discounts.apply` | — | `{orderLineId \| null, kind: percent \| fixed, value, reason}`; above the caller's limit (all discounts on the same target counted together) `STEP_UP_REQUIRED`, then `stepUpId` (`discount.over_limit`); `DISCOUNT_OVER_LIMIT` if the approver's own limit is lower (D-14). On a locked bill the figures and `lockVersion` are worked out again; refused once part is paid |
+| `POST /invoices/{invoiceId}/comps` **[I]** | `discounts.comp` | L6 | `{orderLineId, reason}`: the item is free, its cost still counts (D-21). A separate path so each has one permission |
+| `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` (a comp also `discounts.comp`) | — | Before settlement only, with a reason |
+| `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | `{lockVersion, method, amount, tendered?, provider?, reference?, confirmed?}`: cash (`tendered`, change worked out; needs the open shift) / card (`reference` = approval code, optional) / transfer (`provider`, `reference`, `confirmed: true`; `confirmed_by` = caller). A reference that looks like a card number is refused. The Idempotency-Key is stored as the payment's key. Returns `settled`, `invoiceNo`, `change`, `receiptQueued` |
 | `POST /invoices/{invoiceId}/receipt/reprint` **[I]** | `receipts.reprint` | — | Labelled reprint |
 | `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` | P2 | Full/line refund or method correction (PROVISIONAL D-13) |
-| `GET /cash-shifts/current` | `cash_shifts.operate` | — | Open shift on the counter till with running expected cash |
+| `GET /cash-shifts/current` | `cash_shifts.operate` | — | Open shift on the counter till with the cash taken so far (expected cash with paid-in/out in step 3.8) |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
 | `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | Paid-in / paid-out with reason |
 | `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | Counted cash → expected, variance; warns about outstanding COD |
@@ -180,6 +182,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
 | `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
 | `PUT /stations/{stationId}/printer` | `printers.manage` | `{printerId \| null}`: where kitchen tickets print |
+| `PUT /tills/{tillId}/printer` | `printers.manage` | `{printerId \| null}`: where receipts print (step 3.7); `GET /printers` lists the tills |
 | `POST /printers/{id}/test` | `printers.manage` | Queue a test page (W-4) |
 | `GET /print-jobs?status=open` | `kitchen.reprint` | Jobs not yet printed, and uncertain ones |
 | `POST /print-jobs/{jobId}/retry`, `POST /printers/{id}/retry-all` | `kitchen.reprint` | Back to the queue (same job, not a reprint); printed in order, once |

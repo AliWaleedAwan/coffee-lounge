@@ -18,7 +18,13 @@ import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { enqueueJob } from '../../platform/jobs.ts';
 import { publish } from '../../platform/outbox.ts';
 import { readSetting } from '../../platform/settings.ts';
-import { renderKitchenTicket, renderTestPage, type KitchenTicketData } from './documents.ts';
+import {
+  renderKitchenTicket,
+  renderReceipt,
+  renderTestPage,
+  type KitchenTicketData,
+} from './documents.ts';
+import { receiptData } from './receipt-data.ts';
 import type { PrinterTarget, Transport } from './transports.ts';
 
 export const MAX_ATTEMPTS = 5;
@@ -182,8 +188,10 @@ export async function renderJob(db: Queryable, job: JobRow, printer: PrinterRow)
         { printerName: printer.name, connection: printer.connection, at: new Date() },
         options,
       );
+    case 'receipt':
+      return renderReceipt(await receiptData(db, job.document_id), options);
     default:
-      throw new Error(`printing ${job.document_type} arrives with billing (step 3.7)`);
+      throw new Error(`printing ${job.document_type} arrives in a later step`);
   }
 }
 

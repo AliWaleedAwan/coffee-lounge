@@ -10,6 +10,7 @@ import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
+import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
 import { SessionScreen } from '../screens/session/SessionScreen.tsx';
 import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
@@ -38,6 +39,7 @@ export function createQueryClient(): QueryClient {
 
 const BUILT: Record<string, () => JSX.Element> = {
   approvals: ApprovalsScreen,
+  counter: CounterScreen,
   devices: DevicesScreen,
   floor: FloorScreen,
   health: HealthScreen,

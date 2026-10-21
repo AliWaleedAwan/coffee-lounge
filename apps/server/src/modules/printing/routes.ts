@@ -129,6 +129,13 @@ export async function printingRoutes(
       name: string;
       printer_id: string | null;
     }>('SELECT id::text, name, printer_id::text FROM cl.stations ORDER BY stations.id');
+    const { rows: tills } = await pool.query<{
+      id: string;
+      name: string;
+      printer_id: string | null;
+    }>(
+      'SELECT id::text, name, receipt_printer_id::text AS printer_id FROM cl.tills ORDER BY tills.id',
+    );
     return {
       items: rows.map((r) => ({
         id: r.id,
@@ -143,6 +150,7 @@ export async function printingRoutes(
         version: r.version,
       })),
       stations: stations.map((s) => ({ id: s.id, name: s.name, printerId: s.printer_id })),
+      tills: tills.map((t) => ({ id: t.id, name: t.name, printerId: t.printer_id })),
     };
   });
 
@@ -259,6 +267,29 @@ export async function printingRoutes(
           action: 'station.printer',
           entityType: 'station',
           entityId: stationId,
+          after: body,
+        });
+      });
+      return reply.code(204).send();
+    },
+  );
+
+  app.put(
+    '/tills/:id/printer',
+    { config: { permission: 'printers.manage' } },
+    async (request, reply) => {
+      const tillId = idParam(request);
+      const body = parseInput(z.object({ printerId: id.nullable() }).strict(), request.body);
+      await withTransaction(pool, async (tx) => {
+        const { rowCount } = await tx.query(
+          'UPDATE cl.tills SET receipt_printer_id = $2 WHERE id = $1',
+          [tillId, body.printerId],
+        );
+        if (!rowCount) throw new AppError('NOT_FOUND', 'Till not found');
+        await writeAudit(tx, who(request), {
+          action: 'till.receipt_printer',
+          entityType: 'till',
+          entityId: tillId,
           after: body,
         });
       });

@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { billingRoutes } from './modules/billing/index.ts';
 import { catalogRoutes } from './modules/catalog/index.ts';
 import { floorRoutes } from './modules/floor/index.ts';
 import { orderRoutes } from './modules/orders/index.ts';
@@ -44,4 +45,5 @@ export async function registerStaffRoutes(
   });
   await orderRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await printingRoutes(app, { pool: deps.pool });
+  await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
 }

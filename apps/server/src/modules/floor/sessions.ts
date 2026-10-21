@@ -7,7 +7,8 @@
  *   first (DATABASE.md §14) and the partial unique index backs it up.
  * - A phone holds a guest token bound to one session; closing the session or "reset
  *   guests" revokes it (401 VISIT_ENDED, AT-40). Scanning again starts fresh (AT-12).
- * Invoices join sessions in step 3.7; the "nothing billable" guard of S8 in step 3.4.
+ * Every session gets its invoice when it opens (S1, step 3.7); it stays open with total 0
+ * if the session is cancelled (S8).
  */
 import type pg from 'pg';
 import { writeAudit } from '../../platform/audit.ts';
@@ -111,6 +112,7 @@ async function insertSession(
   );
   const session = rows[0];
   if (!session) throw new Error('session insert returned nothing');
+  await tx.query('INSERT INTO cl.invoices (session_id) VALUES ($1)', [session.id]);
   return session;
 }
 
@@ -320,6 +322,41 @@ export async function cancelSession(
     entityId: session.id,
     reason,
   });
+  await sessionChanged(tx, session);
+}
+
+// ---------------------------------------------------------------- checkout (step 3.7)
+
+/** S5 / S6: the bill was prepared (locked) or reopened. The caller holds the session lock. */
+export async function setCheckoutLocked(
+  tx: Tx,
+  session: SessionRow,
+  locked: boolean,
+): Promise<void> {
+  await tx.query(
+    locked
+      ? `UPDATE cl.dining_sessions SET status = 'checkout_locked', locked_at = now() WHERE id = $1`
+      : `UPDATE cl.dining_sessions SET status = 'open', locked_at = NULL WHERE id = $1`,
+    [session.id],
+  );
+  await sessionChanged(tx, session);
+}
+
+/**
+ * S7: the last payment settled the bill. The visit ends: guest phones are signed out
+ * (VISIT_ENDED) and the table is free for the next guests.
+ */
+export async function settleSession(tx: Tx, who: Who, session: SessionRow): Promise<void> {
+  await tx.query(
+    `UPDATE cl.dining_sessions SET status = 'settled', closed_at = now(), close_reason = 'settled' WHERE id = $1`,
+    [session.id],
+  );
+  await revokeTokens(tx, session.id, 'session_closed');
+  await tx.query(
+    `UPDATE cl.operational_alerts SET state = 'resolved', resolved_at = now(), resolved_by = $2
+      WHERE kind = 'stale_session' AND entity_type = 'dining_session' AND entity_id = $1 AND state <> 'resolved'`,
+    [session.id, who.actor.userId],
+  );
   await sessionChanged(tx, session);
 }
 

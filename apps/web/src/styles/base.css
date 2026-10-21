@@ -821,3 +821,133 @@ ul.stack {
   flex-basis: 100%;
   font-size: 14px;
 }
+
+/* ---------------------------------------------------------------- counter: bills & payments */
+.counter {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .counter {
+    grid-template-columns: 1fr;
+  }
+}
+
+kbd {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: 1px solid currentcolor;
+  border-radius: 4px;
+  font: 600 12px/1.5 var(--font-ui);
+  opacity: 0.8;
+}
+
+.bill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bill-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--touch-primary);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.bill-row[aria-selected='true'] {
+  border: 2px solid var(--brand-primary);
+}
+
+.bill-row[aria-current='true'] {
+  background: var(--surface-sunken);
+}
+
+.bill-row-name {
+  font-weight: 600;
+}
+
+.bill-row-total {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bill-row .chip {
+  justify-self: end;
+}
+
+.data .num,
+.totals dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.totals {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.totals dd {
+  margin: 0;
+}
+
+.totals .total {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.btn-inline {
+  min-height: 0;
+  padding: 0 var(--space-2);
+  margin-left: var(--space-2);
+}
+
+.method-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--space-2);
+}
+
+.method-tile {
+  min-height: 52px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: 600 15px var(--font-ui);
+  cursor: pointer;
+}
+
+.method-tile[aria-pressed='true'] {
+  border: 2px solid var(--brand-primary);
+  background: var(--surface-sunken);
+}
+
+.amount-due,
+.change-due strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.change-due {
+  margin: 0;
+}
+
+.sheet {
+  border-color: var(--brand-primary);
+}

@@ -1,9 +1,10 @@
-import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useId, type InputHTMLAttributes, type ReactNode, type Ref } from 'react';
 
 export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: string;
   hint?: ReactNode;
   error?: string | null;
+  ref?: Ref<HTMLInputElement>;
 }
 
 /** A labelled input with hint and inline error (UI_UX.md §5, §9). */
