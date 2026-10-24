@@ -167,13 +167,15 @@ export async function readBill(db: Queryable, sessionId: string) {
       order_type: string;
       table_name: string | null;
       table_id: string | null;
+      customer_name: string | null;
       settled_at: Date | null;
     }
   >(
     `SELECT i.id::text, i.session_id::text, i.invoice_no, i.status, i.lock_version, i.subtotal::text,
             i.discount_total::text, i.rounding_adjustment::text, i.total::text, i.paid_total::text,
             i.business_date, i.settled_at,
-            s.session_no, s.status AS session_status, s.order_type, s.table_id::text, t.name AS table_name
+            s.session_no, s.status AS session_status, s.order_type, s.table_id::text, t.name AS table_name,
+            s.customer_name
        FROM cl.invoices i JOIN cl.dining_sessions s ON s.id = i.session_id
        LEFT JOIN cl.dining_tables t ON t.id = s.table_id
       WHERE i.session_id = $1`,
@@ -281,6 +283,7 @@ export async function readBill(db: Queryable, sessionId: string) {
       orderType: inv.order_type,
       tableId: inv.table_id,
       tableName: inv.table_name,
+      customerName: inv.customer_name,
     },
     lines: bill.lines.map((l) => ({
       ...l,

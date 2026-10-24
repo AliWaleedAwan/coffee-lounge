@@ -9,7 +9,11 @@
  *   guests" revokes it (401 VISIT_ENDED, AT-40). Scanning again starts fresh (AT-12).
  * Every session gets its invoice when it opens (S1, step 3.7); it stays open with total 0
  * if the session is cancelled (S8).
+ * - Takeaway (S2, step 3.9): every first order from the counter QR opens a session of its
+ *   own, so two guests at the counter never see each other's order (AT-75); a cashier
+ *   opens one for a guest at the counter.
  */
+import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { writeAudit } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
@@ -87,27 +91,32 @@ async function activeSessionAt(tx: Tx, tableId: string): Promise<SessionRow | un
 async function insertSession(
   tx: Tx,
   input: {
-    tableId: string;
+    /** null: a takeaway at the counter. */
+    tableId: string | null;
     via: 'qr' | 'staff';
     userId?: string;
     entryPointId?: string;
     guestCount?: number;
+    customerName?: string | undefined;
   },
 ): Promise<SessionRow> {
   const businessDate = await businessDateOf(tx, new Date());
   const { rows } = await tx.query<SessionRow>(
     `INSERT INTO cl.dining_sessions
-       (session_no, order_type, table_id, entry_point_id, opened_via, opened_by_user_id, guest_count, business_date)
-     VALUES ($1, 'dine_in', $2, $3, $4, $5, $6, $7)
+       (session_no, order_type, table_id, entry_point_id, opened_via, opened_by_user_id, guest_count, business_date,
+        customer_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id::text, session_no, order_type, table_id::text, status, guest_count, opened_at`,
     [
       await nextSessionNo(tx, businessDate),
+      input.tableId === null ? 'takeaway' : 'dine_in',
       input.tableId,
       input.entryPointId ?? null,
       input.via,
       input.userId ?? null,
       input.guestCount ?? null,
       businessDate,
+      input.customerName?.trim() || null,
     ],
   );
   const session = rows[0];
@@ -143,6 +152,28 @@ export async function openTableSession(
     entityType: 'dining_session',
     entityId: session.id,
     after: { tableId },
+  });
+  await sessionChanged(tx, session);
+  return session;
+}
+
+/** S2 by staff: a takeaway for a guest at the counter (optional name for calling it out). */
+export async function openTakeawaySession(
+  tx: Tx,
+  who: Who,
+  input: { customerName?: string | undefined },
+): Promise<SessionRow> {
+  const session = await insertSession(tx, {
+    tableId: null,
+    via: 'staff',
+    userId: who.actor.userId,
+    customerName: input.customerName,
+  });
+  await writeAudit(tx, who, {
+    action: 'session.open',
+    entityType: 'dining_session',
+    entityId: session.id,
+    after: { orderType: 'takeaway' },
   });
   await sessionChanged(tx, session);
   return session;
@@ -360,6 +391,24 @@ export async function settleSession(tx: Tx, who: Who, session: SessionRow): Prom
   await sessionChanged(tx, session);
 }
 
+/**
+ * R6 → S8 by the system: an unpaid counter-QR takeaway whose order expired (D-40). The
+ * caller holds the session lock and has checked nothing is billable.
+ */
+export async function expireSession(tx: Tx, session: SessionRow, reason: string): Promise<void> {
+  await tx.query(
+    `UPDATE cl.dining_sessions SET status = 'cancelled', closed_at = now(), close_reason = $2 WHERE id = $1`,
+    [session.id, reason],
+  );
+  await revokeTokens(tx, session.id, 'session_closed');
+  await writeAudit(
+    tx,
+    { actor: { kind: 'system' }, correlationId: randomUUID() },
+    { action: 'session.expire', entityType: 'dining_session', entityId: session.id, reason },
+  );
+  await sessionChanged(tx, session);
+}
+
 export async function listActiveSessions(db: Queryable) {
   const { rows } = await db.query<SessionRow & { table_code: string | null; guests: number }>(
     `SELECT s.id::text, s.session_no, s.order_type, s.table_id::text, s.status, s.guest_count, s.opened_at,
@@ -428,14 +477,24 @@ export async function joinIfActive(
 
 /**
  * S1 by a guest (first order from a table QR, step 3.4): join the table's session, or
- * open it. Inside the caller's transaction, so the order and the session commit together.
+ * open it. S2 from the counter QR (step 3.9): always a new takeaway session of this phone's
+ * own. Inside the caller's transaction, so the order and the session commit together.
  */
 export async function openOrJoinFromQr(
   tx: Tx,
   entry: EntryPoint,
+  options: { customerName?: string | undefined } = {},
 ): Promise<{ session: SessionRow; token: string; tokenId: string; opened: boolean }> {
-  if (entry.kind !== 'table' || entry.tableId === null) {
-    throw new Error('counter takeaway sessions arrive in step 3.9');
+  if (entry.kind === 'counter_takeaway' || entry.tableId === null) {
+    const session = await insertSession(tx, {
+      tableId: null,
+      via: 'qr',
+      entryPointId: entry.id,
+      customerName: options.customerName,
+    });
+    const { token, tokenId } = await issueGuestToken(tx, session.id, entry.id);
+    await sessionChanged(tx, session);
+    return { session, token, tokenId, opened: true };
   }
   await lockOrderableTable(tx, entry.tableId, true);
   const existing = await activeSessionAt(tx, entry.tableId);

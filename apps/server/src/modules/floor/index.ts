@@ -7,9 +7,11 @@ export {
 } from './customer.ts';
 export { floorRoutes, type FloorRouteOptions } from './routes.ts';
 export {
+  expireSession,
   guestFromToken,
   lockActiveSession,
   openOrJoinFromQr,
+  openTakeawaySession,
   scanStaleSessions,
   setCheckoutLocked,
   settleSession,

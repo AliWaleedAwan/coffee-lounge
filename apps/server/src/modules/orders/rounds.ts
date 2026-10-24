@@ -7,16 +7,18 @@
  *
  * Lock order (DATABASE.md §14): table → session → round → lines → balances → counters.
  */
+import { randomUUID } from 'node:crypto';
 import { Decimal, money } from '@cl/shared';
+import type pg from 'pg';
 import { z } from 'zod';
 import { writeAudit, type Actor } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
-import type { Tx } from '../../platform/db/tx.ts';
+import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
 import { businessDateOf, readSetting } from '../../platform/settings.ts';
 import { discountedPrice } from '../catalog/index.ts';
-import type { SessionRow } from '../floor/index.ts';
+import { expireSession, type SessionRow } from '../floor/index.ts';
 import type { AuthContext } from '../identity/index.ts';
 import {
   explodeRecipe,
@@ -461,6 +463,14 @@ export async function acceptRound(
   ctx: CommandContext,
   auth: Pick<AuthContext, 'user' | 'device' | 'permissions'>,
   roundId: string,
+  options: {
+    /**
+     * Runs once the round is accepted and its stock reserved, before the kitchen ticket is
+     * numbered (document counters lock last, DATABASE.md §14): Accept & pay locks the bill
+     * and takes the payments here.
+     */
+    beforeTicket?: () => Promise<void>;
+  } = {},
 ): Promise<{ id: string; roundRef: string; status: 'accepted'; priceLockedLines: number }> {
   const { round, session, assignedTo } = await lockRound(tx, roundId);
   sessionGuard(session);
@@ -584,6 +594,7 @@ export async function acceptRound(
   const actor: Actor = { kind: 'user', userId: auth.user.id, deviceId: auth.device.id };
   const priceLockedLines = [...pricing.values()].filter((p) => p.locked).length;
   await orderEvent(tx, ctx, { roundId, type: 'round_accepted', actor, data: { priceLockedLines } });
+  await options.beforeTicket?.();
   await ticketsForRound(tx, roundId, session.id, ctx.now); // K1, numbered last
   await writeAudit(
     tx,
@@ -698,4 +709,61 @@ export async function escalateOverdue(tx: Tx, now: Date): Promise<number> {
     });
   }
   return rows.length;
+}
+
+// ---------------------------------------------------------------- unpaid takeaway (R6, D-40)
+
+/**
+ * A counter-QR takeaway order nobody paid for cancels itself after the setting
+ * (`orders.takeaway_unpaid_expiry_minutes`, D-40: 30). Nothing was reserved or printed
+ * for it, so nothing else changes (AT-53). If the visit has nothing else, it ends (S8)
+ * and the phone sees "visit ended". One transaction per order.
+ */
+export async function expireUnpaidTakeaways(pool: pg.Pool, now: Date): Promise<number> {
+  const minutes = await settingMinutes(pool, 'orders.takeaway_unpaid_expiry_minutes');
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT r.id::text FROM cl.order_rounds r JOIN cl.dining_sessions s ON s.id = r.session_id
+      WHERE r.status = 'pending_approval' AND s.order_type = 'takeaway' AND s.opened_via = 'qr'
+        AND r.submitted_at <= $1::timestamptz - make_interval(mins => $2)
+      ORDER BY r.id`,
+    [now, minutes],
+  );
+  let expired = 0;
+  for (const { id } of rows) {
+    const done = await withTransaction(pool, async (tx) => {
+      const { round, session } = await lockRound(tx, id);
+      if (round.status !== 'pending_approval') return false; // accepted or withdrawn meanwhile
+      await tx.query(
+        `UPDATE cl.order_rounds SET status = 'expired', decided_at = $2 WHERE id = $1`,
+        [id, now],
+      );
+      await orderEvent(
+        tx,
+        { key: `unpaid:${id}`, correlationId: randomUUID(), now },
+        {
+          roundId: id,
+          type: 'round_expired',
+          actor: { kind: 'system' },
+          reason: 'Not paid in time',
+        },
+      );
+      await publish(tx, {
+        type: 'round.decided',
+        entityType: 'order_round',
+        entityId: id,
+        topics: [...roundTopics(session), 'cashier'],
+      });
+      const { rows: left } = await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM cl.order_rounds
+          WHERE session_id = $1 AND status IN ('pending_approval','accepted')`,
+        [session.id],
+      );
+      if (session.status === 'open' && (left[0]?.n ?? 0) === 0) {
+        await expireSession(tx, session, `Order not paid within ${String(minutes)} minutes`);
+      }
+      return true;
+    });
+    if (done) expired += 1;
+  }
+  return expired;
 }

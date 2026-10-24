@@ -69,7 +69,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 |---|---|---|---|
 | `GET /entry/{qrToken}` | Resolve QR, set entry cookie (+ guest token if joining) | — | Returns entry kind, table label, shop branding, joined session summary |
 | `GET /menu` | Menu for this entry's order type with live availability | — | Unavailable items included with `available: false` and reason |
-| `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR) |
+| `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR: kept when the order opens the phone's takeaway session). Each phone's first order from the counter QR opens a session of its own (AT-75). A phone holding a token for another visit drops it when it scans a different code |
 | `POST /rounds/{roundId}/withdraw` **[I]** | Withdraw own pending round | R5 | Only the submitting guest |
 | `GET /session` | Rounds, line statuses, total for this session | — | Table QR: all rounds of the table (PROVISIONAL D-09). Counter QR: own order |
 | `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only |
@@ -98,7 +98,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `PUT /tables/{tableId}/assignment` | `tables.assign` | — | Assign waiter (ends previous assignment) |
 | `DELETE /tables/{tableId}/assignment` | `tables.assign` | — | End assignment (table becomes unassigned → cashier queue) |
 | `POST /tables/{tableId}/sessions` **[I]** | `orders.create` | S1 | Open dine-in session (guest count optional) |
-| `POST /sessions/takeaway` **[I]** | `orders.create` | S2 | Counter takeaway session (optional customer name) |
+| `POST /sessions/takeaway` **[I]** | `orders.create` | S2 | Counter takeaway session (optional `customerName`); its rounds go straight to the kitchen (R2) and it is billed at the counter like a table |
 | `POST /sessions/delivery` **[I]** | `delivery.create` | S3 | Delivery session: channel, optional customer fields, payment mode |
 | `GET /sessions?status=active&type=` | `orders.read_all` (waiter: own tables) | — | Open sessions list |
 | `GET /sessions/{sessionId}` | as above | — | Full session: rounds, lines, counters, live bill summary, delivery |
@@ -119,7 +119,8 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /approvals` | `orders.accept` | — | Pending rounds **in the caller's acceptance scope** (+ escalated), oldest first, with advisory stock check |
 | `POST /rounds/{roundId}/accept` **[I]** | `orders.accept` (scoped) | R3 | Atomic accept. Losers get `409 ROUND_ALREADY_DECIDED` |
 | `POST /rounds/{roundId}/reject` **[I]** | `orders.accept` (scoped) | R4 | Reason required (shown to guest) |
-| `POST /rounds/{roundId}/accept-and-pay` **[I]** | `orders.accept` + `payments.collect` | R3+I2+P1+I4 | Takeaway pay-first in one transaction; body includes payments |
+| `GET /takeaway/queue` | `orders.accept` | — | Counter-QR orders waiting to be paid, oldest first, with lines, quoted total and `expiresAt` (D-40) |
+| `POST /rounds/{roundId}/accept-and-pay` **[I]** | `payments.collect` (+ `orders.accept`, `invoices.lock` checked inside) | R3+I2+P1+I4 | Takeaway only. `{payments: [{method, amount, tendered?, provider?, reference?, confirmed?}]}` adding up to the bill's total (else `BILL_CHANGED` with the total). One transaction: accept (stock, ticket), lock, pay, settle; any failure saves nothing (AT-52). Returns `invoiceNo`, `total`, `change`, `receiptQueued` |
 | `POST /lines/{lineId}/pickup` **[I]** | `kitchen.pickup` | L1 | **Picked up** = consumption; `qty` |
 | `POST /tickets/{ticketId}/pickup` **[I]** | `kitchen.pickup` | L1 × n | Pick up all remaining quantities on a ticket |
 | `GET /sessions/{sessionId}` | `tables.read` | — | Session with every round, its lines and states, and the accepted total |

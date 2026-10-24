@@ -5,7 +5,11 @@
 import { Logger, parseCrontab, run, type Runner, type TaskList } from 'graphile-worker';
 import type pg from 'pg';
 import { scanStaleSessions } from '../modules/floor/index.ts';
-import { escalateOverdue, scanUncollected } from '../modules/orders/index.ts';
+import {
+  escalateOverdue,
+  expireUnpaidTakeaways,
+  scanUncollected,
+} from '../modules/orders/index.ts';
 import { raiseMismatchAlerts, raiseStaleReservationAlerts } from '../modules/stock/index.ts';
 import { withTransaction } from '../platform/db/tx.ts';
 import {
@@ -54,6 +58,11 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
       const escalated = await withTransaction(pool, (tx) => escalateOverdue(tx, new Date()));
       if (escalated > 0) helpers.logger.info(`escalated ${String(escalated)} waiting orders`);
     },
+    // R6 (D-40): unpaid counter-QR takeaway orders cancel themselves.
+    'orders:expire_unpaid_takeaway': async (_payload, helpers) => {
+      const expired = await expireUnpaidTakeaways(pool, new Date());
+      if (expired > 0) helpers.logger.info(`cancelled ${String(expired)} unpaid takeaway orders`);
+    },
     // T3 (D-33): accepted items nobody picked up.
     'orders:uncollected_scan': async (_payload, helpers) => {
       const raised = await scanUncollected(pool, new Date());
@@ -84,7 +93,7 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
 }
 
 /**
- * Hourly housekeeping, minutes staggered; waiting orders every minute; stale sessions every 10 minutes; the stock check runs nightly just after the
+ * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the stock check runs nightly just after the
  * business-day cutoff (04:00 shop time, D-22).
  */
 export const CRONTAB = [
@@ -93,6 +102,7 @@ export const CRONTAB = [
   '30 3 * * * maintenance:prune_logs',
   '35 * * * * maintenance:prune_outbox',
   '* * * * * orders:escalate',
+  '* * * * * orders:expire_unpaid_takeaway',
   '*/5 * * * * orders:uncollected_scan',
   '*/10 * * * * sessions:stale_scan',
   '15 * * * * stock:stale_reservations',

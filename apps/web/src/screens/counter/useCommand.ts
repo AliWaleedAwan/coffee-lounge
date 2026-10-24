@@ -38,6 +38,7 @@ export function useCommand<T>(onDone?: (result: T) => void) {
         client.invalidateQueries({ queryKey: ['bills'] }),
         client.invalidateQueries({ queryKey: ['bill'] }),
         client.invalidateQueries({ queryKey: ['shift'] }),
+        client.invalidateQueries({ queryKey: ['takeaway'] }),
       ]);
     },
   });

@@ -73,7 +73,16 @@ export async function customerOrderRoutes(
   };
 
   app.post('/rounds', { config: { auth: 'public' } }, async (request, reply) => {
-    const body = parseInput(z.object({ lines: linesSchema }).strict(), request.body);
+    const body = parseInput(
+      z
+        .object({
+          lines: linesSchema,
+          /** Counter QR: a name to call the order out by (optional, D-05). */
+          customerName: z.string().trim().min(1).max(40).optional(),
+        })
+        .strict(),
+      request.body,
+    );
     const ctx = guestContext(request, now());
     const visit = await visitOf(request, reply);
     const entry = visit ? null : await resolveEntry(pool, request.cookies[ENTRY_COOKIE], ctx.now);
@@ -98,7 +107,7 @@ export async function customerOrderRoutes(
           tokenId = visit.tokenId;
         } else {
           if (!entry) throw new AppError('VISIT_ENDED', 'Scan the QR code on your table to order.');
-          const joined = await openOrJoinFromQr(tx, entry);
+          const joined = await openOrJoinFromQr(tx, entry, { customerName: body.customerName });
           session = joined.session;
           issued.token = joined.token;
           tokenId = joined.tokenId;
@@ -108,7 +117,13 @@ export async function customerOrderRoutes(
           submitter: { kind: 'guest', tokenId },
           lines: body.lines,
         });
-        return { status: 201, body: { round, session: { sessionNo: session.session_no } } };
+        return {
+          status: 201,
+          body: {
+            round,
+            session: { sessionNo: session.session_no, orderType: session.order_type },
+          },
+        };
       },
     );
     // The token cookie is set only once the order is really saved.

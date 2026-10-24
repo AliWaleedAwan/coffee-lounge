@@ -226,7 +226,11 @@ function OrderPage() {
         )
       ) : (
         <section className="stack" aria-label="My orders">
-          <p className="muted">Staff accept each order before it goes to the kitchen.</p>
+          <p className="muted">
+            {place.entry.kind === 'counter_takeaway'
+              ? 'Pay at the counter: your order goes to the kitchen once it is paid. Orders not paid within 30 minutes are cancelled.'
+              : 'Staff accept each order before it goes to the kitchen.'}
+          </p>
           <RoundList
             rounds={visit.data?.rounds ?? []}
             onWithdraw={(round) => {

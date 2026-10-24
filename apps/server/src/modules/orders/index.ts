@@ -6,6 +6,7 @@ export { cleanNotes, priceLines, type LineInput } from './pricing.ts';
 export {
   acceptRound,
   escalateOverdue,
+  expireUnpaidTakeaways,
   mayDecide,
   rejectRound,
   submitRound,

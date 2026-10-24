@@ -6,7 +6,7 @@
  */
 import { Decimal, money } from '@cl/shared';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { messageOf } from '../../api/client.ts';
 import { permissionSet } from '../../auth/session.ts';
 import { Field } from '../../components/Field.tsx';
@@ -24,10 +24,12 @@ import {
   type Shift,
 } from './counter-api.ts';
 import { DiscountSheet, type SheetMode } from './DiscountSheet.tsx';
+import { TakeawayQueue } from './TakeawayQueue.tsx';
 import { PaymentPanel, type Method } from './PaymentPanel.tsx';
 import { approve, useCommand } from './useCommand.ts';
 
-const where = (b: { tableName: string | null; sessionNo: string }) => b.tableName ?? b.sessionNo;
+const where = (b: { tableName: string | null; customerName: string | null; sessionNo: string }) =>
+  b.tableName ?? (b.customerName ? `Takeaway · ${b.customerName}` : `Takeaway ${b.sessionNo}`);
 
 function statusChip(b: OpenBill) {
   if (b.invoiceStatus === 'locked') return <span className="chip chip-info">Bill ready</span>;
@@ -115,7 +117,11 @@ export function CounterScreen() {
   return (
     <>
       <h1>Bills &amp; payments</h1>
-      <ShiftBar shift={shift.data?.shift ?? null} loaded={shift.isSuccess} />
+      <div className="section-head">
+        <ShiftBar shift={shift.data?.shift ?? null} loaded={shift.isSuccess} />
+        {permissions.has('orders.create') ? <NewTakeaway /> : null}
+      </div>
+      <TakeawayQueue enabled={permissions.has('orders.accept') && canPay} />
       <div className="counter">
         <section className="stack" aria-labelledby="open-bills">
           <h2 id="open-bills">Open tables</h2>
@@ -228,6 +234,30 @@ export function CounterScreen() {
         </section>
       </div>
     </>
+  );
+}
+
+/** A takeaway for a guest at the counter: opens it and goes to its order screen. */
+function NewTakeaway() {
+  const writes = useWritesAllowed();
+  const navigate = useNavigate();
+  const create = useCommand<{ id: string }>((s) => {
+    void navigate(`/sessions/${s.id}`);
+  });
+  return (
+    <div className="stack">
+      <button
+        type="button"
+        className="btn btn-secondary"
+        disabled={!writes || create.isPending}
+        onClick={() => {
+          create.mutate({ path: '/sessions/takeaway' });
+        }}
+      >
+        New takeaway
+      </button>
+      {create.isError ? <span role="alert">{messageOf(create.error)}</span> : null}
+    </div>
   );
 }
 

@@ -123,17 +123,25 @@ export async function customerFloorRoutes(
       ENTRY_TTL_SECONDS,
     );
 
-    // A phone already holding a live token for this table's session keeps it.
+    // A phone already holding a live token for this table's session (or, at the counter,
+    // for the takeaway it ordered from this code) keeps it. A token for any other visit is
+    // dropped, so the next order goes where the phone just scanned.
     let session: { sessionNo: string; openedAt: string } | null = null;
     const held = request.cookies[GUEST_COOKIE];
     if (looksLikeToken(held)) {
       try {
         const guest = await guestFromToken(pool, held);
-        if (guest.session.table_id !== null && guest.session.table_id === entry.table_id) {
+        const same =
+          entry.kind === 'table'
+            ? guest.session.table_id !== null && guest.session.table_id === entry.table_id
+            : guest.session.table_id === null && guest.entryPointId === entry.id;
+        if (same) {
           session = {
             sessionNo: guest.session.session_no,
             openedAt: guest.session.opened_at.toISOString(),
           };
+        } else {
+          void reply.clearCookie(GUEST_COOKIE, { path: '/' });
         }
       } catch {
         // An ended visit: forget its token so this scan starts fresh.

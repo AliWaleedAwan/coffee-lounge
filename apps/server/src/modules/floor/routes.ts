@@ -202,6 +202,29 @@ export async function floorRoutes(app: FastifyInstance, options: FloorRouteOptio
     },
   );
 
+  // S2: a takeaway for a guest at the counter (step 3.9).
+  app.post(
+    '/sessions/takeaway',
+    { config: { permission: 'orders.create' } },
+    async (request, reply) => {
+      const body = parseInput(
+        z.object({ customerName: z.string().trim().min(1).max(40).optional() }).strict(),
+        request.body ?? {},
+      );
+      const who = whoOf(request);
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'session.takeaway', actorRef: `user:${who.actor.userId}`, payload: body },
+        async (tx) => ({
+          status: 201,
+          body: sessions.sessionView(await sessions.openTakeawaySession(tx, who, body)),
+        }),
+      );
+    },
+  );
+
   app.get('/sessions', { config: { permission: 'orders.read_all' } }, async (request) => {
     parseInput(z.object({ status: z.literal('active').optional() }).strict(), request.query);
     return { items: await sessions.listActiveSessions(pool) };

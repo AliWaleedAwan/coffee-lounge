@@ -20,6 +20,7 @@ import {
   takePayment,
   TRANSFER_PROVIDERS,
 } from './payments.ts';
+import { acceptAndPay, takeawayQueue } from './takeaway.ts';
 import { openBills } from './views.ts';
 import {
   addMovement,
@@ -37,6 +38,16 @@ const idParam = (request: FastifyRequest) => parseInput(z.object({ id }), reques
 const amount = z.string().regex(/^\d{1,9}(\.\d{1,2})?$/, 'an amount like 650 or 650.50');
 const reason = z.string().trim().min(3).max(120);
 const stepUpId = id.optional();
+const payment = z
+  .object({
+    method: z.enum(PAYMENT_METHODS),
+    amount,
+    tendered: amount.optional(),
+    provider: z.enum(TRANSFER_PROVIDERS).optional(),
+    reference: z.string().trim().min(1).max(32).optional(),
+    confirmed: z.boolean().optional(),
+  })
+  .strict();
 
 export interface BillingRouteOptions {
   pool: pg.Pool;
@@ -211,17 +222,7 @@ export async function billingRoutes(
     async (request, reply) => {
       const invoiceId = idParam(request);
       const body = parseInput(
-        z
-          .object({
-            lockVersion: z.number().int().min(1),
-            method: z.enum(PAYMENT_METHODS),
-            amount,
-            tendered: amount.optional(),
-            provider: z.enum(TRANSFER_PROVIDERS).optional(),
-            reference: z.string().trim().min(1).max(32).optional(),
-            confirmed: z.boolean().optional(),
-          })
-          .strict(),
+        payment.extend({ lockVersion: z.number().int().min(1) }).strict(),
         request.body,
       );
       const auth = authOf(request);
@@ -257,6 +258,39 @@ export async function billingRoutes(
         reply,
         { scope: 'receipt.reprint', actorRef: `user:${auth.user.id}`, payload: { invoiceId } },
         async (tx) => ({ status: 201, body: await reprintReceipt(tx, ctx, auth, invoiceId) }),
+      );
+    },
+  );
+
+  // ------------------------------------------------------------ takeaway pay-first (step 3.9)
+  app.get('/takeaway/queue', { config: { permission: 'orders.accept' } }, async () =>
+    takeawayQueue(pool),
+  );
+
+  app.post(
+    '/rounds/:id/accept-and-pay',
+    { config: { permission: 'payments.collect' } },
+    async (request, reply) => {
+      const roundId = idParam(request);
+      const body = parseInput(
+        z.object({ payments: z.array(payment).max(4) }).strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        {
+          scope: 'round.accept_and_pay',
+          actorRef: `user:${auth.user.id}`,
+          payload: { roundId, ...body },
+        },
+        async (tx) => ({
+          status: 200,
+          body: await acceptAndPay(tx, ctx, auth, roundId, body.payments),
+        }),
       );
     },
   );

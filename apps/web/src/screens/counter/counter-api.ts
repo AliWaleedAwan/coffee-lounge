@@ -8,6 +8,7 @@ export interface OpenBill {
   sessionStatus: string;
   orderType: string;
   tableName: string | null;
+  customerName: string | null;
   invoiceId: string;
   invoiceStatus: 'open' | 'locked' | 'settled';
   lockVersion: number;
@@ -56,6 +57,7 @@ export interface Bill {
     orderType: string;
     tableId: string | null;
     tableName: string | null;
+    customerName: string | null;
   };
   lines: BillLine[];
   discounts: {
@@ -162,6 +164,29 @@ export function useShifts(enabled: boolean) {
     queryKey: ['shift', 'list'],
     queryFn: ({ signal }) => api<{ items: Shift[] }>('/cash-shifts', { signal }),
     meta: { topics: ['cashier'] },
+    enabled,
+  });
+}
+
+export interface TakeawayOrder {
+  roundId: string;
+  roundRef: string;
+  sessionId: string;
+  sessionNo: string;
+  customerName: string | null;
+  submittedAt: string;
+  expiresAt: string;
+  total: string;
+  lines: { qty: number; description: string; modifiers: string[]; amount: string }[];
+}
+
+/** Counter-QR orders waiting to be paid (Accept & pay), oldest first. */
+export function useTakeawayQueue(enabled: boolean) {
+  return useQuery({
+    queryKey: ['takeaway'],
+    queryFn: ({ signal }) =>
+      api<{ expiryMinutes: number; items: TakeawayOrder[] }>('/takeaway/queue', { signal }),
+    meta: { topics: ['approvals', 'cashier'] },
     enabled,
   });
 }

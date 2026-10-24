@@ -843,7 +843,6 @@ kbd {
   border: 1px solid currentcolor;
   border-radius: 4px;
   font: 600 12px/1.5 var(--font-ui);
-  opacity: 0.8;
 }
 
 .bill-list {
