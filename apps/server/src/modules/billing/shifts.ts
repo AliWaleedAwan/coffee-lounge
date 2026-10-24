@@ -152,11 +152,30 @@ async function movementsOf(db: Queryable, shiftId: string) {
   }));
 }
 
+/**
+ * Cash and card still with riders: unpaid COD and card-on-delivery bills out now. Not in
+ * the till yet, so the close warns about it (API.md §5.5, step 3.10).
+ */
+export async function outstandingWithRiders(db: Queryable) {
+  const { rows } = await db.query<{ rider: string; amount: string; deliveries: number }>(
+    `SELECT r.display_name AS rider, sum(i.total - i.paid_total)::text AS amount, count(*)::int AS deliveries
+       FROM cl.delivery_orders d JOIN cl.staff_profiles r ON r.id = d.rider_id
+       JOIN cl.invoices i ON i.session_id = d.session_id
+      WHERE d.status = 'out_for_delivery' AND d.payment_mode <> 'prepaid' AND i.status = 'locked'
+      GROUP BY r.id, r.display_name ORDER BY r.display_name`,
+  );
+  return rows;
+}
+
 export async function readShift(db: Queryable, shiftId: string) {
   const { rows } = await db.query<ShiftRow>(`${SHIFT_SELECT} WHERE s.id = $1`, [shiftId]);
   const s = rows[0];
   if (!s) throw new AppError('NOT_FOUND', 'Cash shift not found');
-  return { ...shiftView(s), movements: await movementsOf(db, shiftId) };
+  return {
+    ...shiftView(s),
+    movements: await movementsOf(db, shiftId),
+    withRiders: s.status === 'open' ? await outstandingWithRiders(db) : [],
+  };
 }
 
 export async function currentShift(db: Queryable) {
@@ -305,6 +324,8 @@ export interface CloseResult {
   countedCash: string;
   variance: string;
   reportQueued: boolean;
+  /** Cash and card still with riders when the shift closed: collect it in the next shift. */
+  withRiders: { rider: string; amount: string; deliveries: number }[];
 }
 
 export async function closeShift(
@@ -382,6 +403,7 @@ export async function closeShift(
     countedCash: money.format(counted),
     variance: money.format(variance),
     reportQueued: jobId !== null,
+    withRiders: await outstandingWithRiders(tx),
   };
 }
 

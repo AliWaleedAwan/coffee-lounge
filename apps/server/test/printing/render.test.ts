@@ -94,7 +94,7 @@ const receipt: ReceiptData = {
   total: '4995.00',
   payments: [{ label: 'Cash', amount: '5000.00' }],
   change: '5.00',
-  codToCollect: null,
+  delivery: null,
   footer: 'Thank you — see you again!',
 };
 

@@ -40,6 +40,8 @@ export interface PaymentRequest {
   reference?: string | undefined;
   /** Transfers: the person taking payment saw the money arrive in the shop's account. */
   confirmed?: boolean | undefined;
+  /** COD and card on delivery: the rider who collected it (set by the service, never the request). */
+  collectedByRiderId?: string | undefined;
 }
 
 export interface PaymentResult {
@@ -175,8 +177,8 @@ export async function recordPayments(
     if (back) change = (change ?? new Decimal(0)).plus(back);
     const { rows } = await tx.query<{ id: string }>(
       `INSERT INTO cl.payments (invoice_id, method, transfer_provider, amount, tendered, change_due, reference,
-         confirmed_by, received_by, cash_shift_id, idempotency_key, business_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id::text`,
+         confirmed_by, received_by, cash_shift_id, idempotency_key, business_date, collected_by_rider_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id::text`,
       [
         invoice.id,
         input.method,
@@ -190,6 +192,7 @@ export async function recordPayments(
         input.method === 'cash' ? shiftId : null,
         i === 0 ? ctx.key : randomUUID(),
         businessDate,
+        input.collectedByRiderId ?? null,
       ],
     );
     const paymentId = rows[0]?.id ?? '';

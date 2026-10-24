@@ -12,7 +12,11 @@ export interface Command {
   body?: unknown;
 }
 
-export function useCommand<T>(onDone?: (result: T) => void) {
+export function useCommand<T>(
+  onDone?: (result: T) => void,
+  /** More queries the command changes (the counter's are always refreshed). */
+  alsoRefresh: readonly (readonly string[])[] = [],
+) {
   const client = useQueryClient();
   const intent = useRef<{ key: string; body: string } | null>(null);
   return useMutation({
@@ -39,6 +43,7 @@ export function useCommand<T>(onDone?: (result: T) => void) {
         client.invalidateQueries({ queryKey: ['bill'] }),
         client.invalidateQueries({ queryKey: ['shift'] }),
         client.invalidateQueries({ queryKey: ['takeaway'] }),
+        ...alsoRefresh.map((queryKey) => client.invalidateQueries({ queryKey })),
       ]);
     },
   });

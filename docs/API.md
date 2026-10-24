@@ -99,7 +99,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `DELETE /tables/{tableId}/assignment` | `tables.assign` | — | End assignment (table becomes unassigned → cashier queue) |
 | `POST /tables/{tableId}/sessions` **[I]** | `orders.create` | S1 | Open dine-in session (guest count optional) |
 | `POST /sessions/takeaway` **[I]** | `orders.create` | S2 | Counter takeaway session (optional `customerName`); its rounds go straight to the kitchen (R2) and it is billed at the counter like a table |
-| `POST /sessions/delivery` **[I]** | `delivery.create` | S3 | Delivery session: channel, optional customer fields, payment mode |
+| `POST /sessions/delivery` **[I]** | `delivery.create` | S3 | `{channel, paymentMode, customerName?, customerPhone?, customerEmail?, address?, landmark?, notes?}` → `{deliveryId, sessionId}`; items are added as staff rounds (`POST /sessions/{id}/rounds`, refused for items not offered for delivery, AT-114) |
 | `GET /sessions?status=active&type=` | `orders.read_all` (waiter: own tables) | — | Open sessions list |
 | `GET /sessions/{sessionId}` | as above | — | Full session: rounds, lines, counters, live bill summary, delivery |
 | `POST /sessions/{sessionId}/transfer` **[I]** | `sessions.transfer` | S9 | Move to another free table |
@@ -157,7 +157,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /cash-shifts`, `GET /cash-shifts/{shiftId}` | `cash_shifts.operate` | — | Recent shifts, closed ones waiting for approval first; a cashier sees and opens only their own |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
 | `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | `{kind: paid_in \| paid_out, amount, reason}` on an open shift; a paid-out larger than the expected cash is refused |
-| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | `{countedCash, varianceReason?, stepUpId?}` → expected, variance. Balanced: approved at once. Otherwise a reason is required, and a step-up (`shift.variance`) from someone other than the cashier approves it now, or it waits as `closed`. Prints the shift report on the receipt printer. Outstanding COD warning arrives with delivery (3.10) |
+| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | `{countedCash, varianceReason?, stepUpId?}` → expected, variance. Balanced: approved at once. Otherwise a reason is required, and a step-up (`shift.variance`) from someone other than the cashier approves it now, or it waits as `closed`. Prints the shift report on the receipt printer. Returns `withRiders`: cash and card still with riders, not in the till |
 | `POST /cash-shifts/{shiftId}/report/reprint` **[I]** | `cash_shifts.operate` | — | Labelled copy of a closed shift’s report |
 | `POST /cash-shifts/{shiftId}/approve` **[I]** | `cash_shifts.approve_variance` | — | `{note?}`: approve a closed shift’s variance (approver ≠ cashier) |
 
@@ -165,11 +165,13 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Permission | SM | Purpose |
 |---|---|---|---|
-| `GET /deliveries?status=` | `delivery.create` | — | Board: pending dispatch / out / failed, outstanding COD per rider |
-| `POST /deliveries/{deliveryId}/dispatch` **[I]** | `delivery.dispatch` | D1 | Rider, bill locked (COD/card) or settled check (prepaid); prints rider receipt |
-| `POST /deliveries/{deliveryId}/return` **[I]** | `delivery.record_return` | D2/D3 | `outcome: delivered` (+ payment for COD/card) or `failed` (+ reason) |
-| `POST /deliveries/{deliveryId}/resolve` **[I]** | `delivery.resolve_failed` | D4–D6 | `reattempt` / `convert_to_pickup` / `cancel` |
-| `GET /riders` | `delivery.dispatch` | — | Active rider profiles |
+| `GET /deliveries` | `delivery.create` | — | Board: pending dispatch / out / failed and the last 12 hours' finished ones, phones masked (AT-123), items still to pick up, total and due once the bill is prepared, and what each rider is carrying (`outstanding`) |
+| `GET /deliveries/{deliveryId}` | `delivery.create` | — | One delivery with the customer's details in full |
+| `POST /deliveries/{deliveryId}/dispatch` **[I]** | `delivery.dispatch` | D1 | `{riderId}`; every item picked up; prepaid must be settled, COD/card bills are prepared (locked) here (AT-89); prints the rider's slip (address, `CASH/CARD TO COLLECT`) on the receipt printer |
+| `POST /deliveries/{deliveryId}/return` **[I]** | `delivery.record_return` | D2/D3 | `{outcome: 'delivered', method?, reference?, deliveredAt?}`: an unpaid bill is paid in full with `collected_by_rider_id`, cash into the open shift (AT-54, AT-60); or `{outcome: 'failed', reason}`, raising a `failed_delivery` alert |
+| `POST /deliveries/{deliveryId}/resolve` **[I]** | `delivery.resolve_failed` | D4–D6 | `{action: 'reattempt', riderId?}` (new slip) / `{action: 'convert_to_pickup'}` (paid at the counter) / `{action: 'cancel', reason}`: food written off as waste `failed_delivery`, no stock credit; prepaid → `refundDue` (P3-1); an unpaid bill is reopened and the visit closed |
+| `GET /riders` | `delivery.dispatch` | — | Active rider profiles (`?all=true` with inactive ones) |
+| `POST /riders`, `PATCH /riders/{riderId}` **[I]** | `users.manage` | — | Add a rider `{name, phone?}`; rename, change phone, switch off (`expectedVersion`) |
 
 ### 5.7 Menu, printing, system (Phase 3 subset)
 

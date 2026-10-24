@@ -127,7 +127,8 @@ export function renderKitchenTicket(t: KitchenTicketData, o: PrintOptions): Buff
 
 export interface ReceiptData {
   shop: { name: string; addressLine: string | null; phone: string | null };
-  invoiceNo: string;
+  /** null on a delivery slip printed before the bill is paid (COD, card on delivery). */
+  invoiceNo: string | null;
   where: string;
   at: Date;
   cashier: string;
@@ -143,8 +144,12 @@ export interface ReceiptData {
   total: string;
   payments: { label: string; amount: string }[];
   change: string | null;
-  /** Cash-on-delivery receipts for the rider. */
-  codToCollect: string | null;
+  /** The rider's copy (ORDER_STATE_MACHINE.md D1): who takes it where, and what to collect. */
+  delivery: {
+    rider: string;
+    deliverTo: string[];
+    collect: { amount: string; by: 'cash' | 'card' } | null;
+  } | null;
   footer: string;
 }
 
@@ -164,8 +169,20 @@ export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
     .join('  ·  ');
   for (const text of contact ? wrap(contact, w) : []) doc.line(text);
   doc.align('left').line(rule(w));
-  doc.line(twoCols(`Invoice: ${r.invoiceNo}`, r.where, w));
+  doc.line(
+    r.invoiceNo === null
+      ? twoCols(`Order: ${r.where}`, 'NOT PAID YET', w)
+      : twoCols(`Invoice: ${r.invoiceNo}`, r.where, w),
+  );
   doc.line(twoCols(shopTime(r.at, o.timeZone), `Cashier: ${r.cashier}`, w));
+  if (r.delivery) {
+    doc.line(rule(w));
+    doc
+      .bold(true)
+      .line(twoCols('DELIVERY', `Rider: ${r.delivery.rider}`, w))
+      .bold(false);
+    for (const part of r.delivery.deliverTo) for (const text of wrap(part, w)) doc.line(text);
+  }
   doc.line(rule(w));
   for (const l of r.lines) {
     const price = amount(l.amount);
@@ -184,10 +201,16 @@ export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
     .bold(false);
   for (const p of r.payments) doc.line(twoCols(p.label, amount(p.amount), w));
   if (r.change !== null) doc.line(twoCols('Change', amount(r.change), w));
-  if (r.codToCollect !== null)
+  if (r.delivery?.collect)
     doc
       .bold(true)
-      .line(twoCols('CASH TO COLLECT', `Rs ${amount(r.codToCollect)}`, w))
+      .line(
+        twoCols(
+          r.delivery.collect.by === 'cash' ? 'CASH TO COLLECT' : 'CARD TO COLLECT',
+          `Rs ${amount(r.delivery.collect.amount)}`,
+          w,
+        ),
+      )
       .bold(false);
   doc.line(rule(w));
   doc.align('center');

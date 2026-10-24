@@ -28,7 +28,7 @@ import { correctionTicket, kitchenChanged, settleTickets } from './tickets.ts';
 
 export type StaffAuth = Pick<AuthContext, 'user' | 'device' | 'permissions'>;
 
-interface LineRow {
+export interface LineRow {
   id: string;
   round_id: string;
   session_id: string;
@@ -417,11 +417,35 @@ export async function voidUnits(
     throw new AppError('VALIDATION_FAILED', 'Say what happened when the reason is "other"');
   }
   const approvedBy = await approvedVoid(tx, auth, line.id, input.stepUpId);
+  const cost = await recordVoid(tx, ctx, auth, line, {
+    qty: input.qty,
+    reasonCode: input.reasonCode,
+    note: input.note,
+    approvedBy,
+  });
+  await kitchenChanged(tx, session, line.id);
+  return {
+    orderLineId: line.id,
+    voided: line.qty_cancelled_prepared,
+    wasteValue: cost.toFixed(4),
+  };
+}
+
+/**
+ * L5 for `qty` picked-up units of a locked line: waste at the line's own cost per unit
+ * (COST_VALUATION.md §7), no stock credit. Returns the cost written off.
+ */
+async function recordVoid(
+  tx: Tx,
+  ctx: CommandContext,
+  auth: StaffAuth,
+  line: LineRow,
+  input: { qty: number; reasonCode: string; note?: string | undefined; approvedBy: string | null },
+): Promise<Decimal> {
   const { rows } = await tx.query<{ value: string }>(
     'SELECT COALESCE(sum(value), 0)::text AS value FROM cl.order_line_costs WHERE order_line_id = $1',
     [line.id],
   );
-  // COST_VALUATION.md §7: the line's cost per picked-up unit × the voided units.
   const perUnit = new Decimal(rows[0]?.value ?? 0).dividedBy(line.qty_picked_up);
   const cost = qtyKind.round(perUnit.times(input.qty));
   const businessDate = await businessDateOf(tx, ctx.now);
@@ -460,13 +484,74 @@ export async function voidUnits(
       entityId: line.id,
       after: { qty: input.qty, cost: cost.toFixed(4), reasonCode: input.reasonCode },
       ...(input.note ? { reason: input.note } : {}),
-      ...(approvedBy ? { approvedBy } : {}),
+      ...(input.approvedBy ? { approvedBy: input.approvedBy } : {}),
     },
   );
-  await kitchenChanged(tx, session, line.id);
-  return {
-    orderLineId: line.id,
-    voided: line.qty_cancelled_prepared + input.qty,
-    wasteValue: cost.toFixed(4),
-  };
+  line.qty_cancelled_prepared += input.qty;
+  return cost;
+}
+
+// ---------------------------------------------------------------- delivery (D1, D6)
+
+/**
+ * Every accepted line of a delivery, locked: rounds, then lines, each in one pass
+ * (DATABASE.md §14). The caller holds the session and the delivery order.
+ */
+export async function lockSessionLines(tx: Tx, sessionId: string): Promise<LineRow[]> {
+  const { rows: rounds } = await tx.query<{ id: string }>(
+    `SELECT id::text FROM cl.order_rounds WHERE session_id = $1 AND status = 'accepted'`,
+    [sessionId],
+  );
+  await tx.lock(
+    'order_rounds',
+    rounds.map((r) => r.id),
+  );
+  const { rows: ids } = await tx.query<{ id: string }>(
+    'SELECT id::text FROM cl.order_lines WHERE round_id = ANY($1::bigint[])',
+    [rounds.map((r) => r.id)],
+  );
+  return tx.lock<LineRow>(
+    'order_lines',
+    ids.map((l) => l.id),
+  );
+}
+
+/** Units of these lines still to be picked up (D1 needs none). */
+export const unpicked = (lines: readonly LineRow[]): number =>
+  lines.reduce((n, l) => n + open(l), 0);
+
+/** D1: what was picked up leaves with the rider, so it counts as served. */
+export async function markDispatched(tx: Tx, lines: readonly LineRow[]): Promise<void> {
+  await tx.query(
+    `UPDATE cl.order_lines SET qty_served = qty_picked_up WHERE id = ANY($1::bigint[]) AND qty_served < qty_picked_up`,
+    [lines.map((l) => l.id)],
+  );
+}
+
+/**
+ * D6: a cancelled delivery's food is waste (`failed_delivery`) at its own cost; the stock
+ * was consumed at pickup and is not credited back (AT-55). A manager decided it, so no
+ * further step-up.
+ */
+export async function writeOffDelivery(
+  tx: Tx,
+  ctx: CommandContext,
+  auth: StaffAuth,
+  lines: readonly LineRow[],
+  note: string,
+): Promise<Decimal> {
+  let total = new Decimal(0);
+  for (const line of lines) {
+    const qty = line.qty_picked_up - line.qty_cancelled_prepared;
+    if (qty <= 0) continue;
+    total = total.plus(
+      await recordVoid(tx, ctx, auth, line, {
+        qty,
+        reasonCode: 'failed_delivery',
+        note,
+        approvedBy: null,
+      }),
+    );
+  }
+  return total;
 }

@@ -91,25 +91,28 @@ async function activeSessionAt(tx: Tx, tableId: string): Promise<SessionRow | un
 async function insertSession(
   tx: Tx,
   input: {
-    /** null: a takeaway at the counter. */
+    /** null: a takeaway (or, with `orderType`, a delivery). */
     tableId: string | null;
+    orderType?: 'takeaway' | 'delivery';
     via: 'qr' | 'staff';
     userId?: string;
     entryPointId?: string;
     guestCount?: number;
     customerName?: string | undefined;
+    customerPhone?: string | undefined;
+    customerEmail?: string | undefined;
   },
 ): Promise<SessionRow> {
   const businessDate = await businessDateOf(tx, new Date());
   const { rows } = await tx.query<SessionRow>(
     `INSERT INTO cl.dining_sessions
        (session_no, order_type, table_id, entry_point_id, opened_via, opened_by_user_id, guest_count, business_date,
-        customer_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        customer_name, customer_phone, customer_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id::text, session_no, order_type, table_id::text, status, guest_count, opened_at`,
     [
       await nextSessionNo(tx, businessDate),
-      input.tableId === null ? 'takeaway' : 'dine_in',
+      input.tableId === null ? (input.orderType ?? 'takeaway') : 'dine_in',
       input.tableId,
       input.entryPointId ?? null,
       input.via,
@@ -117,6 +120,8 @@ async function insertSession(
       input.guestCount ?? null,
       businessDate,
       input.customerName?.trim() || null,
+      input.customerPhone?.trim() || null,
+      input.customerEmail?.trim() || null,
     ],
   );
   const session = rows[0];
@@ -157,26 +162,46 @@ export async function openTableSession(
   return session;
 }
 
-/** S2 by staff: a takeaway for a guest at the counter (optional name for calling it out). */
-export async function openTakeawaySession(
+/**
+ * S2 / S3 by staff: a takeaway for a guest at the counter, or a delivery taken by phone,
+ * WhatsApp or in person. Every customer detail is optional (D-05).
+ */
+export async function openStaffSession(
   tx: Tx,
   who: Who,
-  input: { customerName?: string | undefined },
+  input: {
+    orderType: 'takeaway' | 'delivery';
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
+    customerEmail?: string | undefined;
+  },
 ): Promise<SessionRow> {
   const session = await insertSession(tx, {
     tableId: null,
+    orderType: input.orderType,
     via: 'staff',
     userId: who.actor.userId,
     customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    customerEmail: input.customerEmail,
   });
   await writeAudit(tx, who, {
     action: 'session.open',
     entityType: 'dining_session',
     entityId: session.id,
-    after: { orderType: 'takeaway' },
+    after: { orderType: input.orderType },
   });
   await sessionChanged(tx, session);
   return session;
+}
+
+/** S2 by staff: a takeaway for a guest at the counter (optional name for calling it out). */
+export function openTakeawaySession(
+  tx: Tx,
+  who: Who,
+  input: { customerName?: string | undefined },
+): Promise<SessionRow> {
+  return openStaffSession(tx, who, { orderType: 'takeaway', ...input });
 }
 
 /** S9 (D-10): move a dine-in session to another free, active table. */

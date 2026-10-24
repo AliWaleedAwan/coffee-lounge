@@ -7,5 +7,15 @@ export {
   type ComputedBill,
   type DiscountInput,
 } from './compute.ts';
-export { readBill, type BillView } from './invoices.ts';
+export {
+  lockBill,
+  lockInvoice,
+  readBill,
+  reopenBill,
+  whoOf,
+  type BillView,
+  type InvoiceRow,
+} from './invoices.ts';
+export { recordPayments, settle, type PaymentInput } from './payments.ts';
+export { counterTill } from './shifts.ts';
 export { billingRoutes, type BillingRouteOptions } from './routes.ts';

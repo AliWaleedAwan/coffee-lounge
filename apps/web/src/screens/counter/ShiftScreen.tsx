@@ -333,6 +333,13 @@ function CloseShift({
       }}
     >
       <h2 id="close-shift">Close the shift</h2>
+      {shift.withRiders.length > 0 ? (
+        <div role="status" className="banner banner-warning">
+          Still with riders, not in the till:{' '}
+          {shift.withRiders.map((r) => `${r.rider} ${rupees(r.amount)}`).join(', ')}. Record their
+          return first, or it goes into the next shift.
+        </div>
+      ) : null}
       <p className="muted">Count every note and coin in the till, then enter the total.</p>
       <Field
         label="Counted cash (Rs)"

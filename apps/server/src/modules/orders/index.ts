@@ -1,7 +1,15 @@
 /** Public interface of the orders module (other modules import only from here). */
 export { scanUncollected } from './alerts.ts';
 export { customerOrderRoutes, type CustomerOrderOptions } from './customer.ts';
-export { requireOwnTable, type StaffAuth } from './lines.ts';
+export {
+  lockSessionLines,
+  markDispatched,
+  requireOwnTable,
+  unpicked,
+  writeOffDelivery,
+  type LineRow,
+  type StaffAuth,
+} from './lines.ts';
 export { cleanNotes, priceLines, type LineInput } from './pricing.ts';
 export {
   acceptRound,

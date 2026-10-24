@@ -86,10 +86,18 @@ export function SessionScreen() {
   return (
     <>
       <p className="row">
-        <Link to="/floor">← Floor</Link>
+        {s?.orderType === 'delivery' ? (
+          <Link to="/deliveries">← Deliveries</Link>
+        ) : (
+          <Link to="/floor">← Floor</Link>
+        )}
         {canBill ? <Link to={`/counter?session=${sessionId}`}>Bill and payment →</Link> : null}
       </p>
-      <h1>{s ? `${s.tableName ?? 'Takeaway'} · ${s.sessionNo}` : 'Table'}</h1>
+      <h1>
+        {s
+          ? `${s.tableName ?? (s.orderType === 'delivery' ? 'Delivery' : 'Takeaway')} · ${s.sessionNo}`
+          : 'Table'}
+      </h1>
       {detail.isError ? (
         <div role="alert" className="banner banner-danger">
           {messageOf(detail.error)}

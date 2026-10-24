@@ -27,23 +27,39 @@ const PROVIDER: Record<string, string> = {
 export async function receiptData(db: Queryable, invoiceId: string): Promise<ReceiptData> {
   const { rows } = await db.query<{
     invoice_no: string | null;
-    settled_at: Date | null;
+    status: string;
+    at: Date | null;
     session_no: string;
     table_name: string | null;
     cashier: string | null;
     rounding_adjustment: string;
     total: string;
+    paid_total: string;
+    customer_name: string | null;
+    customer_phone: string | null;
+    address: string | null;
+    landmark: string | null;
+    notes: string | null;
+    payment_mode: string | null;
+    rider: string | null;
   }>(
-    `SELECT i.invoice_no, i.settled_at, s.session_no, t.name AS table_name, u.display_name AS cashier,
-            i.rounding_adjustment::text, i.total::text
+    `SELECT i.invoice_no, i.status, coalesce(i.settled_at, i.locked_at) AS at, s.session_no, t.name AS table_name,
+            u.display_name AS cashier, i.rounding_adjustment::text, i.total::text, i.paid_total::text,
+            s.customer_name, s.customer_phone, d.address, d.landmark, d.notes, d.payment_mode,
+            r.display_name AS rider
        FROM cl.invoices i JOIN cl.dining_sessions s ON s.id = i.session_id
        LEFT JOIN cl.dining_tables t ON t.id = s.table_id
-       LEFT JOIN cl.users u ON u.id = i.settled_by
+       LEFT JOIN cl.users u ON u.id = coalesce(i.settled_by, i.locked_by)
+       LEFT JOIN cl.delivery_orders d ON d.session_id = s.id
+       LEFT JOIN cl.staff_profiles r ON r.id = d.rider_id
       WHERE i.id = $1`,
     [invoiceId],
   );
   const inv = rows[0];
-  if (!inv?.invoice_no || !inv.settled_at) throw new Error(`invoice ${invoiceId} is not settled`);
+  // A settled bill's receipt, or the rider's slip of a prepared (locked) delivery bill.
+  if (!inv?.at || (inv.status !== 'settled' && !(inv.status === 'locked' && inv.rider))) {
+    throw new Error(`invoice ${invoiceId} has no receipt to print`);
+  }
 
   const { rows: tpl } = await db.query<{ definition: unknown }>(
     `SELECT definition FROM cl.ticket_templates WHERE kind = 'receipt' AND is_active`,
@@ -120,9 +136,9 @@ export async function receiptData(db: Queryable, invoiceId: string): Promise<Rec
   );
   return {
     shop: { name: shop.shopName, addressLine: shop.addressLine, phone: shop.phone },
-    invoiceNo: inv.invoice_no,
+    invoiceNo: inv.status === 'settled' ? inv.invoice_no : null,
     where: inv.table_name ? `Table: ${inv.table_name}` : inv.session_no,
-    at: inv.settled_at,
+    at: inv.at,
     cashier: inv.cashier ?? '',
     lines: receiptLines,
     subtotal: money.format(subtotal),
@@ -150,7 +166,25 @@ export async function receiptData(db: Queryable, invoiceId: string): Promise<Rec
       amount: p.method === 'cash' ? (p.tendered ?? p.amount) : p.amount,
     })),
     change: payments.some((p) => p.method === 'cash') ? money.format(change) : null,
-    codToCollect: null,
+    delivery: inv.rider
+      ? {
+          rider: inv.rider,
+          deliverTo: [
+            inv.customer_name,
+            inv.customer_phone,
+            inv.address,
+            inv.landmark,
+            inv.notes,
+          ].filter((x): x is string => Boolean(x)),
+          collect:
+            inv.status === 'settled' || inv.payment_mode === 'prepaid'
+              ? null
+              : {
+                  amount: money.format(new Decimal(inv.total).minus(inv.paid_total)),
+                  by: inv.payment_mode === 'cod_cash' ? ('cash' as const) : ('card' as const),
+                },
+        }
+      : null,
     footer: shop.footer,
   };
 }

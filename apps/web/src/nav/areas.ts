@@ -36,7 +36,7 @@ export const AREAS: readonly Area[] = [
     label: 'Deliveries',
     path: '/deliveries',
     anyOf: ['delivery.create', 'delivery.dispatch', 'delivery.record_return'],
-    ready: false,
+    ready: true,
   },
   {
     id: 'inventory',

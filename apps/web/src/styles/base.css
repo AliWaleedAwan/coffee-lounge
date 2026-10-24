@@ -950,3 +950,17 @@ kbd {
 .sheet {
   border-color: var(--brand-primary);
 }
+
+/* ---------------------------------------------------------------- delivery board */
+.delivery-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .delivery-board {
+    grid-template-columns: 1fr;
+  }
+}

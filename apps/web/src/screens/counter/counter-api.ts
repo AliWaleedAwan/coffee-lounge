@@ -121,6 +121,8 @@ export interface Shift {
 }
 
 export interface ShiftDetail extends Shift {
+  /** Cash and card still with riders (deliveries out now). */
+  withRiders: { rider: string; amount: string; deliveries: number }[];
   movements: {
     id: string;
     kind: 'paid_in' | 'paid_out';

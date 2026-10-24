@@ -11,6 +11,8 @@ export {
   guestFromToken,
   lockActiveSession,
   openOrJoinFromQr,
+  openStaffSession,
+  cancelSession,
   openTakeawaySession,
   scanStaleSessions,
   setCheckoutLocked,
