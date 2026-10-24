@@ -1,8 +1,8 @@
 /**
  * Settings (UI_UX.md §6). Step 3.6 adds printers (PRINTING_HARDWARE.md §2): the shop's
  * receipt printer by Windows queue name (USB) or network address, which printer takes
- * kitchen tickets and which takes receipts (step 3.7), and a test print (W-4). More owner
- * settings follow in step 3.12.
+ * kitchen tickets and which takes receipts (step 3.7), and a test print (W-4); the shop's
+ * branding, guest ordering hours and thresholds (step 3.12, OwnerSettings).
  */
 import { useState, type SubmitEvent } from 'react';
 import { permissionSet } from '../../auth/session.ts';
@@ -10,14 +10,16 @@ import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { messageOf } from '../../api/client.ts';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { useManagedPrinters, usePrintWrite } from '../printing/printing-api.ts';
+import { OwnerSettings } from './OwnerSettings.tsx';
 import { useSignedIn } from '../Shell.tsx';
 
 export function SettingsScreen() {
-  const canPrinters = permissionSet(useSignedIn()).has('printers.manage');
+  const permissions = permissionSet(useSignedIn());
   return (
     <>
       <h1>Settings</h1>
-      {canPrinters ? <Printers /> : <p className="muted">More settings arrive in a later step.</p>}
+      {permissions.has('settings.manage') ? <OwnerSettings /> : null}
+      {permissions.has('printers.manage') ? <Printers /> : null}
     </>
   );
 }

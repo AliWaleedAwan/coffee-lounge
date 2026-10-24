@@ -9,6 +9,7 @@ import { useSignedIn } from '../Shell.tsx';
 import { api, messageOf } from '../../api/client.ts';
 import { HeldToast, useHeldAction } from '../../components/HeldAction.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
+import { Loading } from '../../components/Loading.tsx';
 
 interface PickupTicket {
   id: string;
@@ -62,6 +63,7 @@ export function PickupScreen() {
           {messageOf(reprint.error)}
         </div>
       ) : null}
+      {queue.isPending ? <Loading label="Loading tickets to pick up" /> : null}
       {queue.data && tickets.length === 0 ? (
         <p className="muted">Nothing is waiting to be picked up.</p>
       ) : null}

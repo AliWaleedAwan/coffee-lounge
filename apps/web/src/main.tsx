@@ -13,10 +13,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { trackUserActivity } from './api/activity.ts';
 import { App, createQueryClient } from './app/App.tsx';
+import { applyBranding, savedBranding } from './branding/brand.ts';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing from index.html');
 trackUserActivity();
+applyBranding(savedBranding());
 createRoot(root).render(
   <StrictMode>
     <App client={createQueryClient()} />

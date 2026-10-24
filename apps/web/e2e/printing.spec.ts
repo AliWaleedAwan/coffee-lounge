@@ -20,7 +20,7 @@ test('printer setup, test print, the printer banner and the jobs screen', async 
 
   await page.getByLabel('Name', { exact: true }).fill('Bench printer');
   await page.getByLabel('Connected by').selectOption('tcp');
-  await page.getByLabel('Address').fill('127.0.0.1:9'); // nothing listens: connection refused
+  await page.getByLabel('Address', { exact: true }).fill('127.0.0.1:9'); // nothing listens: connection refused
   await page.getByRole('button', { name: 'Add printer' }).click();
   await expect(page.getByRole('cell', { name: 'Bench printer', exact: true })).toBeVisible();
   await page.getByLabel('Kitchen tickets print on').selectOption({ label: 'Bench printer' });

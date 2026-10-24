@@ -17,6 +17,13 @@ export interface Area {
 export const AREAS: readonly Area[] = [
   { id: 'floor', label: 'Floor', path: '/floor', anyOf: ['tables.read'], ready: true },
   {
+    id: 'operations',
+    label: 'Live operations',
+    path: '/operations',
+    anyOf: ['reports.sales'],
+    ready: true,
+  },
+  {
     id: 'approvals',
     label: 'Approvals',
     path: '/approvals',

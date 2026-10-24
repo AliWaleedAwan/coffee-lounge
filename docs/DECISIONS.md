@@ -87,3 +87,5 @@
 | `billing.cash_rounding_unit` | 1.00 | D-16 |
 | `inventory.count_variance_pct` / `_amount` | 2 % / Rs 1,000 | D-18 |
 | `privacy.delivery_pii_retention_months` | 12 | D-25 |
+| `shop.business_hours` | 00:00–00:00 (always open until the owner sets the hours; guests order by QR only within them) | AT-130 |
+| `brand.primary` | #6B4435 (Coffee) | DEC-14 |

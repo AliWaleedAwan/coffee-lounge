@@ -2,6 +2,7 @@
  * PIN switch (UI_UX.md §1: fast user switching on the counter PC; waiter devices).
  * Recent users on this device are shown as tiles; anyone else types a username.
  */
+import { savedBranding } from '../branding/brand.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -38,7 +39,7 @@ export function PinScreen() {
   return (
     <main className="center-screen">
       <div className="center-card card">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{savedBranding().shopName}</span>
         <h1>Who is using this device?</h1>
         {recent.length > 0 ? (
           <div className="user-tiles" role="group" aria-label="Recent users">

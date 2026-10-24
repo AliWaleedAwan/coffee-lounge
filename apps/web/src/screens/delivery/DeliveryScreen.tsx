@@ -15,6 +15,7 @@ import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { rupees } from '../../order/cart.ts';
 import { useCommand } from '../counter/useCommand.ts';
 import { useSignedIn } from '../Shell.tsx';
+import { Loading } from '../../components/Loading.tsx';
 
 interface DeliveryItem {
   id: string;
@@ -105,6 +106,7 @@ export function DeliveryScreen() {
         </div>
       ) : null}
       {permissions.has('delivery.create') ? <NewDelivery /> : null}
+      {board.isPending ? <Loading label="Loading deliveries" /> : null}
       {(board.data?.outstanding ?? []).length > 0 ? (
         <section className="card stack" aria-labelledby="with-riders">
           <h2 id="with-riders">Still with riders</h2>

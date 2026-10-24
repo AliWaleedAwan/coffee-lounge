@@ -11,6 +11,7 @@ import { Field } from '../../components/Field.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { rupees } from '../../order/cart.ts';
 import type { Round } from '../../order/RoundList.tsx';
+import { Loading } from '../../components/Loading.tsx';
 
 interface Pending extends Round {
   escalated: boolean;
@@ -53,6 +54,7 @@ export function ApprovalsScreen() {
           {messageOf(queue.error)}
         </div>
       ) : null}
+      {queue.isPending ? <Loading label="Loading orders waiting for approval" /> : null}
       {queue.data && items.length === 0 ? <p className="muted">No orders are waiting.</p> : null}
       <ol className="stack" role="list">
         {items.map((r) => (

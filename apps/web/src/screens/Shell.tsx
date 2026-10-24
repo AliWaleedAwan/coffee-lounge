@@ -7,6 +7,7 @@ import { createContext, use, type ReactNode } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api, ApiError } from '../api/client.ts';
 import { permissionSet, recentUsers, roleLabel, useMe, type Me } from '../auth/session.ts';
+import { savedBranding, useBranding } from '../branding/brand.ts';
 import { ConnectionBanner } from '../connection/ConnectionBanner.tsx';
 import { LiveUpdates } from '../live/LiveUpdates.tsx';
 import { PrinterBanner } from './printing/PrinterBanner.tsx';
@@ -25,7 +26,7 @@ function FullScreenMessage({ title, children }: { title: string; children?: Reac
   return (
     <main className="center-screen">
       <div className="center-card card" role="status">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{savedBranding().shopName}</span>
         <h1>{title}</h1>
         {children}
       </div>
@@ -78,6 +79,7 @@ function Shell({ me }: { me: Me }) {
   const navigate = useNavigate();
   const permissions = permissionSet(me);
   const areas = visibleAreas(permissions);
+  const branding = useBranding();
   const logout = useMutation({
     mutationFn: () => api<undefined>('/auth/logout', { method: 'POST' }),
     onSettled: () => {
@@ -89,7 +91,7 @@ function Shell({ me }: { me: Me }) {
   return (
     <div className="shell">
       <header className="topbar">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{branding.shopName}</span>
         <span className="chip chip-info">{me.device.name}</span>
         <span className="topbar-spacer" />
         <span className="topbar-user">

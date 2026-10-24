@@ -1043,3 +1043,70 @@ kbd {
 .timeline li.current .timeline-label {
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- owner settings (step 3.12) */
+.setting-row {
+  align-items: end;
+}
+
+.brand-row {
+  align-items: end;
+}
+
+.brand-row input[type='color'] {
+  width: 56px;
+  height: var(--touch-min);
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+
+.brand-preview {
+  background: var(--brand-primary);
+  color: var(--text-on-brand);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- loading skeleton, live operations */
+.skeleton-row {
+  display: block;
+  height: var(--touch-primary);
+  border-radius: var(--radius-card);
+  background: linear-gradient(
+    90deg,
+    var(--surface-sunken),
+    var(--surface-raised),
+    var(--surface-sunken)
+  );
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-row {
+    animation: none;
+  }
+}
+
+.tile-value {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-warn {
+  border-color: var(--warning-text);
+}
+
+.inbox-seen {
+  opacity: 0.75;
+}

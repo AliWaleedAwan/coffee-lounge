@@ -13,6 +13,7 @@ import { runIdempotent } from '../../platform/idempotency.ts';
 import { isUuid } from '../../platform/correlation.ts';
 import { RequestLimiter } from '../../platform/rate-limit.ts';
 import { readSetting } from '../../platform/settings.ts';
+import { guestOrderingOpen } from '../settings/index.ts';
 import { parseInput } from '../../platform/validation.ts';
 import {
   ENTRY_COOKIE,
@@ -86,6 +87,14 @@ export async function customerOrderRoutes(
       request.body,
     );
     const ctx = guestContext(request, now());
+    const hours = await guestOrderingOpen(pool, ctx.now);
+    if (!hours.open) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `We are closed for orders from your phone now. Orders open again at ${hours.opens}; please ask a member of staff.`,
+        { opens: hours.opens, closes: hours.closes },
+      );
+    }
     const held = await visitOf(request, reply);
     // A paid takeaway's phone (read-only) orders again as a new visit from the counter QR.
     const visit = held?.readOnly ? null : held;

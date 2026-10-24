@@ -118,6 +118,7 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
     expect(new Set(rows.map((r) => r.key))).toEqual(documented);
     expect(Object.fromEntries(rows.map((r) => [r.key, r.value]))).toEqual({
       'billing.cash_rounding_unit': '1.00',
+      'brand.primary': '#6B4435',
       'inventory.count_variance_amount': '1000.00',
       'inventory.count_variance_pct': 2,
       'orders.escalation_minutes': 3,
@@ -128,6 +129,7 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
       'privacy.delivery_pii_retention_months': 12,
       'sessions.stale_alert_hours': 3,
       'shop.business_day_cutoff': '04:00',
+      'shop.business_hours': { opens: '00:00', closes: '00:00' },
       'shop.timezone': 'Asia/Karachi',
     });
   });

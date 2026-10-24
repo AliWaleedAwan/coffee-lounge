@@ -112,6 +112,8 @@ describe('no route forgets its permission', () => {
       'POST /api/staff/v1/auth/step-up',
       // Filtered per topic by the user's permissions (API.md §7; tested in live/events-route).
       'GET /api/staff/v1/events',
+      // The shop's name and brand colour for every screen's header (step 3.12): nothing private.
+      'GET /api/staff/v1/branding',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

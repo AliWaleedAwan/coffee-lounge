@@ -1,4 +1,5 @@
 /** Device registration (API.md §4): once per device, with an 8-digit code from a manager. */
+import { savedBranding } from '../branding/brand.ts';
 import { useMutation } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -25,7 +26,7 @@ export function RegisterScreen() {
   return (
     <main className="center-screen">
       <div className="center-card card">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{savedBranding().shopName}</span>
         <h1>Register this device</h1>
         <p className="muted">
           A manager creates a one-time code on the counter PC under Devices. It works for 10

@@ -8,8 +8,10 @@ import { billingRoutes } from './modules/billing/index.ts';
 import { deliveryRoutes } from './modules/delivery/index.ts';
 import { catalogRoutes } from './modules/catalog/index.ts';
 import { floorRoutes } from './modules/floor/index.ts';
+import { operationsRoutes } from './modules/operations/index.ts';
 import { orderRoutes } from './modules/orders/index.ts';
 import { printingRoutes } from './modules/printing/index.ts';
+import { settingsRoutes } from './modules/settings/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
 import { liveRoutes, type LiveRouteOptions } from './modules/live/index.ts';
 import { systemRoutes } from './modules/system/index.ts';
@@ -46,6 +48,8 @@ export async function registerStaffRoutes(
   });
   await orderRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await printingRoutes(app, { pool: deps.pool });
+  await settingsRoutes(app, { pool: deps.pool });
+  await operationsRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await deliveryRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
 }

@@ -19,6 +19,7 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router';
+import { applyBranding } from '../branding/brand.ts';
 import { invalidateAll, invalidateForHint } from '../live/invalidate.ts';
 import { LiveClient } from '../live/live-client.ts';
 import { cartTotal, roundBody, rupees, type CartLine, type MenuCategory } from '../order/cart.ts';
@@ -28,6 +29,9 @@ import { GUEST_API, GuestError, guestApi, memo } from './api.ts';
 import { progressOf } from './progress.ts';
 
 interface Entry {
+  branding?: { shopName: string; primary: string };
+  /** Guests order by QR within the shop's hours (AT-130). */
+  hours?: { open: boolean; opens: string; closes: string };
   entry: {
     kind: 'table' | 'counter_takeaway';
     label: string;
@@ -71,11 +75,24 @@ export function createGuestQueryClient(): QueryClient {
   });
 }
 
+/** The shop's name as the owner set it (Settings → Branding). */
+function shopName(): string {
+  return memo.get<Entry | null>(PLACE, null)?.branding?.shopName ?? 'Coffee Lounge';
+}
+
+/** Why ordering from this phone is closed: outside the shop's hours, or the table is off. */
+function closedMessage(place: Entry): string {
+  if (place.hours && !place.hours.open) {
+    return `We are closed for orders from your phone now. Orders open again at ${place.hours.opens}; please ask a member of staff.`;
+  }
+  return 'This table is not taking orders right now. Please ask a member of staff.';
+}
+
 function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="guest">
       <header className="topbar">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{shopName()}</span>
         <span className="topbar-spacer" />
         <span>{title}</span>
       </header>
@@ -140,6 +157,7 @@ function Landing() {
     guestApi<Entry>(`/entry/${encodeURIComponent(token)}`, { signal: controller.signal })
       .then((entry) => {
         memo.set(PLACE, entry);
+        if (entry.branding) applyBranding(entry.branding);
         if (entry.session) void navigate('/order', { replace: true });
         else setPlace(entry);
       })
@@ -172,7 +190,7 @@ function Landing() {
   return (
     <Shell title="">
       <div className="card stack guest-welcome">
-        <p className="brand-mark">Coffee Lounge</p>
+        <p className="brand-mark">{shopName()}</p>
         <h1>{place.entry.table?.name ?? place.entry.label}</h1>
         <p>
           {counter
@@ -180,9 +198,7 @@ function Landing() {
             : 'Order from your phone. A staff member confirms your order before it’s prepared.'}
         </p>
         {place.orderingOpen ? null : (
-          <p className="banner banner-warning">
-            This table is not taking orders right now. Please ask a member of staff.
-          </p>
+          <p className="banner banner-warning">{closedMessage(place)}</p>
         )}
         <button
           type="button"
@@ -315,7 +331,7 @@ function OrderPage() {
       <h1 className="visually-hidden">Order at {where}</h1>
       {!place.orderingOpen ? (
         <div role="status" className="banner banner-warning">
-          This table is not taking orders right now. Please ask a member of staff.
+          {closedMessage(place)}
         </div>
       ) : null}
       {shown === 'menu' ? (

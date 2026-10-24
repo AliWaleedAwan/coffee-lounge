@@ -19,6 +19,7 @@ import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
 import { PrintJobsScreen } from '../screens/printing/PrintJobsScreen.tsx';
 import { SettingsScreen } from '../screens/settings/SettingsScreen.tsx';
 import { MenuScreen } from '../screens/menu/MenuScreen.tsx';
+import { OperationsScreen } from '../screens/operations/OperationsScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
 import { RegisterScreen } from '../screens/RegisterScreen.tsx';
@@ -47,6 +48,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   floor: FloorScreen,
   health: HealthScreen,
   menu: MenuScreen,
+  operations: OperationsScreen,
   pickup: PickupScreen,
   settings: SettingsScreen,
 };

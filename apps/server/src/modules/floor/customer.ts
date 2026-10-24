@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { Queryable } from '../../platform/db/pool.ts';
 import { AppError } from '../../platform/errors.ts';
 import { parseInput } from '../../platform/validation.ts';
+import { guestOrderingOpen, readBranding } from '../settings/index.ts';
 import { readMenu } from '../catalog/index.ts';
 import { guestFromToken, joinIfActive, type EntryPoint } from './sessions.ts';
 import {
@@ -158,13 +159,19 @@ export async function customerFloorRoutes(
         };
       }
     }
+    const hours = await guestOrderingOpen(pool, now());
+    const branding = await readBranding(pool);
     return {
+      branding: { shopName: branding.shopName, primary: branding.primary },
+      /** Guests order by QR within the shop's hours (AT-130); staff always can. */
+      hours,
       entry: {
         kind: entry.kind,
         label: entry.label,
         table: entry.table_code ? { code: entry.table_code, name: entry.table_name } : null,
       },
-      orderingOpen: entry.kind === 'counter_takeaway' || entry.availability === 'active',
+      orderingOpen:
+        hours.open && (entry.kind === 'counter_takeaway' || entry.availability === 'active'),
       session,
     };
   });

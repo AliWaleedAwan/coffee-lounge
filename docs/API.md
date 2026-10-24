@@ -67,7 +67,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Purpose | SM | Notes |
 |---|---|---|---|
-| `GET /entry/{qrToken}` | Resolve QR, set entry cookie (+ guest token if joining) | — | Returns entry kind, table label, shop branding, joined session summary |
+| `GET /entry/{qrToken}` | Resolve QR, set entry cookie (+ guest token if joining) | — | Returns entry kind, table label, `branding` (shop name, brand colour), `hours` (guests order by QR within `shop.business_hours`; `orderingOpen` false outside them), joined session summary. Outside the hours `POST /rounds` answers `400` with when ordering opens |
 | `GET /menu` | Menu for this entry's order type with live availability | — | Unavailable items included with `available: false` and reason |
 | `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR: kept when the order opens the phone's takeaway session). Each phone's first order from the counter QR opens a session of its own (AT-75). A phone holding a token for another visit drops it when it scans a different code |
 | `POST /rounds/{roundId}/withdraw` **[I]** | Withdraw own pending round | R5 | Only the submitting guest |
@@ -196,6 +196,12 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /print-jobs/{jobId}/resolve-uncertain` | `kitchen.reprint` | `printed` (mark sent) or `reprint` (new labelled copy) |
 | `POST /tickets/{ticketId}/reprint` | `kitchen.reprint` | K5: a new copy labelled `REPRINT #n` |
 | `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
+| `GET /branding` | any signed-in staff | `{shopName, primary}` for every screen's header and buttons (step 3.12) |
+| `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
+| `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130) |
+| `PUT /settings/branding` | `settings.manage` | `{expectedVersion, shopName, addressLine, phone, footer, primary}`: the receipt wording and the brand colour together; a colour under 4.5:1 for white button text or on the page is refused (AT-130) |
+| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox (escalated orders, shift variances, failed deliveries, refunds due, uncollected items, long-open tables, printers) with links |
+| `POST /alerts/{alertId}/acknowledge` | `reports.sales` | Note an alert as seen; it stays in the inbox, below the unseen ones, until resolved |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 
 The OpenAPI file details every endpoint above except the catalog CRUD family, which follows the standard pattern and will be added to the spec in the same form as the Phase 3 build starts.

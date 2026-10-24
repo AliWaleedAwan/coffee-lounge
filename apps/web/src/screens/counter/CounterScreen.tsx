@@ -27,6 +27,7 @@ import { DiscountSheet, type SheetMode } from './DiscountSheet.tsx';
 import { TakeawayQueue } from './TakeawayQueue.tsx';
 import { PaymentPanel, type Method } from './PaymentPanel.tsx';
 import { approve, useCommand } from './useCommand.ts';
+import { Loading } from '../../components/Loading.tsx';
 
 const where = (b: { tableName: string | null; customerName: string | null; sessionNo: string }) =>
   b.tableName ?? (b.customerName ? `Takeaway · ${b.customerName}` : `Takeaway ${b.sessionNo}`);
@@ -178,6 +179,7 @@ export function CounterScreen() {
               </li>
             ))}
           </ul>
+          {bills.isPending ? <Loading label="Loading open tables" /> : null}
           {bills.isSuccess && items.length === 0 ? (
             <p className="muted">{query ? 'No table matches.' : 'No open tables.'}</p>
           ) : null}
@@ -229,7 +231,7 @@ export function CounterScreen() {
               }}
             />
           ) : (
-            <p className="muted">Loading the bill…</p>
+            <Loading label="Loading the bill" />
           )}
         </section>
       </div>

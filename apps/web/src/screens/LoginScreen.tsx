@@ -1,4 +1,5 @@
 /** Password login on a registered device (API.md §4). */
+import { savedBranding } from '../branding/brand.ts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -38,7 +39,7 @@ export function LoginScreen() {
   return (
     <main className="center-screen">
       <div className="center-card card">
-        <span className="brand-mark">Coffee Lounge</span>
+        <span className="brand-mark">{savedBranding().shopName}</span>
         <h1>Log in</h1>
         <form className="stack" onSubmit={submit} noValidate>
           <Field

@@ -6,10 +6,12 @@ import '../styles/tokens.css';
 import '../styles/base.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { applyBranding, savedBranding } from '../branding/brand.ts';
 import { createGuestQueryClient, GuestApp } from './GuestApp.tsx';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing from guest.html');
+applyBranding(savedBranding());
 createRoot(root).render(
   <StrictMode>
     <GuestApp client={createGuestQueryClient()} />

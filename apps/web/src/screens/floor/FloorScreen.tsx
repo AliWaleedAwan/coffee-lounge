@@ -19,6 +19,7 @@ import {
   type FloorTable,
 } from './floor-api.ts';
 import { TablesTab } from './TablesTab.tsx';
+import { Loading } from '../../components/Loading.tsx';
 
 export interface FloorAbilities {
   open: boolean;
@@ -90,7 +91,7 @@ function FloorTab({ can }: { can: FloorAbilities }) {
           {floorMessage(floor.error)}
         </div>
       ) : null}
-      {floor.isPending ? <p className="muted">Loading the floor…</p> : null}
+      {floor.isPending ? <Loading label="Loading the floor" /> : null}
       {floor.data && tables.length === 0 ? (
         <p className="muted">No tables yet. The owner adds them under Tables &amp; QR codes.</p>
       ) : null}

@@ -7,6 +7,7 @@ import { expectAccessible, logIn, navLabels, registerDevice, shop } from './supp
 
 const OWNER_AREAS = [
   'Floor',
+  'Live operations',
   'Approvals',
   'Pickup',
   'Bills & payments',
