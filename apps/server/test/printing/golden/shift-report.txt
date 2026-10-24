@@ -1,0 +1,28 @@
+CASH SHIFT
+Counter · shift 12
+------------------------------------------------
+Cashier                                      Ali
+Opened                         19 Oct 2026 09:00
+Closed                         19 Oct 2026 17:05
+Closed by                                    Ali
+------------------------------------------------
+Opening float                           5,000.00
+Cash sales                             41,620.00
+Cash refunds                                0.00
+Paid in                                     0.00
+Paid out                               -1,200.00
+EXPECTED CASH                          45,420.00
+Counted cash                           45,350.00
+VARIANCE                                  -70.00
+Reason: Change given twice to table 4, guest
+returned only part of it
+Variance approved by Sara.
+------------------------------------------------
+Not in the till (check against the slips):
+Card                                   28,450.00
+JazzCash                                6,300.00
+Easypaisa                               2,100.00
+Bank transfer                               0.00
+------------------------------------------------
+Paid out: Milk top-up, receipt kept    -1,200.00
+================================================

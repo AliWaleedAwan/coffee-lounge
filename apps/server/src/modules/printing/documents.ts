@@ -1,6 +1,6 @@
 /**
- * Printed documents (PRINTING_HARDWARE.md §4): the kitchen ticket, the customer receipt
- * and a test page, each rendered to ESC/POS for a given line width (48 on 80 mm paper).
+ * Printed documents (PRINTING_HARDWARE.md §4): the kitchen ticket, the customer receipt,
+ * the cash shift report and a test page, each rendered to ESC/POS for a given line width (48 on 80 mm paper).
  *
  * The kitchen ticket is rendered from `KitchenTicketData`, which has no field for a
  * price, a payment or a guest's details: such things cannot reach the kitchen (AT-99,
@@ -193,6 +193,90 @@ export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
   doc.align('center');
   for (const text of wrap(r.footer, w)) doc.line(text);
   doc.align('left');
+  return doc.cut(o.canCut).bytes();
+}
+
+// ---------------------------------------------------------------- cash shift report
+
+export interface ShiftReportData {
+  shiftId: string;
+  till: string;
+  cashier: string;
+  openedAt: Date;
+  closedAt: Date;
+  closedBy: string;
+  openingFloat: string;
+  cashSales: string;
+  cashRefunds: string;
+  paidIn: string;
+  paidOut: string;
+  expectedCash: string;
+  countedCash: string;
+  variance: string;
+  varianceReason: string | null;
+  /** Who approved a variance; null when it balanced or is still waiting. */
+  approvedBy: string | null;
+  status: 'closed' | 'approved';
+  card: string;
+  transfers: { label: string; amount: string }[];
+  movements: { kind: 'paid_in' | 'paid_out'; amount: string; reason: string }[];
+}
+
+/** A deduction: "-1,200.00", but a plain "0.00" when there is none. */
+const minus = (value: string): string => amount(/^0+\.00$/.test(value) ? value : `-${value}`);
+
+/** Printed at shift close (FINANCE_REPORTING.md §5): what the till should hold, and why. */
+export function renderShiftReport(r: ShiftReportData, o: PrintOptions): Buffer {
+  const w = o.width;
+  const doc = new EscPos();
+  reprintBanner(doc, o.copyNo);
+  doc.align('center').bold(true).size({ width: true }).line('CASH SHIFT').size({}).bold(false);
+  doc.line(`${r.till} · shift ${r.shiftId}`);
+  doc.align('left').line(rule(w));
+  doc.line(twoCols('Cashier', r.cashier, w));
+  doc.line(twoCols('Opened', shopTime(r.openedAt, o.timeZone), w));
+  doc.line(twoCols('Closed', shopTime(r.closedAt, o.timeZone), w));
+  doc.line(twoCols('Closed by', r.closedBy, w));
+  doc.line(rule(w));
+  doc.line(twoCols('Opening float', amount(r.openingFloat), w));
+  doc.line(twoCols('Cash sales', amount(r.cashSales), w));
+  doc.line(twoCols('Cash refunds', minus(r.cashRefunds), w));
+  doc.line(twoCols('Paid in', amount(r.paidIn), w));
+  doc.line(twoCols('Paid out', minus(r.paidOut), w));
+  doc
+    .bold(true)
+    .line(twoCols('EXPECTED CASH', amount(r.expectedCash), w))
+    .bold(false);
+  doc.line(twoCols('Counted cash', amount(r.countedCash), w));
+  doc
+    .bold(true)
+    .line(twoCols('VARIANCE', amount(r.variance), w))
+    .bold(false);
+  if (r.varianceReason) for (const text of wrap(`Reason: ${r.varianceReason}`, w)) doc.line(text);
+  doc.line(
+    r.variance.replace('-', '') === '0.00'
+      ? 'Balanced.'
+      : r.approvedBy
+        ? `Variance approved by ${r.approvedBy}.`
+        : 'Variance waiting for approval by a manager.',
+  );
+  doc.line(rule(w));
+  doc.line('Not in the till (check against the slips):');
+  doc.line(twoCols('Card', amount(r.card), w));
+  for (const t of r.transfers) doc.line(twoCols(t.label, amount(t.amount), w));
+  if (r.movements.length > 0) {
+    doc.line(rule(w));
+    for (const m of r.movements) {
+      const sign = m.kind === 'paid_out' ? '-' : '';
+      for (const line of columns(
+        `${m.kind === 'paid_out' ? 'Paid out' : 'Paid in'}: ${m.reason}`,
+        amount(`${sign}${m.amount}`),
+        w,
+      ))
+        doc.line(line);
+    }
+  }
+  doc.line(rule(w, '='));
   return doc.cut(o.canCut).bytes();
 }
 

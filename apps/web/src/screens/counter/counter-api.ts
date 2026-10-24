@@ -92,14 +92,41 @@ export interface PaymentResult {
   receiptQueued: boolean;
 }
 
+/** A cash shift with its figures (FINANCE_REPORTING.md §5). */
 export interface Shift {
   id: string;
   till: string;
   cashier: string;
+  cashierUserId: string;
+  status: 'open' | 'closed' | 'approved';
   openedAt: string;
+  closedAt: string | null;
+  closedBy: string | null;
   openingFloat: string;
   cashSales: string;
   cashPayments: number;
+  cashRefunds: string;
+  paidIn: string;
+  paidOut: string;
+  expectedCash: string;
+  countedCash: string | null;
+  variance: string | null;
+  varianceReason: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  card: string;
+  transfers: { jazzcash: string; easypaisa: string; bank: string };
+}
+
+export interface ShiftDetail extends Shift {
+  movements: {
+    id: string;
+    kind: 'paid_in' | 'paid_out';
+    amount: string;
+    reason: string;
+    by: string;
+    at: string;
+  }[];
 }
 
 export const billKey = (sessionId: string) => ['bill', sessionId] as const;
@@ -124,7 +151,16 @@ export function useBill(sessionId: string | null) {
 export function useShift(enabled: boolean) {
   return useQuery({
     queryKey: ['shift'],
-    queryFn: ({ signal }) => api<{ shift: Shift | null }>('/cash-shifts/current', { signal }),
+    queryFn: ({ signal }) => api<{ shift: ShiftDetail | null }>('/cash-shifts/current', { signal }),
+    meta: { topics: ['cashier'] },
+    enabled,
+  });
+}
+
+export function useShifts(enabled: boolean) {
+  return useQuery({
+    queryKey: ['shift', 'list'],
+    queryFn: ({ signal }) => api<{ items: Shift[] }>('/cash-shifts', { signal }),
     meta: { topics: ['cashier'] },
     enabled,
   });

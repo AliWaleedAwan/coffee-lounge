@@ -10,10 +10,12 @@ import { describe, expect, it } from 'vitest';
 import {
   renderKitchenTicket,
   renderReceipt,
+  renderShiftReport,
   renderTestPage,
   type KitchenTicketData,
   type PrintOptions,
   type ReceiptData,
+  type ShiftReportData,
 } from '../../src/modules/printing/documents.ts';
 import { toPrintable, wrap } from '../../src/modules/printing/escpos.ts';
 import { decodeEscPos } from '../support/escpos/decoder.ts';
@@ -172,6 +174,41 @@ describe('receipt (AT-84)', () => {
   it('a reprint is labelled', () => {
     const text = golden('receipt-reprint', renderReceipt(receipt, { ...options, copyNo: 3 }));
     expect(text.split('\n')[0]).toBe('*** REPRINT #3 ***');
+  });
+});
+
+const shift: ShiftReportData = {
+  shiftId: '12',
+  till: 'Counter',
+  cashier: 'Ali',
+  openedAt: new Date('2026-10-19T04:00:00Z'), // 09:00 in Karachi
+  closedAt: new Date('2026-10-19T12:05:00Z'),
+  closedBy: 'Ali',
+  openingFloat: '5000.00',
+  cashSales: '41620.00',
+  cashRefunds: '0.00',
+  paidIn: '0.00',
+  paidOut: '1200.00',
+  expectedCash: '45420.00',
+  countedCash: '45350.00',
+  variance: '-70.00',
+  varianceReason: 'Change given twice to table 4, guest returned only part of it',
+  approvedBy: 'Sara',
+  status: 'approved',
+  card: '28450.00',
+  transfers: [
+    { label: 'JazzCash', amount: '6300.00' },
+    { label: 'Easypaisa', amount: '2100.00' },
+    { label: 'Bank transfer', amount: '0.00' },
+  ],
+  movements: [{ kind: 'paid_out', amount: '1200.00', reason: 'Milk top-up, receipt kept' }],
+};
+
+describe('cash shift report (step 3.8)', () => {
+  it('float, sales, movements, expected, counted, variance and the slips to check', () => {
+    const text = golden('shift-report', renderShiftReport(shift, options));
+    expect(text).toContain('Variance approved by Sara.');
+    for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(48);
   });
 });
 

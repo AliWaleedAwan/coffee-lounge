@@ -152,11 +152,13 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | `{lockVersion, method, amount, tendered?, provider?, reference?, confirmed?}`: cash (`tendered`, change worked out; needs the open shift) / card (`reference` = approval code, optional) / transfer (`provider`, `reference`, `confirmed: true`; `confirmed_by` = caller). A reference that looks like a card number is refused. The Idempotency-Key is stored as the payment's key. Returns `settled`, `invoiceNo`, `change`, `receiptQueued` |
 | `POST /invoices/{invoiceId}/receipt/reprint` **[I]** | `receipts.reprint` | — | Labelled reprint |
 | `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` | P2 | Full/line refund or method correction (PROVISIONAL D-13) |
-| `GET /cash-shifts/current` | `cash_shifts.operate` | — | Open shift on the counter till with the cash taken so far (expected cash with paid-in/out in step 3.8) |
+| `GET /cash-shifts/current` | `cash_shifts.operate` | — | The open shift on the counter till with its figures: float, cash sales, refunds, paid-in/out, expected cash, card and transfer totals, movements |
+| `GET /cash-shifts`, `GET /cash-shifts/{shiftId}` | `cash_shifts.operate` | — | Recent shifts, closed ones waiting for approval first; a cashier sees and opens only their own |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
-| `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | Paid-in / paid-out with reason |
-| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | Counted cash → expected, variance; warns about outstanding COD |
-| `POST /cash-shifts/{shiftId}/approve` **[I]** | `cash_shifts.approve_variance` | — | Approve variance (approver ≠ cashier) |
+| `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | `{kind: paid_in \| paid_out, amount, reason}` on an open shift; a paid-out larger than the expected cash is refused |
+| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | `{countedCash, varianceReason?, stepUpId?}` → expected, variance. Balanced: approved at once. Otherwise a reason is required, and a step-up (`shift.variance`) from someone other than the cashier approves it now, or it waits as `closed`. Prints the shift report on the receipt printer. Outstanding COD warning arrives with delivery (3.10) |
+| `POST /cash-shifts/{shiftId}/report/reprint` **[I]** | `cash_shifts.operate` | — | Labelled copy of a closed shift’s report |
+| `POST /cash-shifts/{shiftId}/approve` **[I]** | `cash_shifts.approve_variance` | — | `{note?}`: approve a closed shift’s variance (approver ≠ cashier) |
 
 ### 5.6 Delivery
 

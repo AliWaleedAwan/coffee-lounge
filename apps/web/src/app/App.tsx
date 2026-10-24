@@ -11,6 +11,7 @@ import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
+import { ShiftScreen } from '../screens/counter/ShiftScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
 import { SessionScreen } from '../screens/session/SessionScreen.tsx';
 import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
@@ -49,6 +50,9 @@ const BUILT: Record<string, () => JSX.Element> = {
 };
 
 const FLOOR = AREAS.find((a) => a.id === 'floor');
+const COUNTER = AREAS.find((a) => a.id === 'counter');
+/** Reached from Bills & payments; cashiers, managers and the owner run the till shift. */
+const CASH_SHIFT = COUNTER ? { ...COUNTER, anyOf: ['cash_shifts.operate'] } : null;
 /** Reached from the printer banner, not the menu. */
 const PRINT_JOBS = {
   id: 'print-jobs',
@@ -85,6 +89,16 @@ export function AppRoutes() {
             element={
               <AreaPage area={FLOOR}>
                 <SessionScreen />
+              </AreaPage>
+            }
+          />
+        ) : null}
+        {CASH_SHIFT ? (
+          <Route
+            path="/counter/shift"
+            element={
+              <AreaPage area={CASH_SHIFT}>
+                <ShiftScreen />
               </AreaPage>
             }
           />

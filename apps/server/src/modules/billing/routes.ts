@@ -6,6 +6,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
+import { AppError } from '../../platform/errors.ts';
 import { handleCommand } from '../../platform/idempotency.ts';
 import { parseInput } from '../../platform/validation.ts';
 import type { SessionRow } from '../floor/index.ts';
@@ -20,7 +21,16 @@ import {
   TRANSFER_PROVIDERS,
 } from './payments.ts';
 import { openBills } from './views.ts';
-import { currentShift, openShift } from './shifts.ts';
+import {
+  addMovement,
+  approveShift,
+  closeShift,
+  currentShift,
+  listShifts,
+  openShift,
+  readShift,
+  reprintShiftReport,
+} from './shifts.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
 const idParam = (request: FastifyRequest) => parseInput(z.object({ id }), request.params).id;
@@ -251,7 +261,7 @@ export async function billingRoutes(
     },
   );
 
-  // ------------------------------------------------------------ the till's shift (3.8 adds the rest)
+  // ------------------------------------------------------------ the till's cash shift (step 3.8)
   app.get('/cash-shifts/current', { config: { permission: 'cash_shifts.operate' } }, async () =>
     currentShift(pool),
   );
@@ -269,6 +279,109 @@ export async function billingRoutes(
         reply,
         { scope: 'shift.open', actorRef: `user:${auth.user.id}`, payload: body },
         async (tx) => ({ status: 201, body: await openShift(tx, ctx, auth, body) }),
+      );
+    },
+  );
+
+  app.get('/cash-shifts', { config: { permission: 'cash_shifts.operate' } }, async (request) =>
+    listShifts(pool, authOf(request)),
+  );
+
+  app.get(
+    '/cash-shifts/:id',
+    { config: { permission: 'cash_shifts.operate' } },
+    async (request) => {
+      const shift = await readShift(pool, idParam(request));
+      const auth = authOf(request);
+      const grant = auth.permissions.get('cash_shifts.operate');
+      if (grant && grant.scopes !== 'all' && shift.cashierUserId !== auth.user.id) {
+        throw new AppError('FORBIDDEN', 'This is another cashier’s shift');
+      }
+      return shift;
+    },
+  );
+
+  app.post(
+    '/cash-shifts/:id/movements',
+    { config: { permission: 'cash_shifts.operate' } },
+    async (request, reply) => {
+      const shiftId = idParam(request);
+      const body = parseInput(
+        z.object({ kind: z.enum(['paid_in', 'paid_out']), amount, reason }).strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        {
+          scope: 'shift.movement',
+          actorRef: `user:${auth.user.id}`,
+          payload: { shiftId, ...body },
+        },
+        async (tx) => ({ status: 201, body: await addMovement(tx, ctx, auth, shiftId, body) }),
+      );
+    },
+  );
+
+  app.post(
+    '/cash-shifts/:id/close',
+    { config: { permission: 'cash_shifts.operate' } },
+    async (request, reply) => {
+      const shiftId = idParam(request);
+      const body = parseInput(
+        z.object({ countedCash: amount, varianceReason: reason.optional(), stepUpId }).strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'shift.close', actorRef: `user:${auth.user.id}`, payload: { shiftId, ...body } },
+        async (tx) => ({ status: 200, body: await closeShift(tx, ctx, auth, shiftId, body) }),
+      );
+    },
+  );
+
+  app.post(
+    '/cash-shifts/:id/approve',
+    { config: { permission: 'cash_shifts.approve_variance' } },
+    async (request, reply) => {
+      const shiftId = idParam(request);
+      const body = parseInput(
+        z.object({ note: z.string().trim().max(120).optional() }).strict(),
+        request.body ?? {},
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'shift.approve', actorRef: `user:${auth.user.id}`, payload: { shiftId, ...body } },
+        async (tx) => ({ status: 200, body: await approveShift(tx, ctx, auth, shiftId, body) }),
+      );
+    },
+  );
+
+  app.post(
+    '/cash-shifts/:id/report/reprint',
+    { config: { permission: 'cash_shifts.operate' } },
+    async (request, reply) => {
+      const shiftId = idParam(request);
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'shift.report_reprint', actorRef: `user:${auth.user.id}`, payload: { shiftId } },
+        async (tx) => ({ status: 201, body: await reprintShiftReport(tx, ctx, auth, shiftId) }),
       );
     },
   );

@@ -2,7 +2,8 @@
  * Phase 3 step 3.7 journey at the counter (the till), keyboard only (AT-87, UI_UX.md J5): `/` finds
  * the table, `Enter` opens its bill, `F2` prepares it, `F4` cash with change, settled.
  * A second table pays split: `F5` card for part, then cash; a discount sheet closes on
- * `Esc`. AT-86 for the new screen. Named to run after the specs that expect an empty shop.
+ * `Esc`. Then the cash shift (step 3.8): a paid-out, and a close that is Rs 10 short waits
+ * for someone other than the cashier (AT-37). AT-86 for the new screens. Named to run after the specs that expect an empty shop.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible, logIn, registerDevice, shop } from './support.ts';
@@ -105,4 +106,28 @@ test('counter by keyboard: find, prepare, cash with change; then a split payment
   await page.getByRole('button', { name: 'Take Rs 400 by cash' }).click();
   await expect(page.getByRole('status').filter({ hasText: /Paid · INV-/ })).toBeVisible();
   await expect(page.locator('.bill-lines + .totals ~ ul')).toContainText('ref A7781');
+
+  // The cash shift: 5000 float + 1300 + 400 cash, then Rs 100 paid out.
+  await page.getByRole('link', { name: 'Cash shift' }).click();
+  await expect(page.getByRole('heading', { name: 'Cash shift', level: 1 })).toBeVisible();
+  await expect(page.locator('.totals').first()).toContainText('Rs 6700');
+  await page.getByLabel('Amount (Rs)').fill('100');
+  await page.getByLabel('What for').fill('Milk top-up, receipt kept');
+  await page.getByRole('button', { name: 'Record' }).click();
+  await expect(page.getByText('Paid out Rs 100 recorded.')).toBeVisible();
+  await expect(page.locator('.totals').first()).toContainText('Rs 6600');
+  await expectAccessible(page, 'cash shift');
+  await page.getByLabel('Counted cash (Rs)').fill('6590');
+  await expect(page.getByText('The till is Rs 10 short (expected Rs 6600).')).toBeVisible();
+  await page.getByLabel('Why the difference').fill('Not found at the count');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/shift-close.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Close shift' }).click();
+  await expect(page.getByText(/Variance Rs -10 is waiting for a manager’s approval/)).toBeVisible();
+  // The owner closed their own shift: someone else approves it.
+  await expect(page.getByRole('row', { name: /Not found at the count/ })).toContainText(
+    'Waiting for approval',
+  );
+  await expect(page.getByRole('heading', { name: 'Open a shift' })).toBeVisible();
+  await expectAccessible(page, 'cash shift closed');
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/shift-closed.png`, fullPage: true });
 });

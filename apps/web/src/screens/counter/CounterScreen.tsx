@@ -239,8 +239,8 @@ function ShiftBar({ shift, loaded }: { shift: Shift | null; loaded: boolean }) {
   if (shift) {
     return (
       <p className="muted">
-        Cash shift open · {shift.cashier} · float {rupees(shift.openingFloat)} · cash taken{' '}
-        {rupees(shift.cashSales)}
+        Cash shift open · {shift.cashier} · cash in the till {rupees(shift.expectedCash)} ·{' '}
+        <Link to="/counter/shift">Cash shift</Link>
       </p>
     );
   }

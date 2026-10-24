@@ -2,10 +2,12 @@
 export {
   renderKitchenTicket,
   renderReceipt,
+  renderShiftReport,
   renderTestPage,
   type KitchenTicketData,
   type PrintOptions,
   type ReceiptData,
+  type ShiftReportData,
 } from './documents.ts';
 export {
   dispatchPrinter,
