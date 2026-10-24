@@ -211,3 +211,140 @@ test('a working day: journeys J2–J6, live operations, settings, a long cut', a
   await expectAccessible(page, 'settings');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/settings.png`, fullPage: true });
 });
+
+/**
+ * AT-15 (Phase 3 exit demo): a dine-in service on several devices with the internet
+ * unplugged. Every browser here may reach the shop's server only; any other request is
+ * refused as if the router's internet cable were out, and recorded: there must be none.
+ * Counter PC (owner), a waiter tablet (Sara) and two guests' phones.
+ */
+test('AT-15: a dine-in service on the LAN with the internet unplugged', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const s = shop();
+  const outside: string[] = [];
+  const unplug = async (context: import('@playwright/test').BrowserContext) => {
+    await context.route('**/*', async (route) => {
+      const host = new URL(route.request().url()).hostname;
+      if (host === '127.0.0.1' || host === 'localhost') return route.continue();
+      outside.push(route.request().url());
+      return route.abort('internetdisconnected');
+    });
+  };
+  await unplug(page.context());
+
+  // The counter PC: the owner sets up two tables and assigns Sara to one.
+  await registerDevice(page, s.codes[16] ?? '');
+  await logIn(page, s.owner.username, s.owner.password);
+  const cat = await staffPost(page, '/menu/categories', { name: 'Lawn menu' });
+  await staffPost(page, '/menu/items', {
+    categoryId: cat['id'],
+    name: 'Lawn latte',
+    variants: [{ name: 'Regular', price: '700' }],
+  });
+  const front = await staffPost(page, '/tables', { code: 'LW1', name: 'Lawn front' });
+  const back = await staffPost(page, '/tables', { code: 'LW2', name: 'Lawn back' });
+  const qr = (await staffPost(page, '/qr-entry-points/generate', {
+    tableIds: [back['id']],
+    counter: false,
+  })) as { items: { url: string }[] };
+  const users = (await (await page.request.get('/api/staff/v1/users')).json()) as {
+    items: { id: string; username: string }[];
+  };
+  const sara = users.items.find((u) => u.username === 'sara');
+  await page.request.put(`/api/staff/v1/tables/${String(back['id'])}/assignment`, {
+    data: { userId: sara?.id },
+    headers: { 'x-cl-request': '1' },
+  });
+
+  // The waiter tablet: Sara opens the front table and sends a round.
+  const tablet = await browser.newContext({ ...devices['iPad (gen 7)'] });
+  await unplug(tablet);
+  const waiter = await tablet.newPage();
+  await registerDevice(waiter, s.codes[17] ?? '');
+  await logIn(waiter, 'sara', s.password);
+  const opened = await staffPost(waiter, `/tables/${String(front['id'])}/sessions`, {});
+  await waiter.goto(`/sessions/${String(opened['id'])}`);
+  await waiter.getByRole('tab', { name: 'Lawn menu' }).click();
+  await waiter.getByRole('button', { name: /Lawn latte/ }).click();
+  await waiter.getByRole('button', { name: /^Add/ }).click();
+  await waiter.getByRole('button', { name: 'Send to kitchen' }).click();
+  await expect(waiter.getByText('Accepted so far Rs 700')).toBeVisible();
+
+  // A guest at the back table orders from the QR code; Sara accepts it.
+  const phones = await browser.newContext({ ...devices['Pixel 7'] });
+  await unplug(phones);
+  const guest = await phones.newPage();
+  await guest.goto(qr.items[0]?.url ?? '');
+  await guest.getByRole('button', { name: 'View menu' }).click();
+  await guest.getByRole('tab', { name: 'Lawn menu' }).click();
+  await guest
+    .getByRole('button', { name: /Lawn latte/ })
+    .first()
+    .click();
+  await guest.getByRole('button', { name: /^Add/ }).click();
+  await guest.getByRole('button', { name: /View order · 1 item/ }).click();
+  await guest.getByRole('button', { name: 'Send order' }).click();
+  await expect(guest.getByRole('heading', { name: 'Waiting for staff to confirm' })).toBeVisible();
+  await waiter.getByRole('link', { name: 'Approvals' }).click();
+  await waiter.getByRole('button', { name: /^Accept Lawn back order 1/ }).click();
+  await expect(guest.getByRole('heading', { name: 'Being prepared' })).toBeVisible();
+
+  // Sara collects both lattes at the pass.
+  await waiter.getByRole('link', { name: 'Pickup' }).click();
+  for (const where of ['Lawn front', 'Lawn back']) {
+    const card = waiter.getByRole('listitem').filter({ hasText: where });
+    await card
+      .getByRole('button', { name: /^Picked up/ })
+      .first()
+      .click();
+    await expect(waiter.getByText(new RegExp(`Picked up \\d+ × .* for ${where}`))).toBeHidden({
+      timeout: 10_000,
+    });
+  }
+  await expect(guest.getByRole('heading', { name: 'Served. Enjoy!' })).toBeVisible();
+
+  // The guest asks for the bill; the counter takes cash, and card for the front table.
+  await guest.getByRole('button', { name: 'Request bill' }).click();
+  await expect(guest.getByText('Bill requested. A staff member is on the way.')).toBeVisible();
+  const current = (await (await page.request.get('/api/staff/v1/cash-shifts/current')).json()) as {
+    shift: { id: string } | null;
+  };
+  if (!current.shift) await staffPost(page, '/cash-shifts', { openingFloat: '2000' });
+  await page.getByRole('link', { name: 'Bills & payments' }).click();
+  await page.getByRole('option', { name: /Lawn back/ }).click();
+  await expect(page.getByRole('heading', { name: 'Lawn back · bill' })).toBeVisible();
+  await page.keyboard.press('F2');
+  await expect(page.getByText('Ready to pay')).toBeVisible();
+  await page.keyboard.press('F4');
+  await page.getByLabel('Cash received').fill('1000');
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('status').filter({ hasText: /Paid · INV-.*change Rs 300/ }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Next customer' }).click();
+  await page.getByRole('option', { name: /Lawn front/ }).click();
+  await expect(page.getByRole('heading', { name: 'Lawn front · bill' })).toBeVisible();
+  await page.keyboard.press('F2');
+  await expect(page.getByText('Ready to pay')).toBeVisible();
+  await page.keyboard.press('F5');
+  await page.getByRole('button', { name: 'Take Rs 700 by card' }).click();
+  await expect(page.getByRole('status').filter({ hasText: /Paid · INV-/ })).toBeVisible();
+  await expect(guest.getByText(/Scan the QR code on your table/)).toBeVisible();
+
+  // The day ends: the till is counted and balances.
+  const shift = (await (await page.request.get('/api/staff/v1/cash-shifts/current')).json()) as {
+    shift: { id: string; expectedCash: string };
+  };
+  const closed = await staffPost(page, `/cash-shifts/${shift.shift.id}/close`, {
+    countedCash: shift.shift.expectedCash,
+  });
+  expect(closed).toMatchObject({ status: 'approved', variance: '0.00' });
+
+  // Nothing tried to leave the LAN.
+  expect(outside).toEqual([]);
+  await tablet.close();
+  await phones.close();
+});
