@@ -1,8 +1,9 @@
 /**
  * Order composer (UI_UX.md §7): pick items from the menu, choose size and choices, then
- * send the cart. Used by waiters for a table and by guests on their phones; the parent
- * owns the cart and the sending. Lines the server could not make are flagged in place
- * and the cart is kept (AT-26).
+ * send the cart. Waiters see the menu and the order side by side (`Composer`); the guest
+ * app shows the menu and the order as separate screens (`MenuPicker`, `CartPanel`,
+ * step 3.11). The parent owns the cart and the sending. Lines the server could not make
+ * are flagged in place and the cart is kept (AT-26).
  */
 import { useId, useState, type ReactNode } from 'react';
 import {
@@ -29,8 +30,107 @@ export interface ComposerProps {
   disabled?: boolean;
 }
 
-export function Composer({
+export function Composer(props: ComposerProps) {
+  return (
+    <div className="composer">
+      <MenuPicker
+        categories={props.categories}
+        disabled={props.disabled}
+        onAdd={(line) => {
+          props.onCartChange([...props.cart, line]);
+        }}
+      />
+      <CartPanel {...props} />
+    </div>
+  );
+}
+
+/** Menu categories and items; an item opens its sheet (size, choices, note, quantity). */
+export function MenuPicker({
   categories,
+  onAdd,
+  disabled,
+}: {
+  categories: MenuCategory[];
+  onAdd: (line: CartLine) => void;
+  disabled?: boolean | undefined;
+}) {
+  const [open, setOpen] = useState<MenuItem | null>(null);
+  const [category, setCategory] = useState(categories[0]?.id ?? '');
+  const shown = categories.find((c) => c.id === category) ?? categories[0];
+  return (
+    <section className="stack" aria-label="Menu">
+      <div className="tabs" role="tablist" aria-label="Menu categories">
+        {categories.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            role="tab"
+            aria-selected={c.id === shown?.id}
+            onClick={() => {
+              setCategory(c.id);
+              setOpen(null);
+            }}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+      {open ? (
+        <ItemSheet
+          item={open}
+          onCancel={() => {
+            setOpen(null);
+          }}
+          onAdd={(line) => {
+            onAdd(line);
+            setOpen(null);
+          }}
+        />
+      ) : (
+        <ul className="menu-list" role="list">
+          {(shown?.items ?? []).map((item) => {
+            const available = item.variants.some((v) => v.available);
+            const cheapest = item.variants.reduce<string | null>(
+              (low, v) =>
+                low === null || Number(v.promotionPrice ?? v.price) < Number(low)
+                  ? (v.promotionPrice ?? v.price)
+                  : low,
+              null,
+            );
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className="menu-row"
+                  disabled={!available || disabled}
+                  onClick={() => {
+                    setOpen(item);
+                  }}
+                >
+                  <span className="menu-row-name">{item.name}</span>
+                  {item.dietaryTags.length > 0 ? (
+                    <span className="muted">{item.dietaryTags.join(' · ')}</span>
+                  ) : null}
+                  <span className="menu-row-price">
+                    {available
+                      ? cheapest
+                        ? `${item.variants.length > 1 ? 'from ' : ''}${rupees(cheapest)}`
+                        : ''
+                      : 'Unavailable right now'}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The order being put together: lines with − / +, the total and the send button. */
+export function CartPanel({
   cart,
   onCartChange,
   onSend,
@@ -39,151 +139,84 @@ export function Composer({
   error,
   flagged = [],
   disabled,
-}: ComposerProps) {
-  const [open, setOpen] = useState<MenuItem | null>(null);
-  const [category, setCategory] = useState(categories[0]?.id ?? '');
-  const shown = categories.find((c) => c.id === category) ?? categories[0];
-
+  title = 'Order',
+  note,
+}: Omit<ComposerProps, 'categories'> & { title?: string; note?: ReactNode }) {
   return (
-    <div className="composer">
-      <section className="stack" aria-label="Menu">
-        <div className="tabs" role="tablist" aria-label="Menu categories">
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              role="tab"
-              aria-selected={c.id === shown?.id}
-              onClick={() => {
-                setCategory(c.id);
-                setOpen(null);
-              }}
-            >
-              {c.name}
-            </button>
-          ))}
+    <section className="card stack cart" aria-label={title}>
+      <h2>{title}</h2>
+      {cart.length === 0 ? <p className="muted">Nothing added yet.</p> : null}
+      <ul className="stack stack-tight" role="list">
+        {cart.map((l, i) => (
+          <li
+            key={l.key}
+            className={flagged.includes(i + 1) ? 'cart-line cart-line-flagged' : 'cart-line'}
+          >
+            <div>
+              <strong>
+                {l.itemName} · {l.variantName}
+              </strong>
+              {l.optionNames.length > 0 ? (
+                <div className="muted">{l.optionNames.join(', ')}</div>
+              ) : null}
+              {l.notes ? <div className="muted">“{l.notes}”</div> : null}
+              {flagged.includes(i + 1) ? (
+                <div className="field-error">Not enough stock for this</div>
+              ) : null}
+            </div>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                aria-label={`One less ${l.itemName}`}
+                disabled={sending}
+                onClick={() => {
+                  onCartChange(
+                    l.qty > 1
+                      ? cart.map((x) => (x.key === l.key ? { ...x, qty: x.qty - 1 } : x))
+                      : cart.filter((x) => x.key !== l.key),
+                  );
+                }}
+              >
+                −
+              </button>
+              <span aria-label={`${String(l.qty)} ${l.itemName}`}>{l.qty}</span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                aria-label={`One more ${l.itemName}`}
+                disabled={sending || l.qty >= 20}
+                onClick={() => {
+                  onCartChange(cart.map((x) => (x.key === l.key ? { ...x, qty: x.qty + 1 } : x)));
+                }}
+              >
+                +
+              </button>
+              <span className="cart-price">{rupees(cartTotal([l]))}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {cart.length > 0 ? (
+        <p>
+          <strong>Total {rupees(cartTotal(cart))}</strong>
+        </p>
+      ) : null}
+      {note}
+      {error ? (
+        <div role="alert" className="banner banner-danger">
+          {error}
         </div>
-        {open ? (
-          <ItemSheet
-            item={open}
-            onCancel={() => {
-              setOpen(null);
-            }}
-            onAdd={(line) => {
-              onCartChange([...cart, line]);
-              setOpen(null);
-            }}
-          />
-        ) : (
-          <ul className="menu-list" role="list">
-            {(shown?.items ?? []).map((item) => {
-              const available = item.variants.some((v) => v.available);
-              const cheapest = item.variants.reduce<string | null>(
-                (low, v) =>
-                  low === null || Number(v.promotionPrice ?? v.price) < Number(low)
-                    ? (v.promotionPrice ?? v.price)
-                    : low,
-                null,
-              );
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className="menu-row"
-                    disabled={!available || disabled}
-                    onClick={() => {
-                      setOpen(item);
-                    }}
-                  >
-                    <span className="menu-row-name">{item.name}</span>
-                    {item.dietaryTags.length > 0 ? (
-                      <span className="muted">{item.dietaryTags.join(' · ')}</span>
-                    ) : null}
-                    <span className="menu-row-price">
-                      {available ? (cheapest ? rupees(cheapest) : '') : 'Unavailable right now'}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="card stack cart" aria-label="Order">
-        <h2>Order</h2>
-        {cart.length === 0 ? <p className="muted">Nothing added yet.</p> : null}
-        <ul className="stack stack-tight" role="list">
-          {cart.map((l, i) => (
-            <li
-              key={l.key}
-              className={flagged.includes(i + 1) ? 'cart-line cart-line-flagged' : 'cart-line'}
-            >
-              <div>
-                <strong>
-                  {l.itemName} · {l.variantName}
-                </strong>
-                {l.optionNames.length > 0 ? (
-                  <div className="muted">{l.optionNames.join(', ')}</div>
-                ) : null}
-                {l.notes ? <div className="muted">“{l.notes}”</div> : null}
-                {flagged.includes(i + 1) ? (
-                  <div className="field-error">Not enough stock for this</div>
-                ) : null}
-              </div>
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  aria-label={`One less ${l.itemName}`}
-                  disabled={sending}
-                  onClick={() => {
-                    onCartChange(
-                      l.qty > 1
-                        ? cart.map((x) => (x.key === l.key ? { ...x, qty: x.qty - 1 } : x))
-                        : cart.filter((x) => x.key !== l.key),
-                    );
-                  }}
-                >
-                  −
-                </button>
-                <span aria-label={`${String(l.qty)} ${l.itemName}`}>{l.qty}</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  aria-label={`One more ${l.itemName}`}
-                  disabled={sending || l.qty >= 20}
-                  onClick={() => {
-                    onCartChange(cart.map((x) => (x.key === l.key ? { ...x, qty: x.qty + 1 } : x)));
-                  }}
-                >
-                  +
-                </button>
-                <span className="cart-price">{rupees(cartTotal([l]))}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {cart.length > 0 ? (
-          <p>
-            <strong>Total {rupees(cartTotal(cart))}</strong>
-          </p>
-        ) : null}
-        {error ? (
-          <div role="alert" className="banner banner-danger">
-            {error}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="btn btn-primary btn-lg"
-          disabled={cart.length === 0 || sending || disabled}
-          onClick={onSend}
-        >
-          {sending ? 'Sending…' : sendLabel}
-        </button>
-      </section>
-    </div>
+      ) : null}
+      <button
+        type="button"
+        className="btn btn-primary btn-lg"
+        disabled={cart.length === 0 || sending || disabled}
+        onClick={onSend}
+      >
+        {sending ? 'Sending…' : sendLabel}
+      </button>
+    </section>
   );
 }
 

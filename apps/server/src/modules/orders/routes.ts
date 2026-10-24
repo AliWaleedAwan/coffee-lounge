@@ -9,11 +9,11 @@ import { z } from 'zod';
 import { AppError } from '../../platform/errors.ts';
 import { handleCommand, IDEMPOTENCY_HEADER } from '../../platform/idempotency.ts';
 import { parseInput } from '../../platform/validation.ts';
-import { lockActiveSession } from '../floor/index.ts';
+import { lockActiveSession, requestBill } from '../floor/index.ts';
 import { authOf, factsOf } from '../identity/index.ts';
 import { readSetting } from '../../platform/settings.ts';
 import { WASTE_REASONS } from '../stock/index.ts';
-import { cancelUnits, pickUp, serve, voidUnits } from './lines.ts';
+import { cancelUnits, pickUp, requireOwnTable, serve, voidUnits } from './lines.ts';
 import { acceptRound, rejectRound, submitRound, type CommandContext } from './rounds.ts';
 import { pickupQueue, ticketView } from './tickets.ts';
 import { linesSchema } from './schema.ts';
@@ -104,6 +104,35 @@ export async function orderRoutes(app: FastifyInstance, options: OrderRouteOptio
       ...(await sessionRounds(pool, sessionId)),
     };
   });
+
+  // S4 by staff: the guests asked a waiter for the bill.
+  app.post(
+    '/sessions/:id/bill-request',
+    { config: { permission: 'invoices.read' } },
+    async (request, reply) => {
+      const sessionId = idParam(request);
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'session.bill_request', actorRef: `user:${auth.user.id}`, payload: { sessionId } },
+        async (tx) => {
+          const session = await lockActiveSession(tx, sessionId);
+          await requireOwnTable(tx, auth, 'invoices.read', session);
+          return {
+            status: 200,
+            body: await requestBill(tx, session, {
+              actor: { kind: 'user', userId: auth.user.id, deviceId: auth.device.id },
+              correlationId: ctx.correlationId,
+            }),
+          };
+        },
+      );
+    },
+  );
 
   app.get('/approvals', { config: { permission: 'orders.accept' } }, async (request) =>
     approvals(pool, authOf(request), now()),

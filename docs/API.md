@@ -71,11 +71,13 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /menu` | Menu for this entry's order type with live availability | — | Unavailable items included with `available: false` and reason |
 | `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR: kept when the order opens the phone's takeaway session). Each phone's first order from the counter QR opens a session of its own (AT-75). A phone holding a token for another visit drops it when it scans a different code |
 | `POST /rounds/{roundId}/withdraw` **[I]** | Withdraw own pending round | R5 | Only the submitting guest |
-| `GET /session` | Rounds, line statuses, total for this session | — | Table QR: all rounds of the table (PROVISIONAL D-09). Counter QR: own order |
-| `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only |
-| `GET /events` | SSE stream for this session | — | §7 |
+| `GET /session` | Rounds, line statuses, total for this session | — | Table QR: all rounds of the table (PROVISIONAL D-09). Counter QR: own order. `session` also gives `billRequested`, `payBy` (counter QR: pay before this or the order cancels, D-40), `invoiceNo` once paid and `readOnly` |
+| `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only (counter QR: `400`, paid at the counter); asking again is harmless; a prepared bill: `409 STALE_STATE` |
+| `GET /events` | SSE stream for this session | — | §7: `session:<own>` and `menu` only; a phone that has only scanned hears `menu`. Ends with `visit_ended` when the visit closes or staff reset the phones |
 
 **Guest rounds (step 3.4):** `POST /rounds` uses the phone's guest token, or for its first order the entry cookie, whose table session it opens or joins (S1, CT-03); the guest token cookie is set only when the order is saved. `GET /session` returns the session with every round of the table (`mine` marks this phone's, D-09) and the accepted total. Limits: 60 requests a minute and 10 submissions a minute per phone address (each phone has its own address on the shop Wi-Fi), and at most 3 rounds waiting per session (`429 RATE_LIMITED`, AT-125). The customer listener also serves the guest app (`guest.html`) at `/t/<token>` and `/order`.
+
+**Paid takeaway (step 3.11):** settling a counter-QR takeaway does not revoke its phone's token: for 2 hours after payment the phone can still read `GET /session` and `GET /events` (`readOnly: true`) to follow its order to pickup; ordering again from the counter QR starts a new visit. Dine-in visits still end at settlement (`401 VISIT_ENDED`, AT-40).
 
 **Guest cookies (step 3.3):** `cl_entry` = `<entryPointId>.<issuedAt>.<HMAC-SHA256>` with a server key kept in `cl.signing_keys`, 12 h; `cl_guest` = the guest token, 24 h at most and revoked with the visit. Both httpOnly, `SameSite=Lax` (they must travel when the camera app opens the QR link), not `Secure` (plain HTTP, SECURITY.md SR-3). `GET /menu` needs a valid entry cookie, else `401 VISIT_ENDED`; `GET /session` answers `404` before the first order and `401 VISIT_ENDED` once the visit is over. Customer routes accept no ids and no unknown query parameters (AT-127).
 

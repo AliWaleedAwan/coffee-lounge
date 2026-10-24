@@ -12,6 +12,7 @@ export {
   lockActiveSession,
   openOrJoinFromQr,
   openStaffSession,
+  requestBill,
   cancelSession,
   openTakeawaySession,
   scanStaleSessions,

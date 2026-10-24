@@ -407,7 +407,8 @@ export async function settleSession(tx: Tx, who: Who, session: SessionRow): Prom
     `UPDATE cl.dining_sessions SET status = 'settled', closed_at = now(), close_reason = 'settled' WHERE id = $1`,
     [session.id],
   );
-  await revokeTokens(tx, session.id, 'session_closed');
+  // A paid takeaway's phone keeps following its order to pickup (read-only, two hours).
+  if (session.order_type !== 'takeaway') await revokeTokens(tx, session.id, 'session_closed');
   await tx.query(
     `UPDATE cl.operational_alerts SET state = 'resolved', resolved_at = now(), resolved_by = $2
       WHERE kind = 'stale_session' AND entity_type = 'dining_session' AND entity_id = $1 AND state <> 'resolved'`,
@@ -432,6 +433,39 @@ export async function expireSession(tx: Tx, session: SessionRow, reason: string)
     { action: 'session.expire', entityType: 'dining_session', entityId: session.id, reason },
   );
   await sessionChanged(tx, session);
+}
+
+/**
+ * S4: the guests (table QR) or staff ask for the bill. The cashier sees the flag; new
+ * rounds are still allowed and marked "after the bill request" (D-12). Asking twice is
+ * harmless. The caller holds the session lock.
+ */
+export async function requestBill(
+  tx: Tx,
+  session: SessionRow,
+  by: { kind: 'guest' } | Who,
+): Promise<{ status: string; requestedAt: string }> {
+  if (session.status === 'checkout_locked') {
+    throw new AppError('STALE_STATE', 'The bill is already being prepared');
+  }
+  if (session.status !== 'open' && session.status !== 'checkout_requested') {
+    throw new AppError('VISIT_ENDED', 'This visit has ended.');
+  }
+  const { rows } = await tx.query<{ at: Date }>(
+    `UPDATE cl.dining_sessions SET status = 'checkout_requested',
+            checkout_requested_at = coalesce(checkout_requested_at, now())
+      WHERE id = $1 RETURNING checkout_requested_at AS at`,
+    [session.id],
+  );
+  if (session.status === 'open') {
+    await writeAudit(
+      tx,
+      'actor' in by ? by : { actor: { kind: 'guest' }, correlationId: randomUUID() },
+      { action: 'session.bill_request', entityType: 'dining_session', entityId: session.id },
+    );
+    await sessionChanged(tx, session);
+  }
+  return { status: 'checkout_requested', requestedAt: rows[0]?.at.toISOString() ?? '' };
 }
 
 export async function listActiveSessions(db: Queryable) {
@@ -535,7 +569,15 @@ export interface GuestContext {
   tokenId: string;
   entryPointId: string;
   session: SessionRow;
+  /**
+   * A paid counter-QR takeaway (step 3.11): the phone may follow its order to pickup for
+   * two hours, but orders again only as a new visit.
+   */
+  readOnly: boolean;
 }
+
+/** How long a paid takeaway's phone can still follow its order. */
+const FOLLOW_PAID_TAKEAWAY_HOURS = 2;
 
 /**
  * The session behind a guest token. A revoked token, or one whose session has closed,
@@ -548,17 +590,21 @@ export async function guestFromToken(db: Queryable, token: string): Promise<Gues
       entry_point_id: string;
       revoked_at: Date | null;
       seen_age: number;
+      followable: boolean;
     }
   >(
     `SELECT g.id::text AS token_id, g.entry_point_id::text, g.revoked_at,
             extract(epoch FROM now() - g.last_seen_at)::int AS seen_age,
+            (s.status = 'settled' AND s.order_type = 'takeaway'
+             AND s.closed_at > now() - make_interval(hours => $2)) AS followable,
             s.id::text, s.session_no, s.order_type, s.table_id::text, s.status, s.guest_count, s.opened_at
        FROM cl.session_guest_tokens g JOIN cl.dining_sessions s ON s.id = g.session_id
       WHERE g.token_hash = $1`,
-    [hashToken(token)],
+    [hashToken(token), FOLLOW_PAID_TAKEAWAY_HOURS],
   );
   const row = rows[0];
-  if (!row || row.revoked_at !== null || !(ACTIVE as readonly string[]).includes(row.status)) {
+  const active = row !== undefined && (ACTIVE as readonly string[]).includes(row.status);
+  if (!row || row.revoked_at !== null || !(active || row.followable)) {
     throw new AppError(
       'VISIT_ENDED',
       'This visit has ended. Scan the QR code on your table to start again.',
@@ -569,7 +615,12 @@ export async function guestFromToken(db: Queryable, token: string): Promise<Gues
       row.token_id,
     ]);
   }
-  return { tokenId: row.token_id, entryPointId: row.entry_point_id, session: row };
+  return {
+    tokenId: row.token_id,
+    entryPointId: row.entry_point_id,
+    session: row,
+    readOnly: !active,
+  };
 }
 
 // ---------------------------------------------------------------- stale sessions (T1)

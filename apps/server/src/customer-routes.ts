@@ -5,6 +5,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { customerFloorRoutes } from './modules/floor/index.ts';
+import { customerLiveRoutes, type LiveRouteOptions } from './modules/live/index.ts';
 import { customerOrderRoutes } from './modules/orders/index.ts';
 import { AppError } from './platform/errors.ts';
 import { RequestLimiter } from './platform/rate-limit.ts';
@@ -15,6 +16,9 @@ export interface CustomerRouteDeps {
   now?: () => Date;
   /** Requests per minute per IP (API.md §2: 60); guest submissions per minute (10). */
   limits?: { perIp?: number; submissions?: number };
+  /** The live-update hub: guest phones get `GET /events` (step 3.11). */
+  hub?: LiveRouteOptions['hub'];
+  live?: Pick<LiveRouteOptions, 'heartbeatMs' | 'revalidateMs'>;
 }
 
 export async function registerCustomerRoutes(
@@ -39,4 +43,7 @@ export async function registerCustomerRoutes(
     ...clock,
     ...(deps.limits?.submissions ? { submissionsPerMinute: deps.limits.submissions } : {}),
   });
+  if (deps.hub) {
+    await customerLiveRoutes(app, { pool: deps.pool, hub: deps.hub, ...deps.live, ...clock });
+  }
 }

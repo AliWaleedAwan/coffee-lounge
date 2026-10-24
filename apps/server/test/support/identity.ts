@@ -116,6 +116,8 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
           ...(options.now ? { now: options.now } : {}),
           // Tests send many requests from one address; the limits have their own tests.
           limits: options.customerLimits ?? { perIp: 100_000, submissions: 100_000 },
+          hub,
+          ...(options.live ? { live: options.live } : {}),
         }),
       staff: async (app) => {
         app.addHook('onRoute', (route) => {

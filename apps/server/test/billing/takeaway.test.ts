@@ -279,7 +279,12 @@ describe('Accept & pay', () => {
       // The kitchen makes it like any other order: it is on the pickup screen.
       const pickup = await staff(cashier, 'GET', '/pickup');
       expect(JSON.stringify(pickup.body)).toContain('Iced latte');
-      expect((await phone.get('/session')).statusCode).toBe(401); // paid and done: visit ended
+      // Paid: the phone follows its order to pickup, read-only (step 3.11).
+      const follow = await phone.get('/session');
+      expect(follow.statusCode).toBe(200);
+      expect(follow.json()).toMatchObject({
+        session: { status: 'settled', readOnly: true, invoiceNo: paid.body['invoiceNo'] },
+      });
     } finally {
       await staff(owner, 'PUT', `/tills/${tillId}/printer`, { printerId: null });
       await staff(owner, 'PUT', `/stations/${stationId}/printer`, { printerId: null });

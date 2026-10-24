@@ -42,6 +42,7 @@ test('two guests at the counter QR; Accept & pay one, reject the other', async (
     const phone = await browser.newContext({ ...devices['Pixel 7'] });
     const guest = await phone.newPage();
     await guest.goto(link);
+    await guest.getByRole('button', { name: 'View menu' }).click();
     await guest.getByRole('tab', { name: 'Counter QR menu' }).click();
     for (let i = 0; i < qty; i++) {
       await guest
@@ -50,13 +51,14 @@ test('two guests at the counter QR; Accept & pay one, reject the other', async (
         .click();
       await guest.getByRole('button', { name: /^Add/ }).click();
     }
-    await guest.getByRole('button', { name: 'Send order' }).click();
-    await expect(guest.getByRole('tab', { name: /My orders \(1 waiting\)/ })).toBeVisible();
+    await guest.getByRole('button', { name: /View order/ }).click();
+    await guest.getByRole('button', { name: 'Send, then pay at the counter' }).click();
+    await expect(guest.getByRole('heading', { name: 'Pay at the counter' })).toBeVisible();
     return guest;
   };
   const first = await order(1);
   const second = await order(2);
-  await expect(first.getByText('Pay at the counter')).toBeVisible();
+  await expect(first.getByText(/Pay within (29|30):\d\d, or it is cancelled/)).toBeVisible();
   // Each phone sees its own order only: one line on the first, two on the second.
   const lines = (guest: Page) =>
     guest.getByRole('region', { name: 'My orders' }).getByText('1 × Rose tea · Cup');
@@ -90,12 +92,10 @@ test('two guests at the counter QR; Accept & pay one, reject the other', async (
     page.getByRole('heading', { name: /Takeaway · waiting to pay \(0\)/ }),
   ).toBeVisible();
 
-  // The first guest's visit is paid and over; the second sees the reason.
-  await first.reload();
+  // The first guest sees it paid and follows it to pickup; the second sees the reason.
+  await expect(first.getByText(/Paid · INV-\d{4}-\d{6}/)).toBeVisible();
+  await expect(first.getByRole('heading', { name: 'Being prepared' })).toBeVisible();
   await expect(
-    first.getByRole('heading', { name: 'Scan the QR code on your table' }),
+    second.getByRole('heading', { name: 'Not accepted: Item just ran out' }),
   ).toBeVisible();
-  await second.reload();
-  await second.getByRole('tab', { name: /My orders/ }).click();
-  await expect(second.getByText('Item just ran out')).toBeVisible();
 });

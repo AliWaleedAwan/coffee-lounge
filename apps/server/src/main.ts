@@ -65,7 +65,7 @@ const { customer, staff } = buildApps(
     ...(customerWebRoot ? { customerWebRoot } : {}),
   },
   {
-    customer: (app) => registerCustomerRoutes(app, { pool }),
+    customer: (app) => registerCustomerRoutes(app, { pool, hub }),
     staff: (app) =>
       registerStaffRoutes(app, {
         pool,

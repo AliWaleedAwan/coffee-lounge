@@ -12,6 +12,7 @@ import { AppError } from '../../platform/errors.ts';
 import { runIdempotent } from '../../platform/idempotency.ts';
 import { isUuid } from '../../platform/correlation.ts';
 import { RequestLimiter } from '../../platform/rate-limit.ts';
+import { readSetting } from '../../platform/settings.ts';
 import { parseInput } from '../../platform/validation.ts';
 import {
   ENTRY_COOKIE,
@@ -21,6 +22,7 @@ import {
   lockActiveSession,
   looksLikeToken,
   openOrJoinFromQr,
+  requestBill,
   resolveEntry,
   setGuestCookie,
   type GuestContext,
@@ -84,7 +86,9 @@ export async function customerOrderRoutes(
       request.body,
     );
     const ctx = guestContext(request, now());
-    const visit = await visitOf(request, reply);
+    const held = await visitOf(request, reply);
+    // A paid takeaway's phone (read-only) orders again as a new visit from the counter QR.
+    const visit = held?.readOnly ? null : held;
     const entry = visit ? null : await resolveEntry(pool, request.cookies[ENTRY_COOKIE], ctx.now);
     if (!visit && !entry)
       throw new AppError('VISIT_ENDED', 'Scan the QR code on your table to order.');
@@ -173,15 +177,64 @@ export async function customerOrderRoutes(
     parseInput(z.object({}).strict(), request.query);
     const visit = await visitOf(request, reply);
     if (!visit) throw new AppError('NOT_FOUND', 'Nothing ordered from this phone yet');
+    const expiry = await readSetting(
+      pool,
+      'orders.takeaway_unpaid_expiry_minutes',
+      z.number().positive(),
+    );
+    const { rows } = await pool.query<{
+      requested: Date | null;
+      invoice_no: string | null;
+      pay_by: Date | null;
+    }>(
+      `SELECT s.checkout_requested_at AS requested, i.invoice_no,
+              (SELECT min(r.submitted_at) + make_interval(mins => $2) FROM cl.order_rounds r
+                WHERE r.session_id = s.id AND r.status = 'pending_approval'
+                  AND s.order_type = 'takeaway' AND s.opened_via = 'qr') AS pay_by
+         FROM cl.dining_sessions s LEFT JOIN cl.invoices i ON i.session_id = s.id WHERE s.id = $1`,
+      [visit.session.id, expiry],
+    );
+    const extra = rows[0];
     return {
       session: {
         sessionNo: visit.session.session_no,
         orderType: visit.session.order_type,
         status: visit.session.status,
         openedAt: visit.session.opened_at.toISOString(),
+        billRequested: (extra?.requested ?? null) !== null,
+        /** Counter QR: pay at the counter before this, or the order cancels itself (D-40). */
+        payBy: extra?.pay_by?.toISOString() ?? null,
+        invoiceNo: extra?.invoice_no ?? null,
+        readOnly: visit.readOnly,
       },
       // D-09: a table's phones see every round of the table and the total.
       ...(await sessionRounds(pool, visit.session.id, visit.tokenId)),
     };
+  });
+
+  // S4: a table's guests ask for the bill (the counter QR pays first instead).
+  app.post('/session/bill-request', { config: { auth: 'public' } }, async (request, reply) => {
+    parseInput(z.object({}).strict(), request.body ?? {});
+    const ctx = guestContext(request, now());
+    const visit = await visitOf(request, reply);
+    if (!visit || visit.readOnly) throw new AppError('VISIT_ENDED', 'This visit has ended.');
+    if (visit.session.table_id === null) {
+      throw new AppError('VALIDATION_FAILED', 'Takeaway orders are paid at the counter.');
+    }
+    const result = await runIdempotent(
+      pool,
+      {
+        scope: 'session.bill_request.guest',
+        key: ctx.key,
+        actorRef: `guest:${visit.tokenId}`,
+        payload: {},
+      },
+      async (tx) => {
+        const session = await lockActiveSession(tx, visit.session.id);
+        return { status: 200, body: await requestBill(tx, session, { kind: 'guest' }) };
+      },
+    );
+    if (result.replayed) void reply.header('Idempotent-Replayed', 'true');
+    return reply.code(result.status).send(result.body);
   });
 }

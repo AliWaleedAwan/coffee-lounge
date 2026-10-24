@@ -51,6 +51,8 @@ test('a guest orders by QR, staff accept it, and a waiter adds a round', async (
   const phone = await browser.newContext({ ...devices['Pixel 7'] });
   const guest = await phone.newPage();
   await guest.goto(link);
+  await expect(guest.getByRole('heading', { name: 'Patio' })).toBeVisible();
+  await guest.getByRole('button', { name: 'View menu' }).click();
   await expect(guest).toHaveURL(/\/order$/);
   await guest.getByRole('tab', { name: 'Patio menu' }).click();
   await expect(guest.getByRole('button', { name: /House latte/ })).toBeVisible();
@@ -58,10 +60,10 @@ test('a guest orders by QR, staff accept it, and a waiter adds a round', async (
   await guest.getByRole('button', { name: /House latte/ }).click();
   await guest.getByLabel('Note for the kitchen (optional)').fill('Extra hot');
   await guest.getByRole('button', { name: /^Add/ }).click();
-  await expect(guest.getByRole('region', { name: 'Order' })).toContainText('Total Rs 450');
+  await guest.getByRole('button', { name: /View order · 1 item/ }).click();
+  await expect(guest.getByRole('region', { name: 'Your order' })).toContainText('Total Rs 450');
   await guest.getByRole('button', { name: 'Send order' }).click();
-  await expect(guest.getByRole('tab', { name: /My orders \(1 waiting\)/ })).toBeVisible();
-  await expect(guest.getByText('Waiting for staff')).toBeVisible();
+  await expect(guest.getByRole('heading', { name: 'Waiting for staff to confirm' })).toBeVisible();
   await expectAccessible(guest, 'guest orders');
 
   // Staff accept it.
@@ -74,9 +76,8 @@ test('a guest orders by QR, staff accept it, and a waiter adds a round', async (
   await card.getByRole('button', { name: 'Accept Patio order 1' }).click();
   await expect(page.getByText('No orders are waiting.')).toBeVisible();
 
-  await guest.reload();
-  await guest.getByRole('tab', { name: /My orders/ }).click();
-  await expect(guest.getByText('Accepted')).toBeVisible();
+  // The guest's screen follows by itself (live update), no reload.
+  await expect(guest.getByRole('heading', { name: 'Being prepared' })).toBeVisible();
   if (SHOTS) await guest.screenshot({ path: `${SHOTS}/guest-orders.png`, fullPage: true });
 
   // A waiter adds water from the table screen; staff rounds go straight through.
