@@ -114,3 +114,16 @@ Loading (skeleton) · empty · offline device ("Reconnecting…", write buttons 
 3. Picked up is a single tap with a 5-second **Undo** toast (instead of press-and-hold). The device **holds the request for those 5 seconds** and sends it only when the toast closes, so Undo simply cancels sending. Nothing is posted or reversed, and stock counters still only move forward. If the device goes offline in that window, the toast says "Not sent" and the line stays uncollected.
 4. Guest menu shows unavailable items greyed with the label "Unavailable right now" (not hidden).
 5. Owner dashboard headline tiles: Net sales · Orders · AOV · Gross margin % (after waste) · Waste cost · Recorded operating result, each with a comparison to the same weekday last week.
+
+## 11. Implementation notes (Phase 2, step 2.7)
+
+| Topic | As built |
+|---|---|
+| Delivery | The staff app (`apps/web`, Vite + React) is served by the API's staff listener at `/`, same origin as `/api/staff/v1`. CSP allows `'self'` only, so there are no inline styles or scripts; all styling is in `src/styles/`. |
+| Fonts | IBM Plex Sans 400/500/600 and Fraunces 600 are bundled from `@fontsource`, Latin and Latin-ext subsets only (no internet needed). Noto Nastaliq Urdu arrives with the menu (Phase 3). |
+| Navigation | Built from `/auth/me` permissions (`src/nav/areas.ts`). The first visible area is the home screen. Areas not built yet show a placeholder; an area outside the role shows "Your role does not include this area" (the server refuses anyway). Phones (< 720 px) get a bottom navigation bar. |
+| PIN switch | Recent users on the device are shown as tiles (usernames and names only, in local storage). **Owners are never offered**: D-24 makes them log in with a password. "Someone else" takes a typed username. The PIN pad accepts taps and the keyboard. |
+| Connection banner | "Reconnecting…" (stream or API unreachable, with the time the data dates from), "Server starting…" (with the server's reason, e.g. the PC clock), "Database not reachable". Write buttons are disabled in every non-online state; reads still work. While the banner shows, the app polls the public `/health/ready` every 3 s. |
+| Live updates | One stream per tab, read with `fetch` (EventSource cannot receive event names it was not told in advance). Queries declare `meta.topics`; a hint refetches only matching queries; `resync` or any reconnection after a gap refetches everything. |
+| Idle lock | Reads the user did not trigger (refetch after a hint, the live stream) carry `X-CL-Background: 1`, so they do not extend the session (API.md §2). An unattended tablet still locks after 5 min and the counter PC after 10 min. No screen polls an authenticated endpoint on a timer. |
+| Forced password change | A user with `mustChangePassword` can only reach My account until the password is changed. |

@@ -1,0 +1,21 @@
+{
+  "comment": "Third-party parts of the Windows bundle, downloaded at build time only (never by the installer). Every file is checked against sha256; an empty sha256 makes the build stop and print the value to review and pin.",
+  "node": {
+    "version": "24.22.0",
+    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip",
+    "sha256": "f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3",
+    "source": "nodejs.org SHASUMS256.txt"
+  },
+  "postgresql": {
+    "version": "17.11",
+    "url": "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip",
+    "sha256": "6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3",
+    "source": "EDB does not publish checksums; pinned from the first CI download (20 Oct 2026)"
+  },
+  "winsw": {
+    "version": "2.12.0",
+    "url": "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe",
+    "sha256": "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da",
+    "source": "No published checksum; pinned from the first CI download (20 Oct 2026)"
+  }
+}

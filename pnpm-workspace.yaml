@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Supply-chain safeguard: only install package versions published at least 7 days ago.
+minimumReleaseAge: 10080
+
+# Record exact versions (no ^ ranges).
+saveExact: true
+
+# Packages allowed to run install scripts. Electron downloads its runtime from the
+# official GitHub release and checks it against the checksums shipped in the package.
+allowBuilds:
+  electron: true
+  # Works without its install script (the binary comes from its platform package).
+  esbuild: false

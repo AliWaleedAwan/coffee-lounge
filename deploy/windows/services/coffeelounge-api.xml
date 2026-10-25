@@ -1,0 +1,26 @@
+<!--
+  WinSW service definition (WINDOWS_DEPLOYMENT.md §2). install.ps1 fills in the {{…}}
+  placeholders, saves it next to a copy of WinSW named coffeelounge-api.exe, and
+  then sets the virtual service account (NT SERVICE\coffeelounge-api) with sc.exe.
+-->
+<service>
+  <id>coffeelounge-api</id>
+  <name>Coffee Lounge API</name>
+  <description>Coffee Lounge staff and customer API (ports 8080 and 8443). Stopping it stops ordering on every device.</description>
+  <executable>{{INSTALL_DIR}}\runtime\node.exe</executable>
+  <arguments>--env-file="{{DATA_DIR}}\config\server.env" "{{INSTALL_DIR}}\app\dist\main.js"</arguments>
+  <workingdirectory>{{INSTALL_DIR}}\app</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <depend>postgresql-x64-17</depend>
+  <!-- Ctrl+C reaches Node as SIGINT: it finishes requests and closes the database cleanly. -->
+  <stoptimeout>20 sec</stoptimeout>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 day</resetfailure>
+  <logpath>{{DATA_DIR}}\logs</logpath>
+  <log mode="roll-by-time">
+    <pattern>yyyyMMdd</pattern>
+  </log>
+</service>

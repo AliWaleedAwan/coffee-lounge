@@ -11,7 +11,7 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 | PostgreSQL 17 (x64, Windows build) | `C:\Program Files\PostgreSQL\17` · data: `C:\ProgramData\CoffeeLounge\pgdata` | Windows service `postgresql-x64-17` |
 | Node.js runtime (pinned LTS, bundled, not system-wide) | `C:\Program Files\CoffeeLounge\runtime` | — |
 | API + worker application | `C:\Program Files\CoffeeLounge\app` | Services `coffeelounge-api`, `coffeelounge-worker` (WinSW wrappers) |
-| Electron counter app | `C:\Program Files\CoffeeLounge\desktop` | The logged-in Windows user |
+| Electron counter app | `C:\Program Files\CoffeeLounge\desktop` · settings: `C:\ProgramData\CoffeeLounge\desktop` (§10) | The logged-in Windows user |
 | Helpers: `cl-rawprint.exe` (RAW printing), `age.exe` (backup encryption), `cl-admin.exe` (recovery/maintenance CLI) | `C:\Program Files\CoffeeLounge\tools` | Called by services / owner |
 | Config & secrets | `C:\ProgramData\CoffeeLounge\config` (ACL: service account + Administrators only) | — |
 | Logs | `C:\ProgramData\CoffeeLounge\logs` (rotated daily, 30 days, size-capped) | — |
@@ -110,3 +110,59 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 - After a power cut: if the PC doesn't start by itself, press its power button. Wait for "System back online".
 - Don't browse the web, read e-mail or install software on the counter PC.
 - Keep spare receipt rolls; keep the emergency paper order pad at the counter.
+
+## 10. Counter app (step 2.8, as built and tested on macOS)
+
+**Settings file** `C:\ProgramData\CoffeeLounge\desktop\desktop.json` (readable by the `Counter` user, writable by Administrators only; written by the installer):
+
+```json
+{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }
+```
+
+`caCertFile` is the **public** shop root certificate, next to the settings file. The app trusts that root, and only that root, for the server; it never consults the Windows certificate store for it. The counter app uses the loopback address because it runs on the server PC itself, so it keeps working when the Ethernet cable is out. **The server certificate must therefore list `127.0.0.1` as well as `192.168.100.250`** (step 2.9 certificate tool). Plain `http` is accepted only for a loopback address, for development.
+
+| Behaviour | As built |
+|---|---|
+| Renderer | Sandboxed, context-isolated, no Node, no webviews, no new windows, no permissions (camera, notifications, …), no downloads (exports get a reviewed path in their phase), DevTools only in unpackaged builds |
+| Origin lock | Pages may only be the server origin. Every network request to anything else is cancelled before it leaves the PC; navigation and redirects elsewhere are refused |
+| Certificate pinning | The chain must lead to the shop root, match the server address, be in date and use no weak signature (SHA-1, MD5). Chromium's own checks still apply; pinning overrides only its "unknown root" verdict |
+| CSP | The server's policy; the app adds the same policy if a server page ever arrives without one. Its own pages carry a stricter one |
+| Server unavailable | Branded screen with what to check and "Try again now"; probes `/health/live` every 3 s and opens the app as soon as it answers. A certificate problem shows "Server not trusted" (do not enter passwords) and is never bypassed. Missing or invalid settings show "Counter app not set up" |
+| Preload API | `window.coffeeLounge = { version, retryNow() }` only. First-run address entry (`setHostAddress` in 02-architecture §2.11) was dropped: the installer writes the settings, so staff cannot point the app elsewhere |
+| On Windows (step 2.9b, §11) | Packaged with an asar archive and Electron fuses; installed with a logon task for `Counter`, a Start menu shortcut and an Add/Remove Programs entry; checked in CI on Windows |
+
+## 11. Windows install (step 2.9, as built; proven in CI on Windows Server 2022)
+
+**Build** (`deploy/windows/build-bundle.ps1`, on Windows): the web app, the server bundled with esbuild (`apps/server/dist`) plus production `node_modules` from `pnpm deploy`, and three pinned downloads checked by SHA-256 (`deploy/windows/components.json`): Node 24.22.0 (hash from nodejs.org), PostgreSQL 17.11 binaries and WinSW 2.12.0. EDB and WinSW publish no checksums, so those two hashes were taken from the first CI download on 20 Oct 2026 and must be re-checked when the versions change. Nothing is downloaded at install time.
+
+**Install** (`setup\install.ps1`, Windows PowerShell 5.1, as Administrator; re-running it is the upgrade path and keeps the data):
+
+| Step | As built |
+|---|---|
+| PostgreSQL | Binaries copied to `C:\Program Files\PostgreSQL\17`; cluster created with `initdb` (UTF8, scram-sha-256) instead of the EDB installer; listens on `localhost` only; `pg_hba` allows password logins from this PC only; `wal_sync_method = fsync` (H-8: `fsync_writethrough` is rejected by this build; the power-cut drill measures the choice); logs in `pgdata\log`; service `postgresql-x64-17` as NetworkService with recovery 10 s / 30 s / 60 s |
+| Secrets | Superuser, `cl_migrator` and `cl_service` passwords are random, sealed with DPAPI (machine scope) in `config\*.secret`; never on a command line or in a log |
+| Logins | `cl_migrator` (owns the database, runs migrations) and `cl_service` (member of `cl_app` only; the API and worker log in as it). DATABASE.md §15 |
+| Certificates | Shop root CA (10 years, P-256, encrypted key) and server certificate for the shop address and `127.0.0.1`; the CA key and certificate go to `-CaExportDir` (the owner's USB key) and the CA key is deleted from the PC. The passphrase is typed, or passed to unattended runs in an environment variable (PowerShell 5.1 garbles piped stdin) |
+| Services | WinSW wrappers `coffeelounge-api` / `-worker`: automatic (delayed), depend on PostgreSQL, own virtual accounts (`NT SERVICE\…`), recovery 5 s / 10 s / 30 s with reset after 1 day, stop with Ctrl+C (Node shuts down cleanly), daily log files |
+| Permissions | `config` (secrets, TLS key) readable by SYSTEM, Administrators and the two service accounts only; `logs` and `files` writable by the services; `desktop` settings readable by Users |
+| Firewall | 8080 and 8443 inbound from the local subnet, private profile only |
+| Host settings | H-4, H-5, H-12, H-15 and the Defender exclusion (H-13), skippable with `-SkipHostSettings` (test machines) |
+| Counter app settings | `desktop\desktop.json` and the public root certificate (§10) |
+| Health | Waits for `/health/ready` on 8443 (trusting only the shop root) and 8080; on a first interactive install, creates the owner account |
+
+**Counter app and installer (step 2.9b):** `apps/desktop/scripts/package.mjs` packages the app (asar with only `dist/`, `static/`, `package.json`) and sets the fuses (`scripts/fuses.mjs`: no RunAsNode, no `NODE_OPTIONS`, no `--inspect`, asar only with integrity validation, cookie encryption, no extra `file://` privileges). The installer stops a running copy before upgrading, installs it to `desktop\`, creates the scheduled task *Coffee Lounge counter app* (at the logon of `-CounterUser`, default `Counter`, standard rights; if that account does not exist yet it says so and a re-run adds the task), a Start menu shortcut and an Add/Remove Programs entry. The installed app ignores `CL_DESKTOP_CONFIG`/`CL_USER_DATA_DIR` (development only) and logs to `%APPDATA%\Coffee Lounge\desktop.log`. `CoffeeLounge-Setup-<version>.exe` (NSIS, `installer.nsi`, about 170 MB) unpacks the bundle to a temporary folder and runs `install.ps1` in the **64-bit** PowerShell with its own command-line options; `CL_CA_PASSPHRASE` may carry the CA passphrase for unattended runs.
+
+**Uninstall** (`setup\uninstall.ps1`) removes the services, firewall rules and program files and keeps `C:\ProgramData\CoffeeLounge`; removing the data also needs `-RemoveData -ConfirmShopName "Coffee Lounge"`.
+
+**Evidence (AT-47, `deploy/windows/tests/smoke.ps1`, every push; installed through `CoffeeLounge-Setup.exe`):** the counter app's eight fuses read back from the installed executable; the app installed with its logon task (Counter, standard rights), shortcut, uninstall entry and full-screen setting; `ELECTRON_RUN_AS_NODE` refused by the installed app; the installed app opening the staff app over the pinned HTTPS connection; services running with the right start type, accounts, dependencies and recovery actions; PostgreSQL listening on this PC only; staff HTTPS trusted only through the shop root, customer HTTP ready, staff app served with its CSP; worker heartbeat fresh; `cl_service` cannot change the schema; secrets not readable by ordinary users; CA key not on the PC; a killed API restarted by Windows; a killed database process recovered by PostgreSQL with the API carrying on (AT-17 on Windows); uninstall keeps the database and a reinstall serves the same owner account.
+
+**Open points**
+
+| # | Point | Proposal |
+|---|---|---|
+| W-1 | If the PostgreSQL **postmaster itself** dies, `pg_ctl`'s service wrapper reports a clean stop, so Windows does not apply the recovery actions; the database stays down until a restart or reboot (the health page shows it). A crashed database *process* is handled by PostgreSQL itself (tested) | Decide at the iMac dry run: either accept (very rare event), or run `postgres.exe` under WinSW like the API so Windows restarts it |
+| W-2 | The CI machine is Windows Server 2022, not Windows 10, has no Boot Camp and cannot reboot or lose power | The iMac dry run covers Windows 10, auto-login, power cuts and the clock |
+| W-3 | WinSW rolls logs daily but does not delete old ones | **Done (step 3.6):** the worker deletes files in `LOG_DIR` older than 30 days, daily at 03:30 |
+| W-4 | Not automated: static IP and network profile (H-1, H-2), setup sheet. The test print exists (step 3.6): Settings → Printers → Test print, or `admin printer-add` and `admin test-print` on the PC | Phase 7 (site setup) |
+| W-5 | `CoffeeLounge-Setup.exe` and `CoffeeLounge.exe` are not code-signed: Windows SmartScreen will warn when the technician runs the installer | Accept for a single shop (the technician confirms the warning), or buy a code-signing certificate before go-live |
+| W-6 | CI starts the counter app as the CI administrator; nobody logs in as `Counter` there, so the logon task itself has not fired yet | The iMac dry run: log in as `Counter` and confirm the app opens full screen |

@@ -1,0 +1,39 @@
+/**
+ * API error codes and their HTTP status (API.md §6). Every error response carries
+ * exactly one of these codes, so clients can react without parsing messages.
+ */
+export const ERROR_STATUS = {
+  VALIDATION_FAILED: 400,
+  UNAUTHENTICATED: 401,
+  VISIT_ENDED: 401,
+  DEVICE_NOT_REGISTERED: 403,
+  FORBIDDEN: 403,
+  NOT_IN_ACCEPTANCE_SCOPE: 403,
+  STEP_UP_REQUIRED: 403,
+  NOT_FOUND: 404,
+  ROUND_ALREADY_DECIDED: 409,
+  SESSION_LOCKED_FOR_CHECKOUT: 409,
+  PENDING_ROUNDS_EXIST: 409,
+  BILL_CHANGED: 409,
+  QTY_EXCEEDS_REMAINING: 409,
+  STALE_STATE: 409,
+  IDEMPOTENCY_KEY_REUSED: 409,
+  TABLE_OCCUPIED: 409,
+  INSUFFICIENT_STOCK: 422,
+  PRICE_CHANGED_LOCK_EXPIRED: 422,
+  AMOUNT_EXCEEDS_DUE: 422,
+  NO_OPEN_CASH_SHIFT: 422,
+  DISCOUNT_OVER_LIMIT: 422,
+  REFUND_EXCEEDS_PAID: 422,
+  CARD_NUMBER_NOT_ALLOWED: 422,
+  RATE_LIMITED: 429,
+  INTERNAL_ERROR: 500,
+  SERVER_STARTING: 503,
+  DATABASE_UNAVAILABLE: 503,
+} as const;
+
+export type ErrorCode = keyof typeof ERROR_STATUS;
+
+export function isErrorCode(value: string): value is ErrorCode {
+  return Object.hasOwn(ERROR_STATUS, value);
+}

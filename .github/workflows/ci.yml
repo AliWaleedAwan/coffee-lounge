@@ -1,0 +1,128 @@
+# CI (TEST_PLAN.md §3): Linux runs the full verify; Windows builds the offline bundle,
+# installs it on a clean machine and checks AT-47 (services, TLS, least privilege,
+# recovery, uninstall/reinstall keeping the data).
+name: CI
+
+on:
+  push:
+    branches: [main, 'phase-*/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: cl_ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: coffee_lounge_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cl_ci" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://cl_ci:ci-only-password@localhost:5432/coffee_lounge_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.0
+      - name: "Install dependencies (no install scripts, Electron's binary is not needed)"
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify (format, lint, types, architecture, traceability, tests)
+        run: corepack pnpm verify
+
+  windows:
+    name: Install on Windows (AT-47)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.0
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Remove the runner's own PostgreSQL services (a clean machine has none)
+        run: |
+          Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | ForEach-Object {
+            Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue
+            sc.exe delete $_.Name | Out-Null
+            Write-Host "removed $($_.Name)"
+          }
+      - name: Create the Counter Windows account (H-9, done by the technician before installing)
+        run: |
+          $password = ConvertTo-SecureString ('Ci1!' + [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+          New-LocalUser -Name Counter -Password $password -PasswordNeverExpires -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -Group Users -Member Counter
+      - name: Build the offline bundle
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-bundle.ps1
+      - name: Build CoffeeLounge-Setup.exe (NSIS)
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
+      - name: Install with CoffeeLounge-Setup.exe (unattended)
+        run: |
+          $env:CL_CA_PASSPHRASE = 'ci-' + [guid]::NewGuid().ToString('N')
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb") -Wait -PassThru
+          Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+      - name: Check the counter app's fuses
+        working-directory: apps/desktop
+        run: |
+          node scripts\fuses.mjs check 'C:\Program Files\CoffeeLounge\desktop\CoffeeLounge.exe'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create the owner account
+        run: |
+          $env:CL_OWNER_PASSWORD = 'ci-owner-' + [guid]::NewGuid().ToString('N')
+          & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: AT-47 checks
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb"
+      - name: Uninstall keeps the data; reinstalling picks it up
+        run: |
+          powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path 'C:\Program Files\CoffeeLounge') { throw 'program files left behind' }
+          if (Get-Service -Name 'coffeelounge-api' -ErrorAction SilentlyContinue) { throw 'service left behind' }
+          if (Get-ScheduledTask -TaskName 'Coffee Lounge counter app' -ErrorAction SilentlyContinue) { throw 'start-up task left behind' }
+          if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge') { throw 'Add/Remove Programs entry left behind' }
+          if (-not (Test-Path 'C:\ProgramData\CoffeeLounge\pgdata\PG_VERSION')) { throw 'database removed' }
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $url = (Get-Content 'C:\ProgramData\CoffeeLounge\config\server.env' | Where-Object { $_ -like 'DATABASE_URL=*' }).Substring(13)
+          $env:PGPASSWORD = ([Uri]$url).UserInfo.Split(':')[1]
+          $owners = & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h 127.0.0.1 -U cl_service -d coffee_lounge -At -c 'SELECT count(*) FROM cl.users WHERE is_owner'
+          if ($owners -ne '1') { throw "owner not kept across reinstall: $owners" }
+          Write-Host 'Owner account kept across uninstall and reinstall.'
+      - name: Keep the logs when something failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-logs
+          path: |
+            C:\ProgramData\CoffeeLounge\logs
+            C:\Users\runneradmin\AppData\Roaming\Coffee Lounge\desktop.log
+            C:\ProgramData\CoffeeLounge\pgdata\log
+          if-no-files-found: ignore

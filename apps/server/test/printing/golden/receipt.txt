@@ -1,0 +1,20 @@
+COFFEE LOUNGE
+12 Main Boulevard, Gulberg · 0300 0000000
+------------------------------------------------
+Invoice: INV-2026-000123               Table: T5
+19 Oct 2026 14:02                   Cashier: Ali
+------------------------------------------------
+2  Cappuccino Regular                   1,300.00
+     Oat milk x2                          300.00
+1  Club Sandwich                          950.00
+12 Chocolate chip cookie with a very    3,000.00
+   long name indeed
+------------------------------------------------
+Subtotal                                5,550.00
+Discount (Staff 10%)                     -555.00
+Rounding                                    0.00
+TOTAL                                Rs 4,995.00
+Cash                                    5,000.00
+Change                                      5.00
+------------------------------------------------
+Thank you - see you again!

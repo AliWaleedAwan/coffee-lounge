@@ -1,0 +1,35 @@
+{
+  "name": "@cl/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "migrations",
+    "assets"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "bundle": "node scripts/bundle.ts",
+    "db:migrate": "node --env-file=../../.env src/platform/db/migrate-cli.ts",
+    "start": "node --env-file=../../.env src/main.ts",
+    "dev": "node --watch --env-file=../../.env src/main.ts",
+    "admin": "node --env-file=../../.env src/cli/admin.ts",
+    "certs": "node src/cli/certs.ts",
+    "worker": "node --env-file=../../.env src/worker.ts",
+    "sample-shop": "node --env-file=../../.env scripts/sample-shop.ts"
+  },
+  "dependencies": {
+    "@cl/shared": "workspace:*",
+    "@fastify/cookie": "11.1.3",
+    "@fastify/static": "10.1.6",
+    "fastify": "5.12.5",
+    "graphile-worker": "0.18.0",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "esbuild": "0.28.2"
+  }
+}

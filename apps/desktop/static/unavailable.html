@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coffee Lounge</title>
+    <link rel="stylesheet" href="unavailable.css" />
+  </head>
+  <body>
+    <main class="card" aria-labelledby="title">
+      <span class="brand">Coffee Lounge</span>
+      <h1 id="title">Server unavailable</h1>
+      <div id="message" class="banner banner-warning" role="status">
+        The counter app cannot reach the Coffee Lounge server.
+      </div>
+      <ul id="steps" class="steps"></ul>
+      <p id="detail" class="detail" hidden></p>
+      <button id="retry" type="button" class="btn">Try again now</button>
+      <p id="auto" class="muted">Trying again every few seconds…</p>
+      <p class="muted small">Counter app <span id="version"></span></p>
+    </main>
+    <script src="unavailable.js"></script>
+  </body>
+</html>

@@ -1,0 +1,546 @@
+{
+  "$comment": "Sample menu for development, tests and the dry run (Phase 3 proposal P3-5). Names, prices, quantities and costs are illustrative, not Coffee Lounge data; the owner's real menu replaces it (input I-4). Quantities are base units: g, ml, pcs. Unit costs are PKR per base unit.",
+  "ingredients": [
+    {
+      "sku": "BEANS",
+      "name": "Espresso beans",
+      "category": "Coffee",
+      "uom": "g",
+      "low": "1000",
+      "opening": "5000",
+      "unitCost": "9.5"
+    },
+    {
+      "sku": "MILK",
+      "name": "Whole milk",
+      "category": "Dairy",
+      "uom": "ml",
+      "low": "4000",
+      "opening": "20000",
+      "unitCost": "0.27"
+    },
+    {
+      "sku": "OAT",
+      "name": "Oat milk",
+      "category": "Dairy",
+      "uom": "ml",
+      "low": "1000",
+      "opening": "3000",
+      "unitCost": "1.1"
+    },
+    {
+      "sku": "CREAM",
+      "name": "Whipping cream",
+      "category": "Dairy",
+      "uom": "ml",
+      "low": "500",
+      "opening": "2000",
+      "unitCost": "1.6"
+    },
+    {
+      "sku": "SUGAR-SYR",
+      "name": "Sugar syrup",
+      "category": "Syrups",
+      "uom": "ml",
+      "low": "300",
+      "opening": "1500",
+      "unitCost": "0.4"
+    },
+    {
+      "sku": "VANILLA",
+      "name": "Vanilla syrup",
+      "category": "Syrups",
+      "uom": "ml",
+      "low": "200",
+      "opening": "1000",
+      "unitCost": "2.2"
+    },
+    {
+      "sku": "CARAMEL",
+      "name": "Caramel syrup",
+      "category": "Syrups",
+      "uom": "ml",
+      "low": "200",
+      "opening": "1000",
+      "unitCost": "2.2"
+    },
+    {
+      "sku": "CHOC",
+      "name": "Chocolate sauce",
+      "category": "Syrups",
+      "uom": "ml",
+      "low": "300",
+      "opening": "1500",
+      "unitCost": "1.8"
+    },
+    {
+      "sku": "TEA",
+      "name": "Black tea leaves",
+      "category": "Tea",
+      "uom": "g",
+      "low": "200",
+      "opening": "1000",
+      "unitCost": "4"
+    },
+    {
+      "sku": "ICE",
+      "name": "Ice",
+      "category": "Other",
+      "uom": "g",
+      "low": "2000",
+      "opening": "10000",
+      "unitCost": "0.02"
+    },
+    {
+      "sku": "CUP-8",
+      "name": "Paper cup 8 oz",
+      "category": "Packaging",
+      "uom": "pcs",
+      "low": "50",
+      "opening": "300",
+      "unitCost": "12"
+    },
+    {
+      "sku": "CUP-12",
+      "name": "Paper cup 12 oz",
+      "category": "Packaging",
+      "uom": "pcs",
+      "low": "50",
+      "opening": "300",
+      "unitCost": "15"
+    },
+    {
+      "sku": "LID",
+      "name": "Cup lid",
+      "category": "Packaging",
+      "uom": "pcs",
+      "low": "100",
+      "opening": "600",
+      "unitCost": "4"
+    },
+    {
+      "sku": "CROISSANT",
+      "name": "Butter croissant",
+      "category": "Bakery",
+      "uom": "pcs",
+      "low": "4",
+      "opening": "12",
+      "unitCost": "140"
+    },
+    {
+      "sku": "BROWNIE",
+      "name": "Chocolate brownie",
+      "category": "Bakery",
+      "uom": "pcs",
+      "low": "4",
+      "opening": "10",
+      "unitCost": "120"
+    }
+  ],
+  "modifierGroups": [
+    {
+      "name": "Milk",
+      "min": 0,
+      "max": 1,
+      "options": [
+        {
+          "name": "Oat milk",
+          "priceDelta": "80",
+          "rules": [{ "action": "replace", "sku": "MILK", "replacement": "OAT" }]
+        }
+      ]
+    },
+    {
+      "name": "Extra shot",
+      "min": 0,
+      "max": 2,
+      "options": [
+        {
+          "name": "Extra shot",
+          "priceDelta": "90",
+          "rules": [{ "action": "add", "sku": "BEANS", "qty": "9" }]
+        }
+      ]
+    },
+    {
+      "name": "Syrup",
+      "min": 0,
+      "max": 1,
+      "options": [
+        {
+          "name": "Vanilla",
+          "priceDelta": "60",
+          "rules": [{ "action": "add", "sku": "VANILLA", "qty": "15" }]
+        },
+        {
+          "name": "Caramel",
+          "priceDelta": "60",
+          "rules": [{ "action": "add", "sku": "CARAMEL", "qty": "15" }]
+        }
+      ]
+    },
+    {
+      "name": "Sweetness",
+      "min": 0,
+      "max": 1,
+      "options": [
+        {
+          "name": "No sugar",
+          "priceDelta": "0",
+          "rules": [{ "action": "remove", "sku": "SUGAR-SYR" }]
+        }
+      ]
+    }
+  ],
+  "takeawayPackaging": { "small": ["CUP-8", "LID"], "large": ["CUP-12", "LID"] },
+  "categories": [
+    {
+      "name": "Hot coffee",
+      "items": [
+        {
+          "name": "Espresso",
+          "groups": ["Extra shot"],
+          "variants": [
+            { "name": "Single", "price": "350", "recipe": { "BEANS": "9" }, "cup": "small" },
+            { "name": "Double", "price": "450", "recipe": { "BEANS": "18" }, "cup": "small" }
+          ]
+        },
+        {
+          "name": "Americano",
+          "groups": ["Extra shot", "Syrup"],
+          "variants": [
+            { "name": "Regular", "price": "450", "recipe": { "BEANS": "18" }, "cup": "small" },
+            { "name": "Large", "price": "550", "recipe": { "BEANS": "27" }, "cup": "large" }
+          ]
+        },
+        {
+          "name": "Cappuccino",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot", "Syrup"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "550",
+              "recipe": { "BEANS": "18", "MILK": "150@0.05" },
+              "cup": "small"
+            },
+            {
+              "name": "Large",
+              "price": "650",
+              "recipe": { "BEANS": "18", "MILK": "220@0.05" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Latte",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot", "Syrup"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "550",
+              "recipe": { "BEANS": "18", "MILK": "200@0.05" },
+              "cup": "small"
+            },
+            {
+              "name": "Large",
+              "price": "650",
+              "recipe": { "BEANS": "18", "MILK": "280@0.05" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Flat white",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "580",
+              "recipe": { "BEANS": "18", "MILK": "120@0.05" },
+              "cup": "small"
+            }
+          ]
+        },
+        {
+          "name": "Mocha",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "620",
+              "recipe": { "BEANS": "18", "MILK": "180@0.05", "CHOC": "25" },
+              "cup": "small"
+            },
+            {
+              "name": "Large",
+              "price": "720",
+              "recipe": { "BEANS": "18", "MILK": "250@0.05", "CHOC": "35" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Caramel macchiato",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "650",
+              "recipe": { "BEANS": "18", "MILK": "180@0.05", "CARAMEL": "20" },
+              "cup": "small"
+            }
+          ]
+        },
+        {
+          "name": "Cortado",
+          "tags": ["Contains milk"],
+          "groups": ["Milk"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "500",
+              "recipe": { "BEANS": "18", "MILK": "60@0.05" },
+              "cup": "small"
+            }
+          ]
+        },
+        {
+          "name": "Hot chocolate",
+          "tags": ["Contains milk"],
+          "groups": ["Milk"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "550",
+              "recipe": { "MILK": "220@0.05", "CHOC": "40" },
+              "cup": "small"
+            }
+          ]
+        },
+        {
+          "name": "Spanish latte",
+          "tags": ["Contains milk"],
+          "variants": [{ "name": "Regular", "price": "650" }]
+        }
+      ]
+    },
+    {
+      "name": "Cold coffee",
+      "items": [
+        {
+          "name": "Iced americano",
+          "groups": ["Extra shot", "Syrup"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "500",
+              "recipe": { "BEANS": "18", "ICE": "150" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Iced latte",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot", "Syrup"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "600",
+              "recipe": { "BEANS": "18", "MILK": "200", "ICE": "150" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Iced mocha",
+          "tags": ["Contains milk"],
+          "groups": ["Milk", "Extra shot"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "680",
+              "recipe": { "BEANS": "18", "MILK": "180", "CHOC": "30", "ICE": "150" },
+              "cup": "large"
+            }
+          ]
+        },
+        {
+          "name": "Frappe",
+          "tags": ["Contains milk"],
+          "groups": ["Syrup", "Sweetness"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "700",
+              "recipe": {
+                "BEANS": "18",
+                "MILK": "150",
+                "ICE": "200",
+                "SUGAR-SYR": "20",
+                "CREAM": "30"
+              },
+              "cup": "large"
+            }
+          ]
+        },
+        { "name": "Cold brew", "variants": [{ "name": "Regular", "price": "550" }] },
+        {
+          "name": "Affogato",
+          "tags": ["Contains milk"],
+          "allow": ["dine_in"],
+          "variants": [{ "name": "Regular", "price": "650" }]
+        }
+      ]
+    },
+    {
+      "name": "Tea",
+      "items": [
+        {
+          "name": "Karak chai",
+          "tags": ["Contains milk"],
+          "groups": ["Sweetness"],
+          "variants": [
+            {
+              "name": "Cup",
+              "price": "250",
+              "recipe": { "TEA": "5", "MILK": "120", "SUGAR-SYR": "10" },
+              "cup": "small"
+            }
+          ]
+        },
+        {
+          "name": "Black tea",
+          "groups": ["Sweetness"],
+          "variants": [
+            {
+              "name": "Cup",
+              "price": "200",
+              "recipe": { "TEA": "4", "SUGAR-SYR": "10" },
+              "cup": "small"
+            }
+          ]
+        },
+        { "name": "Green tea", "variants": [{ "name": "Cup", "price": "250" }] },
+        {
+          "name": "Iced lemon tea",
+          "groups": ["Sweetness"],
+          "variants": [
+            {
+              "name": "Regular",
+              "price": "400",
+              "recipe": { "TEA": "4", "ICE": "150", "SUGAR-SYR": "20" },
+              "cup": "large"
+            }
+          ]
+        },
+        { "name": "Peach iced tea", "variants": [{ "name": "Regular", "price": "450" }] }
+      ]
+    },
+    {
+      "name": "Other drinks",
+      "items": [
+        { "name": "Fresh lemonade", "variants": [{ "name": "Regular", "price": "350" }] },
+        { "name": "Mint margarita", "variants": [{ "name": "Regular", "price": "400" }] },
+        {
+          "name": "Mango smoothie",
+          "tags": ["Contains milk"],
+          "variants": [{ "name": "Regular", "price": "550" }]
+        },
+        {
+          "name": "Strawberry shake",
+          "tags": ["Contains milk"],
+          "variants": [{ "name": "Regular", "price": "600" }]
+        },
+        { "name": "Mineral water", "variants": [{ "name": "500 ml", "price": "100" }] },
+        { "name": "Soft drink", "variants": [{ "name": "Can", "price": "150" }] }
+      ]
+    },
+    {
+      "name": "Bakery",
+      "items": [
+        {
+          "name": "Butter croissant",
+          "tags": ["Contains gluten", "Contains milk"],
+          "variants": [{ "name": "Piece", "price": "350", "recipe": { "CROISSANT": "1" } }]
+        },
+        {
+          "name": "Chocolate brownie",
+          "tags": ["Contains gluten", "Contains egg", "May contain nuts"],
+          "variants": [{ "name": "Piece", "price": "400", "recipe": { "BROWNIE": "1" } }]
+        },
+        {
+          "name": "Blueberry muffin",
+          "tags": ["Contains gluten", "Contains egg"],
+          "variants": [{ "name": "Piece", "price": "380" }]
+        },
+        {
+          "name": "Banana bread",
+          "tags": ["Contains gluten", "Contains egg"],
+          "variants": [{ "name": "Slice", "price": "350" }]
+        },
+        {
+          "name": "Cinnamon roll",
+          "tags": ["Contains gluten"],
+          "variants": [{ "name": "Piece", "price": "420" }]
+        },
+        {
+          "name": "Chocolate chip cookie",
+          "tags": ["Contains gluten", "Contains egg"],
+          "variants": [{ "name": "Piece", "price": "250" }]
+        }
+      ]
+    },
+    {
+      "name": "Sandwiches",
+      "items": [
+        {
+          "name": "Club sandwich",
+          "tags": ["Contains gluten", "Contains egg"],
+          "variants": [{ "name": "Regular", "price": "850" }]
+        },
+        {
+          "name": "Chicken panini",
+          "tags": ["Contains gluten", "Contains milk"],
+          "variants": [{ "name": "Regular", "price": "900" }]
+        },
+        {
+          "name": "Grilled cheese",
+          "tags": ["Contains gluten", "Contains milk"],
+          "variants": [{ "name": "Regular", "price": "650" }]
+        },
+        {
+          "name": "Egg & cheese croissant",
+          "tags": ["Contains gluten", "Contains egg", "Contains milk"],
+          "variants": [{ "name": "Regular", "price": "700" }]
+        }
+      ]
+    },
+    {
+      "name": "Desserts",
+      "items": [
+        {
+          "name": "New York cheesecake",
+          "tags": ["Contains gluten", "Contains milk", "Contains egg"],
+          "variants": [{ "name": "Slice", "price": "750" }]
+        },
+        {
+          "name": "Tiramisu",
+          "tags": ["Contains gluten", "Contains milk", "Contains egg"],
+          "variants": [{ "name": "Slice", "price": "800" }]
+        },
+        {
+          "name": "Molten lava cake",
+          "tags": ["Contains gluten", "Contains milk", "Contains egg"],
+          "allow": ["dine_in", "takeaway"],
+          "variants": [{ "name": "Piece", "price": "750" }]
+        }
+      ]
+    }
+  ]
+}

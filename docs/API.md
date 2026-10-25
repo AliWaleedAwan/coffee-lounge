@@ -8,9 +8,9 @@
 |---|---|---|---|---|
 | Customer API | `http://<host>:8080` | `/api/customer/v1` | Guest phones (table QR, counter QR) | Entry cookie → guest token cookie |
 | Staff API | `https://<host>:8443` | `/api/staff/v1` | Waiter tablets/phones, counter PC (Electron) | Device cookie + session cookie |
-| Health | both | `/health/live`, `/health/ready` | Installer, diagnostics | None (no business data) |
+| Health | both | `/health/live`, `/health/ready` | Installer, diagnostics, connection banner | None (no business data) |
 
-Customer routes are **not mounted** on the staff listener and vice versa.
+Customer routes are **not mounted** on the staff listener and vice versa. The staff listener also serves the built staff web app at `/` (any non-API path falls back to its `index.html`), so the app and its API share one origin.
 
 ## 2. Conventions
 
@@ -25,6 +25,7 @@ Customer routes are **not mounted** on the staff listener and vice versa.
 | Pagination | Cursor-based: `?limit=50&cursor=<opaque>`; response `{ "items": [...], "nextCursor": "…" \| null }`. |
 | Correlation | Clients may send `X-Correlation-Id` (UUID); the server always returns one and logs it. |
 | CSRF | Staff mutations require header `X-CL-Request: 1` + same-origin `Origin`. Cookies are `SameSite=Strict`. |
+| Idle sessions | Every authenticated request extends the session idle timer (RBAC.md §4), except a `GET` sent with `X-CL-Background: 1`. Clients send it on reads the user did not trigger (refetch after a live hint, the live stream itself), so an unattended device still locks. Writes always count as activity. |
 | Concurrency | Catalog/settings edits send `expectedVersion`; bill-dependent calls send `lockVersion`. Mismatch → `409`. |
 | Server prices | Clients send `quotedUnitPrice` only so the server can detect drift. The **server always computes** prices, totals, discounts and tables. |
 | Rate limits | Customer: 10 submissions/min per guest, 60 requests/min per IP. Login/PIN: lockout rules (RBAC §4). → `429 RATE_LIMITED` with `Retry-After`. |
@@ -66,13 +67,19 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Purpose | SM | Notes |
 |---|---|---|---|
-| `GET /entry/{qrToken}` | Resolve QR, set entry cookie (+ guest token if joining) | — | Returns entry kind, table label, shop branding, joined session summary |
+| `GET /entry/{qrToken}` | Resolve QR, set entry cookie (+ guest token if joining) | — | Returns entry kind, table label, `branding` (shop name, brand colour), `hours` (guests order by QR within `shop.business_hours`; `orderingOpen` false outside them), joined session summary. Outside the hours `POST /rounds` answers `400` with when ordering opens |
 | `GET /menu` | Menu for this entry's order type with live availability | — | Unavailable items included with `available: false` and reason |
-| `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR) |
+| `POST /rounds` **[I]** | Submit a round (pending approval) | S1/S2 + R1 | Optional `customerName` (counter QR: kept when the order opens the phone's takeaway session). Each phone's first order from the counter QR opens a session of its own (AT-75). A phone holding a token for another visit drops it when it scans a different code |
 | `POST /rounds/{roundId}/withdraw` **[I]** | Withdraw own pending round | R5 | Only the submitting guest |
-| `GET /session` | Rounds, line statuses, total for this session | — | Table QR: all rounds of the table (PROVISIONAL D-09). Counter QR: own order |
-| `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only |
-| `GET /events` | SSE stream for this session | — | §7 |
+| `GET /session` | Rounds, line statuses, total for this session | — | Table QR: all rounds of the table (PROVISIONAL D-09). Counter QR: own order. `session` also gives `billRequested`, `payBy` (counter QR: pay before this or the order cancels, D-40), `invoiceNo` once paid and `readOnly` |
+| `POST /session/bill-request` **[I]** | Ask for the bill | S4 | Table QR only (counter QR: `400`, paid at the counter); asking again is harmless; a prepared bill: `409 STALE_STATE` |
+| `GET /events` | SSE stream for this session | — | §7: `session:<own>` and `menu` only; a phone that has only scanned hears `menu`. Ends with `visit_ended` when the visit closes or staff reset the phones |
+
+**Guest rounds (step 3.4):** `POST /rounds` uses the phone's guest token, or for its first order the entry cookie, whose table session it opens or joins (S1, CT-03); the guest token cookie is set only when the order is saved. `GET /session` returns the session with every round of the table (`mine` marks this phone's, D-09) and the accepted total. Limits: 60 requests a minute and 10 submissions a minute per phone address (each phone has its own address on the shop Wi-Fi), and at most 3 rounds waiting per session (`429 RATE_LIMITED`, AT-125). The customer listener also serves the guest app (`guest.html`) at `/t/<token>` and `/order`.
+
+**Paid takeaway (step 3.11):** settling a counter-QR takeaway does not revoke its phone's token: for 2 hours after payment the phone can still read `GET /session` and `GET /events` (`readOnly: true`) to follow its order to pickup; ordering again from the counter QR starts a new visit. Dine-in visits still end at settlement (`401 VISIT_ENDED`, AT-40).
+
+**Guest cookies (step 3.3):** `cl_entry` = `<entryPointId>.<issuedAt>.<HMAC-SHA256>` with a server key kept in `cl.signing_keys`, 12 h; `cl_guest` = the guest token, 24 h at most and revoked with the visit. Both httpOnly, `SameSite=Lax` (they must travel when the camera app opens the QR link), not `Secure` (plain HTTP, SECURITY.md SR-3). `GET /menu` needs a valid entry cookie, else `401 VISIT_ENDED`; `GET /session` answers `404` before the first order and `401 VISIT_ENDED` once the visit is over. Customer routes accept no ids and no unknown query parameters (AT-127).
 
 ### 5.2 Staff API (`/api/staff/v1`): authentication & devices
 
@@ -93,14 +100,18 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `PUT /tables/{tableId}/assignment` | `tables.assign` | — | Assign waiter (ends previous assignment) |
 | `DELETE /tables/{tableId}/assignment` | `tables.assign` | — | End assignment (table becomes unassigned → cashier queue) |
 | `POST /tables/{tableId}/sessions` **[I]** | `orders.create` | S1 | Open dine-in session (guest count optional) |
-| `POST /sessions/takeaway` **[I]** | `orders.create` | S2 | Counter takeaway session (optional customer name) |
-| `POST /sessions/delivery` **[I]** | `delivery.create` | S3 | Delivery session: channel, optional customer fields, payment mode |
+| `POST /sessions/takeaway` **[I]** | `orders.create` | S2 | Counter takeaway session (optional `customerName`); its rounds go straight to the kitchen (R2) and it is billed at the counter like a table |
+| `POST /sessions/delivery` **[I]** | `delivery.create` | S3 | `{channel, paymentMode, customerName?, customerPhone?, customerEmail?, address?, landmark?, notes?}` → `{deliveryId, sessionId}`; items are added as staff rounds (`POST /sessions/{id}/rounds`, refused for items not offered for delivery, AT-114) |
 | `GET /sessions?status=active&type=` | `orders.read_all` (waiter: own tables) | — | Open sessions list |
 | `GET /sessions/{sessionId}` | as above | — | Full session: rounds, lines, counters, live bill summary, delivery |
 | `POST /sessions/{sessionId}/transfer` **[I]** | `sessions.transfer` | S9 | Move to another free table |
 | `POST /sessions/{sessionId}/reset-guests` | `sessions.reset_guests` | — | Revoke guest phones |
 | `POST /sessions/{sessionId}/bill-request` **[I]** | `invoices.read` | S4 | Waiter records that the table asked for the bill |
 | `POST /sessions/{sessionId}/cancel` **[I]** | `orders.void` | S8 | Close a session with nothing billable |
+| `GET /tables` | `tables.manage` | — | Tables for management (version, availability, when the QR card was printed) and the active entry points. Never returns QR tokens |
+| `POST /tables`, `PATCH /tables/{tableId}`, `POST /tables/{tableId}/archive` | `tables.manage` | — | Standard pattern (`expectedVersion`). Blocking, maintenance or archiving a table with an active session → `409 TABLE_OCCUPIED` |
+| `POST /qr-entry-points/generate` | `tables.manage` | — | `{tableIds, counter}` → new codes with their link `http://<shop address>:8080/t/<token>` for the print sheet. Shown **once**: only the hash is stored, and each new code retires the one printed before. The address comes from `GUEST_BASE_URL`, else this PC's LAN address |
+| `GET /assignable-staff` | `tables.assign` | — | Active waiters, for the assignment picker |
 
 ### 5.4 Rounds, approvals, lines, kitchen
 
@@ -110,9 +121,20 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /approvals` | `orders.accept` | — | Pending rounds **in the caller's acceptance scope** (+ escalated), oldest first, with advisory stock check |
 | `POST /rounds/{roundId}/accept` **[I]** | `orders.accept` (scoped) | R3 | Atomic accept. Losers get `409 ROUND_ALREADY_DECIDED` |
 | `POST /rounds/{roundId}/reject` **[I]** | `orders.accept` (scoped) | R4 | Reason required (shown to guest) |
-| `POST /rounds/{roundId}/accept-and-pay` **[I]** | `orders.accept` + `payments.collect` | R3+I2+P1+I4 | Takeaway pay-first in one transaction; body includes payments |
+| `GET /takeaway/queue` | `orders.accept` | — | Counter-QR orders waiting to be paid, oldest first, with lines, quoted total and `expiresAt` (D-40) |
+| `POST /rounds/{roundId}/accept-and-pay` **[I]** | `payments.collect` (+ `orders.accept`, `invoices.lock` checked inside) | R3+I2+P1+I4 | Takeaway only. `{payments: [{method, amount, tendered?, provider?, reference?, confirmed?}]}` adding up to the bill's total (else `BILL_CHANGED` with the total). One transaction: accept (stock, ticket), lock, pay, settle; any failure saves nothing (AT-52). Returns `invoiceNo`, `total`, `change`, `receiptQueued` |
 | `POST /lines/{lineId}/pickup` **[I]** | `kitchen.pickup` | L1 | **Picked up** = consumption; `qty` |
 | `POST /tickets/{ticketId}/pickup` **[I]** | `kitchen.pickup` | L1 × n | Pick up all remaining quantities on a ticket |
+| `GET /sessions/{sessionId}` | `tables.read` | — | Session with every round, its lines and states, and the accepted total |
+| `GET /pickup` | `kitchen.pickup` | — | Open kitchen tickets with units still to pick up, oldest first; `uncollected` after `orders.uncollected_alert_minutes` |
+| `GET /tickets/{ticketId}` | `kitchen.read` | — | A ticket as the kitchen sees it: where, items, size, choices, notes. **No price, payment or guest field exists in it** (AT-99) |
+| `POST /lines/{lineId}/serve` **[I]** | `orders.serve` | L2 | `{qty}` served or collected |
+| `POST /lines/{lineId}/cancel` **[I]** | `orders.void` (waiter: own tables) | L3 / L4 | `{qty, made, reason, stepUpId?}`. `made: false` releases the stock; `made: true` consumes it and records prepared-item waste, and needs `orders.void_prepared` or a step-up approval `line.void_prepared`. A correction (or void) ticket follows |
+| `POST /lines/{lineId}/void` **[I]** | `orders.void` (waiter: own tables) | L5 | `{qty, reasonCode, note?, stepUpId?}` for picked-up units: waste at the line's cost per unit, no stock back; same approval rule as L4 |
+
+**Pickup as built (step 3.5).** `qty` must not exceed what is open (`409 QTY_EXCEEDS_REMAINING`). Dine-in pickup also counts as served (`orders.pickup_marks_served_dine_in`). Cancel and void are refused once the bill is being prepared (`SESSION_LOCKED_FOR_CHECKOUT`) or the visit is closed; pickup is not. The staff app holds a Picked up tap for 5 seconds with Undo and sends nothing if undone or offline (UI_UX.md R5-3).
+
+**Rounds as built (step 3.4).** Body `{lines: [{variantId, qty 1–20, modifierOptionIds (repeat an id to pick it twice), notes?, quotedUnitPrice?}]}`, at most 30 lines. Prices are computed on the server: size price − the best promotion (D-14) + choices. `quotedUnitPrice` is what the client showed for one unit; if it differs the round is refused with `409 STALE_STATE` and the current `lines[].unitPrice`. Notes keep 120 characters after control characters become spaces (AT-124). At acceptance the promotion chosen at submission applies to the charged price; the price lock (D-08) compares the size price. A staff round that cannot be made answers `422 INSUFFICIENT_STOCK` with `shortages[]` (`itemId`, `name`, `needed`, `available`, `lineNos`) and saves nothing (AT-26). An accept by someone outside the acceptance scope is `403 NOT_IN_ACCEPTANCE_SCOPE` even after the round was decided (AT-48); otherwise later decisions get `409 ROUND_ALREADY_DECIDED` with `status`, `decidedBy`, `decidedAt` (a guest withdrawing is told only the status).
 | `POST /lines/{lineId}/serve` **[I]** | `orders.serve` | L2 | Served / collected |
 | `POST /lines/{lineId}/cancel` **[I]** | `orders.void` / `orders.void_prepared` | L3/L4 | `qty`, `alreadyMade` (required yes/no), `reason`; step-up if `alreadyMade` and caller lacks `orders.void_prepared` |
 | `POST /lines/{lineId}/void-prepared` **[I]** | `orders.void_prepared` | L5 | Spilled/refused after pickup; reason |
@@ -123,44 +145,87 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 
 | Method & path | Permission | SM | Purpose |
 |---|---|---|---|
-| `GET /sessions/{sessionId}/bill` | `invoices.read` | I1 | Live bill (computed) or locked invoice snapshot |
-| `POST /invoices/{invoiceId}/lock` **[I]** | `invoices.lock` | I2 | Returns totals, warnings (unpicked lines), `lockVersion` |
-| `POST /invoices/{invoiceId}/reopen` **[I]** | `invoices.reopen` | I3 | Reason; step-up if payments exist |
-| `POST /invoices/{invoiceId}/discounts` **[I]** | `discounts.apply` / `discounts.comp` | — | Line or bill discount; `stepUpId` if above limit (PROVISIONAL D-14) |
-| `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` | — | Before settlement only |
-| `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | Cash (`tendered`) / card (`reference` optional) / transfer (`provider`, `reference`, `confirmedBy` = caller); `lockVersion` required |
+| `GET /bills` | `invoices.read` | — | The counter's open tables: every active session with its bill status, total and due, the ones asking for the bill first (a waiter limited to own tables sees only those) |
+| `GET /sessions/{sessionId}/bill` | `invoices.read` | I1 | Live bill (computed) or locked invoice snapshot, with discounts, payments, waiting orders and items not yet picked up |
+| `POST /invoices/{invoiceId}/lock` **[I]** | `invoices.lock` | I2 | Returns totals, warnings (unpicked lines), `lockVersion`. `PENDING_ROUNDS_EXIST` while an order waits for approval. A bill of Rs 0 (everything comped) settles at once (`settledNow`) |
+| `POST /invoices/{invoiceId}/reopen` **[I]** | `invoices.reopen` | I3 | Free while nothing is paid; with payments a reason and a step-up (`invoice.reopen_with_payments`) from someone else |
+| `POST /invoices/{invoiceId}/discounts` **[I]** | `discounts.apply` | — | `{orderLineId \| null, kind: percent \| fixed, value, reason}`; above the caller's limit (all discounts on the same target counted together) `STEP_UP_REQUIRED`, then `stepUpId` (`discount.over_limit`); `DISCOUNT_OVER_LIMIT` if the approver's own limit is lower (D-14). On a locked bill the figures and `lockVersion` are worked out again; refused once part is paid |
+| `POST /invoices/{invoiceId}/comps` **[I]** | `discounts.comp` | L6 | `{orderLineId, reason}`: the item is free, its cost still counts (D-21). A separate path so each has one permission |
+| `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` (a comp also `discounts.comp`) | — | Before settlement only, with a reason |
+| `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | `{lockVersion, method, amount, tendered?, provider?, reference?, confirmed?}`: cash (`tendered`, change worked out; needs the open shift) / card (`reference` = approval code, optional) / transfer (`provider`, `reference`, `confirmed: true`; `confirmed_by` = caller). A reference that looks like a card number is refused. The Idempotency-Key is stored as the payment's key. Returns `settled`, `invoiceNo`, `change`, `receiptQueued` |
 | `POST /invoices/{invoiceId}/receipt/reprint` **[I]** | `receipts.reprint` | — | Labelled reprint |
 | `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` | P2 | Full/line refund or method correction (PROVISIONAL D-13) |
-| `GET /cash-shifts/current` | `cash_shifts.operate` | — | Open shift on the counter till with running expected cash |
+| `GET /cash-shifts/current` | `cash_shifts.operate` | — | The open shift on the counter till with its figures: float, cash sales, refunds, paid-in/out, expected cash, card and transfer totals, movements |
+| `GET /cash-shifts`, `GET /cash-shifts/{shiftId}` | `cash_shifts.operate` | — | Recent shifts, closed ones waiting for approval first; a cashier sees and opens only their own |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
-| `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | Paid-in / paid-out with reason |
-| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | Counted cash → expected, variance; warns about outstanding COD |
-| `POST /cash-shifts/{shiftId}/approve` **[I]** | `cash_shifts.approve_variance` | — | Approve variance (approver ≠ cashier) |
+| `POST /cash-shifts/{shiftId}/movements` **[I]** | `cash_shifts.operate` | — | `{kind: paid_in \| paid_out, amount, reason}` on an open shift; a paid-out larger than the expected cash is refused |
+| `POST /cash-shifts/{shiftId}/close` **[I]** | `cash_shifts.operate` | — | `{countedCash, varianceReason?, stepUpId?}` → expected, variance. Balanced: approved at once. Otherwise a reason is required, and a step-up (`shift.variance`) from someone other than the cashier approves it now, or it waits as `closed`. Prints the shift report on the receipt printer. Returns `withRiders`: cash and card still with riders, not in the till |
+| `POST /cash-shifts/{shiftId}/report/reprint` **[I]** | `cash_shifts.operate` | — | Labelled copy of a closed shift’s report |
+| `POST /cash-shifts/{shiftId}/approve` **[I]** | `cash_shifts.approve_variance` | — | `{note?}`: approve a closed shift’s variance (approver ≠ cashier) |
 
 ### 5.6 Delivery
 
 | Method & path | Permission | SM | Purpose |
 |---|---|---|---|
-| `GET /deliveries?status=` | `delivery.create` | — | Board: pending dispatch / out / failed, outstanding COD per rider |
-| `POST /deliveries/{deliveryId}/dispatch` **[I]** | `delivery.dispatch` | D1 | Rider, bill locked (COD/card) or settled check (prepaid); prints rider receipt |
-| `POST /deliveries/{deliveryId}/return` **[I]** | `delivery.record_return` | D2/D3 | `outcome: delivered` (+ payment for COD/card) or `failed` (+ reason) |
-| `POST /deliveries/{deliveryId}/resolve` **[I]** | `delivery.resolve_failed` | D4–D6 | `reattempt` / `convert_to_pickup` / `cancel` |
-| `GET /riders` | `delivery.dispatch` | — | Active rider profiles |
+| `GET /deliveries` | `delivery.create` | — | Board: pending dispatch / out / failed and the last 12 hours' finished ones, phones masked (AT-123), items still to pick up, total and due once the bill is prepared, and what each rider is carrying (`outstanding`) |
+| `GET /deliveries/{deliveryId}` | `delivery.create` | — | One delivery with the customer's details in full |
+| `POST /deliveries/{deliveryId}/dispatch` **[I]** | `delivery.dispatch` | D1 | `{riderId}`; every item picked up; prepaid must be settled, COD/card bills are prepared (locked) here (AT-89); prints the rider's slip (address, `CASH/CARD TO COLLECT`) on the receipt printer |
+| `POST /deliveries/{deliveryId}/return` **[I]** | `delivery.record_return` | D2/D3 | `{outcome: 'delivered', method?, reference?, deliveredAt?}`: an unpaid bill is paid in full with `collected_by_rider_id`, cash into the open shift (AT-54, AT-60); or `{outcome: 'failed', reason}`, raising a `failed_delivery` alert |
+| `POST /deliveries/{deliveryId}/resolve` **[I]** | `delivery.resolve_failed` | D4–D6 | `{action: 'reattempt', riderId?}` (new slip) / `{action: 'convert_to_pickup'}` (paid at the counter) / `{action: 'cancel', reason}`: food written off as waste `failed_delivery`, no stock credit; prepaid → `refundDue` (P3-1); an unpaid bill is reopened and the visit closed |
+| `GET /riders` | `delivery.dispatch` | — | Active rider profiles (`?all=true` with inactive ones) |
+| `POST /riders`, `PATCH /riders/{riderId}` **[I]** | `users.manage` | — | Add a rider `{name, phone?}`; rename, change phone, switch off (`expectedVersion`) |
 
 ### 5.7 Menu, printing, system (Phase 3 subset)
 
 | Method & path | Permission | Purpose |
 |---|---|---|
-| `GET /menu` | `menu.read` | Staff menu with availability and prices |
+| `GET /menu` | `menu.read` | Staff menu with availability and prices. Optional `?orderType=` `dine_in`, `takeaway` or `delivery` (default `dine_in`: takeaway and delivery also need their packaging). A size is unavailable with `unavailableReason` `marked_unavailable` (the manual switch, which wins) or `out_of_stock` (its recipe cannot be covered for one unit); a choice has `available: false` when the ingredient it adds or replaces in is short |
 | `POST /menu/variants/{variantId}/availability` | `menu.availability_toggle` | Temporarily unavailable on/off with reason |
 | Catalog CRUD: `/menu/categories`, `/menu/items`, `/menu/items/{id}/variants`, `/modifier-groups`, `/modifier-options`, `/promotions`, `/tables`, `/qr-entry-points`, `/riders` | `menu.manage`, `menu.price_change`, `promotions.manage`, `tables.manage`, `riders.manage` | Standard pattern: `GET` list, `POST` create, `PATCH /{id}` with `expectedVersion`, `POST /{id}/archive`. No hard deletes. Price changes write price history. |
-| `GET /print-jobs?status=open` | `printers.manage` or `kitchen.reprint` | Failed / uncertain jobs |
-| `POST /print-jobs/{jobId}/retry` | same | Retry a failed job (same job, not a reprint) |
-| `POST /print-jobs/{jobId}/resolve-uncertain` | same | `printed` (mark sent) or `reprint` (new labelled copy) |
-| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet |
+| `GET /menu/catalog` | `menu.manage` | Management view of the menu: inactive rows too, with `version` on every row, and all modifier groups |
+| `POST /menu/variants/{variantId}/price` | `menu.price_change` | `{expectedVersion, price, reason}`; writes price history. Menu prices are whole rupees (D-16). Changing a modifier option's `priceDelta` through `PATCH /modifier-options/{id}` also needs `menu.price_change` |
+| `GET /menu/variants/{variantId}/price-history` | `menu.manage` | Newest first, with who and why |
+| `POST /modifier-groups/{groupId}/options` | `menu.manage` | Adds a choice to a group |
+| `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
+| `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
+| `PUT /stations/{stationId}/printer` | `printers.manage` | `{printerId \| null}`: where kitchen tickets print |
+| `PUT /tills/{tillId}/printer` | `printers.manage` | `{printerId \| null}`: where receipts print (step 3.7); `GET /printers` lists the tills |
+| `POST /printers/{id}/test` | `printers.manage` | Queue a test page (W-4) |
+| `GET /print-jobs?status=open` | `kitchen.reprint` | Jobs not yet printed, and uncertain ones |
+| `POST /print-jobs/{jobId}/retry`, `POST /printers/{id}/retry-all` | `kitchen.reprint` | Back to the queue (same job, not a reprint); printed in order, once |
+| `POST /print-jobs/{jobId}/resolve-uncertain` | `kitchen.reprint` | `printed` (mark sent) or `reprint` (new labelled copy) |
+| `POST /tickets/{ticketId}/reprint` | `kitchen.reprint` | K5: a new copy labelled `REPRINT #n` |
+| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
+| `GET /branding` | any signed-in staff | `{shopName, primary}` for every screen's header and buttons (step 3.12) |
+| `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
+| `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130) |
+| `PUT /settings/branding` | `settings.manage` | `{expectedVersion, shopName, addressLine, phone, footer, primary}`: the receipt wording and the brand colour together; a colour under 4.5:1 for white button text or on the page is refused (AT-130) |
+| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox (escalated orders, shift variances, failed deliveries, refunds due, uncollected items, long-open tables, printers) with links |
+| `POST /alerts/{alertId}/acknowledge` | `reports.sales` | Note an alert as seen; it stays in the inbox, below the unseen ones, until resolved |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 
 The OpenAPI file details every endpoint above except the catalog CRUD family, which follows the standard pattern and will be added to the spec in the same form as the Phase 3 build starts.
+
+### 5.8 Health (Phase 2 step 2.6)
+
+| Endpoint | Answers |
+|---|---|
+| `GET /health/live` | `200 {"status":"live"}` while the process runs |
+| `GET /health/ready` | `200 {"status":"ready","database":"ok","warnings":{…}}` once startup checks pass **and** a live database probe answers; `503 SERVER_STARTING` (with blockers) before that; `503 DATABASE_UNAVAILABLE` (`"database":"unreachable"`) if PostgreSQL stops answering later. No error detail is exposed. Probe cached 1 s |
+| `GET /api/staff/v1/system/health` | The health page (fields below). Needs a session, so while the database is down it answers `503 DATABASE_UNAVAILABLE`; the page then shows "Database unreachable" from `/health/ready` |
+
+`/system/health` fields:
+
+| Field | Meaning |
+|---|---|
+| `api` | `ok`, or `degraded` while a readiness warning (e.g. `clock_jumped`) or blocker is present, or the database probe fails |
+| `database` | `ok` / `unreachable` (2 s timeout; a database too busy to answer counts as unreachable) |
+| `worker` | `ok`; `stale` when the last heartbeat is older than 60 s (worker stopped or crashed); `down` when no worker has ever run. `lastHeartbeatAt` |
+| `printer` | `unknown`, `openJobs: 0` until the printing phase |
+| `backup` | `lastSuccessAt`/`lastVerifiedAt` are `null` until the backup phase; `usbDrivePresent` is real: the configured `BACKUP_DRIVE_PATH` (`B:\`, H-17) is mounted |
+| `disk` | `freePercent` of the volume in `DISK_CHECK_PATH` (default: the install drive) and `status` `ok` / `warning` (≤ 20 % free, H-14 80 % used) / `critical` (≤ 10 % free) / `unknown`. Cached 10 s |
+| `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
+| `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
 ## 6. Errors
 
@@ -205,7 +270,9 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | 422 | `REFUND_EXCEEDS_PAID` | Includes `refundable` |
 | 422 | `CARD_NUMBER_NOT_ALLOWED` | Reference looks like a card number |
 | 429 | `RATE_LIMITED` | Wait `Retry-After` |
+| 500 | `INTERNAL_ERROR` | Unexpected failure; details are logged under the correlation ID, never sent to the client. Retry or report the correlation ID |
 | 503 | `SERVER_STARTING` | Show "Server starting…", retry automatically |
+| 503 | `DATABASE_UNAVAILABLE` | The API is running but cannot reach PostgreSQL (restart, power cut). Show "Reconnecting…" and retry automatically with the **same** `Idempotency-Key`: a write whose reply was lost then replays instead of repeating |
 
 ## 7. Realtime (Server-Sent Events)
 
@@ -233,6 +300,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `invoice.changed` | I1–I4, discounts | `session:<id>`, `cashier` |
 | `payment.recorded` | P1, P2 | `cashier`, `session:<id>` |
 | `delivery.changed` | D0–D6 | `deliveries`, `cashier` |
+| `menu.changed` | Catalogue edit: category, item, size, price, choice or promotion | `menu` |
 | `availability.changed` | Stock-driven or manual availability change | `menu` |
 | `print_job.changed` | Failure, uncertain, recovery | `printers` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |

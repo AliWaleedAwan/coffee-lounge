@@ -36,6 +36,8 @@
 | CI (Linux) | All automated levels except Windows-specific | Fresh DB per test file |
 | CI (Windows runner) | Installer, services, spooler printing helper, clock check, upgrade/rollback | Windows 10 image where available |
 | Staging VM | Windows 10 Pro VM mirroring the counter iMac config (static IP, services, firewall) | Printer simulator on TCP and a virtual RAW printer queue |
+
+**Printer simulator (built in step 2.10):** `apps/server/test/support/escpos/` holds an ESC/POS decoder (text lines with style, cuts, images, barcodes, status requests, drawer pulses, unknown or truncated commands) and a raw-TCP printer simulator (one connection = one job, byte capture, DLE EOT / GS r status answers from paper and cover state, faults: drop mid-job, stall, reset, switched off). Standalone: `node scripts/printer-sim.ts --port 9100 --out ./print-captures` in `apps/server` saves each job as `.bin` plus a decoded `.txt`. The simulator stands in for **the network path only**; the expected USB/spooler path (PRINTING_HARDWARE.md §2) is tested with a virtual RAW queue on Windows.
 | Target | Counter iMac, Huawei router, Sonic printer & scanner, 3 tablets, staff phones | On site; owner present for router/power tests |
 
 **Test data:** generated sample menus, recipes, stock and a year of synthetic sales (≈ 300k order lines) for report and performance tests. **No real customer data** in any non-production environment.
@@ -244,6 +246,8 @@ Level codes from §2; phase = first build phase that must pass it.
 
 Each race runs ×10 per commit and ×100 nightly. Any single failure blocks the build.
 
+**Harness (built in Phase 2, step 2.10):** `apps/server/test/support/concurrency.ts`. Every contender gets its own database connection; contenders meet at a `Barrier` right before the racing statement, so they really overlap; `waitUntilBlocked` proves that one transaction queued behind another's lock; a contender that never releases its connection fails the test. Runs per race come from `CL_RACE_RUNS` (default 10). Nightly: `CL_RACE_RUNS=100 corepack pnpm test`. The harness self-tests (`test/harness/concurrency.test.ts`) show it catches a lost update deterministically, and run gapless numbering and idempotency under real overlap.
+
 ## 7. Property-based suite
 
 | ID | Property |
@@ -256,6 +260,8 @@ Each race runs ×10 per commit and ×100 nightly. Any single failure blocks the 
 | PT-06 | Line counters: any sequence of pickup/serve/cancel/void respects the database CHECK invariants or is refused |
 | PT-07 | Invoice: `total = subtotal − discounts + tax(0) + rounding` for random carts and discounts |
 | PT-08 | Money: half-up rounding to 2 dp; formatting/parsing round-trip without loss |
+
+**Harness (built in Phase 3, step 3.2):** `apps/server/test/support/random.ts`, a seeded generator with no extra dependency. Runs per property come from `CL_PROP_RUNS`; a failure names its seed and `CL_PROP_SEED=<seed>` replays it exactly. Before a phase exit: `CL_PROP_RUNS=100 corepack pnpm test`. Phase 3 runs PT-01 without receipts and counts (they arrive in Phase 4) and PT-02 on the costing functions; the PT-01 test fails when release forgets to lower the reserved quantity (checked by hand).
 
 ## 8. Non-functional acceptance (target hardware)
 
