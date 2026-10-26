@@ -93,7 +93,8 @@ interface MovementInput {
     | 'consumption'
     | 'waste'
     | 'count_adjustment'
-    | 'supplier_return';
+    | 'supplier_return'
+    | 'cost_adjustment';
   qtyDelta: Decimal;
   unitCost: Decimal | null;
   valueDelta: Decimal;
@@ -1166,6 +1167,52 @@ export async function postCountLines(
   }
   await announce(tx, itemIds);
   return result;
+}
+
+// ---------------------------------------------------------------- cost corrections
+
+/**
+ * A supplier price correction (COST_VALUATION.md §6, AT-68): of Δ on a receipt line of
+ * `qtyReceived`, the share Δ × min(1, Q ÷ qtyReceived) is assumed still on hand and goes
+ * into stock value now; the rest is purchase price variance today. A negative share never
+ * takes the value below zero (the excess goes to variance too), and with nothing on hand
+ * all of Δ is variance. One `cost_adjustment` movement with quantity 0; nothing earlier
+ * is touched, so past averages and line costs stay (AT-19).
+ */
+export async function adjustCost(
+  tx: Tx,
+  ctx: StockContext,
+  input: {
+    itemId: string;
+    receiptLineId: string;
+    qtyReceived: Decimal;
+    delta: Decimal;
+    key: string;
+    note: string;
+  },
+): Promise<{ toInventory: Decimal; toVariance: Decimal; movementId: string }> {
+  if (input.delta.isZero()) throw new AppError('VALIDATION_FAILED', 'The correction is zero');
+  const b = (await lockBalances(tx, [input.itemId])).get(input.itemId);
+  if (!b) throw new AppError('NOT_FOUND', 'Stock item not found');
+  const share = Decimal.min(1, b.onHand.dividedBy(input.qtyReceived));
+  let toInventory = round4(input.delta.times(share));
+  if (b.value.plus(toInventory).isNegative()) toInventory = b.value.negated();
+  if (b.onHand.isZero()) toInventory = new Decimal(0);
+  const toVariance = input.delta.minus(toInventory);
+  const movementId = await insertMovement(tx, ctx, {
+    itemId: input.itemId,
+    type: 'cost_adjustment',
+    qtyDelta: new Decimal(0),
+    unitCost: null,
+    valueDelta: toInventory,
+    sourceType: 'purchase_receipt_line',
+    sourceId: input.receiptLineId,
+    sourceKey: `cost:${input.key}:line:${input.receiptLineId}`,
+    note: input.note,
+  });
+  b.value = b.value.plus(toInventory);
+  await saveBalance(tx, b);
+  return { toInventory, toVariance, movementId };
 }
 
 // ---------------------------------------------------------------- reconciliation

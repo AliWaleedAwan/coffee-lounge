@@ -275,7 +275,7 @@ describe('supplier returns (AT-110)', () => {
       reason: 'Wrong',
     });
     expect(reverse.body['detail']).toBe(
-      'Part of this receipt went back to the supplier. Return or waste the rest instead.',
+      'This receipt has returns or cost corrections. Return or waste the rest instead.',
     );
     expect(await findStockMismatches(fx.pool)).toEqual([]);
   });

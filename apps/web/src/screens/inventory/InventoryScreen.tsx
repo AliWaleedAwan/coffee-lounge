@@ -24,6 +24,7 @@ export function InventoryScreen() {
     waste: permissions.has('inventory.waste'),
     count: permissions.has('inventory.count'),
     approveCount: permissions.has('inventory.count_approve'),
+    correctCost: permissions.has('inventory.cost_adjust'),
   };
   const tabs: { id: Tab; label: string }[] = [
     { id: 'items', label: 'Items' },
@@ -65,7 +66,9 @@ export function InventoryScreen() {
         {tab === 'receive' ? (
           <ReceiveTab canLink={can.manageItems} canStartStockControl={can.startStockControl} />
         ) : null}
-        {tab === 'receipts' ? <ReceiptsTab canReverse={can.receive} /> : null}
+        {tab === 'receipts' ? (
+          <ReceiptsTab canReverse={can.receive} canCorrect={can.correctCost} />
+        ) : null}
         {tab === 'waste' ? <WasteTab canRecord={can.waste} /> : null}
         {tab === 'counts' ? <CountsTab canCount={can.count} canApprove={can.approveCount} /> : null}
         {tab === 'suppliers' ? <SuppliersTab canManage={can.manageSuppliers} /> : null}

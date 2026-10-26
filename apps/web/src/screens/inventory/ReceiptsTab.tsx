@@ -22,7 +22,13 @@ import {
 
 const CHANNELS = { cash: 'Cash', card: 'Card', transfer: 'Transfer' } as const;
 
-export function ReceiptsTab({ canReverse }: { canReverse: boolean }) {
+export function ReceiptsTab({
+  canReverse,
+  canCorrect,
+}: {
+  canReverse: boolean;
+  canCorrect: boolean;
+}) {
   const receipts = useReceipts();
   const [open, setOpen] = useState<string | null>(null);
   if (open) {
@@ -30,6 +36,7 @@ export function ReceiptsTab({ canReverse }: { canReverse: boolean }) {
       <ReceiptDetail
         id={open}
         canReverse={canReverse}
+        canCorrect={canCorrect}
         onClose={() => {
           setOpen(null);
         }}
@@ -105,10 +112,12 @@ export function ReceiptsTab({ canReverse }: { canReverse: boolean }) {
 function ReceiptDetail({
   id,
   canReverse,
+  canCorrect,
   onClose,
 }: {
   id: string;
   canReverse: boolean;
+  canCorrect: boolean;
   onClose: () => void;
 }) {
   const writes = useWritesAllowed();
@@ -120,8 +129,11 @@ function ReceiptDetail({
   });
   const r = receipt.data;
   const [returning, setReturning] = useState<string | null>(null);
+  const [correcting, setCorrecting] = useState<string | null>(null);
   const canReturn = canReverse && r?.status === 'posted';
+  const canFix = canCorrect && r?.status === 'posted';
   const returningLine = r?.lines.find((l) => l.lineId === returning) ?? null;
+  const correctingLine = r?.lines.find((l) => l.lineId === correcting) ?? null;
 
   return (
     <section className="card stack" aria-labelledby="receipt-head">
@@ -176,7 +188,7 @@ function ReceiptDetail({
                 <th scope="col">Received</th>
                 <th scope="col">Lot · expiry</th>
                 {r.totalCost !== null ? <th scope="col">Line cost</th> : null}
-                {canReturn ? (
+                {canReturn || canFix ? (
                   <th scope="col">
                     <span className="visually-hidden">Actions</span>
                   </th>
@@ -201,6 +213,11 @@ function ReceiptDetail({
                   {r.totalCost !== null ? (
                     <td>
                       {l.lineCost === null ? '—' : rupees(l.lineCost)}
+                      {l.lineCostNow !== null &&
+                      l.lineCost !== null &&
+                      l.lineCostNow !== l.lineCost ? (
+                        <div className="muted">corrected to {rupees(l.lineCostNow)}</div>
+                      ) : null}
                       {l.unitCost ? (
                         <div className="muted">
                           Rs {l.unitCost} / {l.baseUom}
@@ -208,9 +225,20 @@ function ReceiptDetail({
                       ) : null}
                     </td>
                   ) : null}
-                  {canReturn ? (
+                  {canReturn || canFix ? (
                     <td>
-                      {new Decimal(l.qtyBase).greaterThan(l.returnedQty) ? (
+                      {canFix ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            setCorrecting(l.lineId);
+                          }}
+                        >
+                          Correct cost… <span className="visually-hidden">{l.name}</span>
+                        </button>
+                      ) : null}
+                      {canReturn && new Decimal(l.qtyBase).greaterThan(l.returnedQty) ? (
                         <button
                           type="button"
                           className="btn btn-ghost"
@@ -233,6 +261,15 @@ function ReceiptDetail({
               line={returningLine}
               onDone={() => {
                 setReturning(null);
+              }}
+            />
+          ) : null}
+          {correctingLine ? (
+            <CorrectionForm
+              receiptId={r.id}
+              line={correctingLine}
+              onDone={() => {
+                setCorrecting(null);
               }}
             />
           ) : null}
@@ -479,5 +516,103 @@ function Returns({ receipt }: { receipt: ReceiptDetail }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/**
+ * Supplier price correction (COST_VALUATION.md §6, AT-68; owner only): what the line
+ * really cost. The share still on hand goes into stock value now, the rest is price
+ * variance today; nothing posted before changes.
+ */
+function CorrectionForm({
+  receiptId,
+  line,
+  onDone,
+}: {
+  receiptId: string;
+  line: ReceiptLine;
+  onDone: () => void;
+}) {
+  const writes = useWritesAllowed();
+  const [cost, setCost] = useState('');
+  const [reason, setReason] = useState('');
+  const [result, setResult] = useState<{ toInventory: string; toVariance: string } | null>(null);
+  const send = useInventoryCommand<{ toInventory: string; toVariance: string }>(setResult);
+  const costOk = /^\d{1,10}(\.\d{1,2})?$/.test(cost);
+  const valid = costOk && reason.trim().length >= 3;
+  if (result) {
+    return (
+      <div role="status" className="banner banner-success stack">
+        <span>
+          Cost of {line.name} corrected: {rupees(result.toInventory)} into stock value,{' '}
+          {rupees(result.toVariance)} as price variance today.
+        </span>
+        <div className="row">
+          <button type="button" className="btn btn-ghost" onClick={onDone}>
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="card stack"
+      aria-label={`Correct the cost of ${line.name}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!valid || !writes) return;
+        send.mutate({
+          path: `/purchase-receipts/${receiptId}/cost-corrections`,
+          body: { lineId: line.lineId, correctLineCost: cost, reason: reason.trim() },
+        });
+      }}
+      noValidate
+    >
+      <strong>
+        Correct the cost of {line.name}
+        {line.lineCostNow ? ` · on record ${rupees(line.lineCostNow)}` : ''}
+      </strong>
+      <div className="row">
+        <Field
+          label="What the line really cost (Rs)"
+          inputMode="decimal"
+          value={cost}
+          error={cost && !costOk ? 'Rupees, e.g. 1800' : null}
+          onChange={(e) => {
+            setCost(e.target.value.trim());
+          }}
+        />
+        <Field
+          label="Why"
+          maxLength={200}
+          value={reason}
+          onChange={(e) => {
+            setReason(e.target.value);
+          }}
+        />
+      </div>
+      <p className="field-hint">
+        The share still on the shelf changes the stock value; the rest is price variance today. Past
+        sales and margins do not change.
+      </p>
+      <div className="row">
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={!valid || !writes || send.isPending}
+        >
+          Correct cost
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onDone}>
+          Cancel
+        </button>
+      </div>
+      {send.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {writeMessage(send.error)}
+        </div>
+      ) : null}
+    </form>
   );
 }

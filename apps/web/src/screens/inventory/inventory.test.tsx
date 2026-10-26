@@ -128,6 +128,7 @@ const receipt = {
       lotCode: 'L7',
       expiryDate: '2026-11-02',
       returnedQty: '1000.0000',
+      lineCostNow: '1800.00',
     },
   ],
   returns: [
@@ -679,5 +680,53 @@ describe('stock counts (step 4.5)', () => {
       approverUsername: 'owner',
       approverPin: '7391',
     });
+  });
+});
+
+describe('supplier price corrections (step 4.6)', () => {
+  it('lets the owner correct a line’s cost and shows the split (AT-68)', async () => {
+    const calls = serve(
+      meWith('owner', [
+        ...CLERK,
+        'inventory.receive',
+        'inventory.cost_adjust',
+        'inventory.cost_view',
+      ]),
+      () =>
+        json(201, {
+          delta: '-50.00',
+          toInventory: '-41.6667',
+          toVariance: '-8.3333',
+          lineCostNow: '1750.00',
+        }),
+    );
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
+    expect(await screen.findByText('corrected to Rs 1,800')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Correct cost…\s*Whole milk/ }));
+    const form = screen.getByRole('form', { name: 'Correct the cost of Whole milk' });
+    expect(within(form).getByText(/on record Rs 1,800/)).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('What the line really cost (Rs)'), {
+      target: { value: '1750' },
+    });
+    fireEvent.change(within(form).getByLabelText('Why'), { target: { value: 'Credit note' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Correct cost' }));
+    expect(
+      await screen.findByText(/Rs -41.67 into stock value, Rs -8.33 as price variance today/),
+    ).toBeTruthy();
+    expect(calls.find((c) => c.method === 'POST')).toMatchObject({
+      url: '/api/staff/v1/purchase-receipts/5/cost-corrections',
+      body: { lineId: '51', correctLineCost: '1750', reason: 'Credit note' },
+    });
+  });
+
+  it('offers no correction without inventory.cost_adjust', async () => {
+    serve(meWith('inventory_clerk', [...CLERK, 'inventory.receive']));
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
+    await screen.findByRole('heading', { name: 'GRN-2026-00007' });
+    expect(screen.queryByRole('button', { name: /Correct cost…/ })).toBeNull();
   });
 });

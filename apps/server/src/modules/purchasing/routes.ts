@@ -21,6 +21,7 @@ import {
   reverseReceipt,
   type ReceiptSummary,
 } from './receipts.ts';
+import { correctLineCost } from './corrections.ts';
 import { returnToSupplier } from './returns.ts';
 import { createSupplier, listSuppliers, updateSupplier } from './suppliers.ts';
 
@@ -139,7 +140,12 @@ export async function purchasingRoutes(
       if (seesCost(request)) return receipt;
       return {
         ...withoutCost(receipt),
-        lines: receipt.lines.map((l) => ({ ...l, lineCost: null, unitCost: null })),
+        lines: receipt.lines.map((l) => ({
+          ...l,
+          lineCost: null,
+          unitCost: null,
+          lineCostNow: null,
+        })),
         returns: receipt.returns.map((r) => ({ ...r, value: null, refundAmount: null })),
       };
     },
@@ -240,6 +246,40 @@ export async function purchasingRoutes(
         async (tx) => ({
           status: 201,
           body: await returnToSupplier(tx, ctx, auth, receiptId, body),
+        }),
+      );
+    },
+  );
+
+  app.post(
+    '/purchase-receipts/:id/cost-corrections',
+    { config: { permission: 'inventory.cost_adjust' } },
+    async (request, reply) => {
+      const receiptId = idParam(request);
+      const body = parseInput(
+        z
+          .object({
+            lineId: id,
+            correctLineCost: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/, 'rupees, e.g. 1700'),
+            reason: z.string().trim().min(3).max(200),
+          })
+          .strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        {
+          scope: `purchase_receipt.cost_correction:${receiptId}`,
+          actorRef: `user:${auth.user.id}`,
+          payload: body,
+        },
+        async (tx) => ({
+          status: 201,
+          body: await correctLineCost(tx, ctx, auth, receiptId, body),
         }),
       );
     },

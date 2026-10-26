@@ -203,6 +203,8 @@ export interface ReceiptLine {
   expiryDate: string | null;
   /** How much of the line went back to the supplier. */
   returnedQty: string;
+  /** The line cost after supplier price corrections; null without cost rights. */
+  lineCostNow: string | null;
 }
 
 export type ReceiptDetail = ReceiptSummary & {
@@ -218,7 +220,9 @@ export interface PostedReceipt {
   receiptId: string;
   receiptNo: string;
   totalCost: string;
-  lines: (Omit<ReceiptLine, 'lotCode' | 'expiryDate' | 'returnedQty'> & { onHandAfter: string })[];
+  lines: (Omit<ReceiptLine, 'lotCode' | 'expiryDate' | 'returnedQty' | 'lineCostNow'> & {
+    onHandAfter: string;
+  })[];
 }
 
 export function useReceipts() {

@@ -206,7 +206,7 @@ describe('reserve, consume and release', () => {
     expect((await balance(milk))?.reserved).toBe('0.0000');
   });
 
-  it('never blocks a pickup the book cannot cover: posts found stock first and alerts the owner', async () => {
+  it('never blocks a pickup the book cannot cover: posts found stock first and alerts the owner (AT-67)', async () => {
     const milk = await newItem({ qty: '300', cost: '0.3' });
     const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('300')]]) }));

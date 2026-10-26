@@ -352,14 +352,17 @@ export async function reverseReceipt(
     throw new AppError('STALE_STATE', `This receipt is ${receipt.status}`);
   }
   const { rowCount: returned } = await tx.query(
-    `SELECT 1 FROM cl.supplier_returns r JOIN cl.purchase_receipt_lines l ON l.id = r.receipt_line_id
-      WHERE l.receipt_id = $1 LIMIT 1`,
+    `SELECT 1 FROM cl.purchase_receipt_lines l
+      WHERE l.receipt_id = $1
+        AND (EXISTS (SELECT 1 FROM cl.supplier_returns r WHERE r.receipt_line_id = l.id)
+             OR EXISTS (SELECT 1 FROM cl.cost_adjustments a WHERE a.receipt_line_id = l.id))
+      LIMIT 1`,
     [receiptId],
   );
   if (returned) {
     throw new AppError(
       'VALIDATION_FAILED',
-      'Part of this receipt went back to the supplier. Return or waste the rest instead.',
+      'This receipt has returns or cost corrections. Return or waste the rest instead.',
     );
   }
   const { rows: lines } = await tx.query<{
@@ -496,7 +499,10 @@ export async function readReceipt(
             l.line_cost::text AS "lineCost", l.unit_cost_base::text AS "unitCost",
             l.lot_code AS "lotCode", l.expiry_date::text AS "expiryDate",
             COALESCE((SELECT sum(r.qty_base) FROM cl.supplier_returns r WHERE r.receipt_line_id = l.id), 0)::numeric(18,4)::text
-              AS "returnedQty"
+              AS "returnedQty",
+            (l.line_cost + COALESCE((SELECT sum(a.amount) FROM cl.cost_adjustments a
+                                       WHERE a.receipt_line_id = l.id), 0))::numeric(14,2)::text
+              AS "lineCostNow"
        FROM cl.purchase_receipt_lines l
        JOIN cl.inventory_items i ON i.id = l.item_id
        LEFT JOIN cl.item_pack_sizes p ON p.id = l.pack_size_id
@@ -524,6 +530,8 @@ export type ReceiptLineDetail = Omit<PostedLine, 'onHandAfter'> & {
   expiryDate: string | null;
   /** How much of the line went back to the supplier. */
   returnedQty: string;
+  /** The line cost after supplier price corrections; null without cost rights. */
+  lineCostNow: string | null;
 };
 
 export interface SupplierReturn {

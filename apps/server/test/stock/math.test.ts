@@ -11,7 +11,7 @@ import { forEachSeed, propRuns } from '../support/random.ts';
 
 const d = (v: string | number) => new Decimal(v);
 
-describe('weighted-average costing (COST_VALUATION.md §10 worked example)', () => {
+describe('weighted-average costing (COST_VALUATION.md §10 worked example, AT-66)', () => {
   it('follows the example to the last decimal, including the drain rule and found stock', () => {
     // 1. Receipt 3,000 ml for Rs 805.
     let b = { onHand: d(3000), value: d('805.0000') };

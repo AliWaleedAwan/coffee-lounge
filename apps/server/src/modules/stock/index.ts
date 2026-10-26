@@ -1,6 +1,7 @@
 /** Public interface of the stock module (other modules import only from here). */
 export { stockAvailability, type StockAvailability } from './availability.ts';
 export {
+  adjustCost,
   consume,
   findStockMismatches,
   postCountLines,

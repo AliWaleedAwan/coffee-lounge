@@ -64,6 +64,8 @@ Under WAC we can't know which physical units remain, so the proportion of curren
 
 If Δ is negative and `share_to_stock` would make V negative, the excess goes to variance as well.
 
+**As built (Phase 4 step 4.6):** the owner enters what the line really cost; Δ is taken against the cost on record (the line cost plus earlier corrections), so a second correction corrects the first. `Q` is the item's on-hand at the moment of the correction (later receipts count). With nothing on hand all of Δ is variance (V must stay 0 at Q = 0). A corrected receipt is no longer reversed; returns stay possible.
+
 ## 7. Cost of a sold line (COGS)
 
 ```text
