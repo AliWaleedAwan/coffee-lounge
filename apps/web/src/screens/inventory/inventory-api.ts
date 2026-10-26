@@ -401,3 +401,121 @@ export function useCount(id: string) {
     meta: TOPICS,
   });
 }
+
+// ---------------------------------------------------------------- overview and history (step 4.7)
+
+export type AlertKind =
+  | 'low'
+  | 'zero'
+  | 'near_expiry'
+  | 'expired'
+  | 'overstock'
+  | 'reservation_shortfall'
+  | 'stale_reservation'
+  | 'balance_mismatch'
+  | 'found_stock';
+
+export interface InventoryAlert {
+  id: string;
+  kind: AlertKind;
+  state: 'open' | 'acknowledged';
+  itemId: string | null;
+  itemName: string | null;
+  baseUom: BaseUnit | null;
+  lotId: string | null;
+  lotCode: string | null;
+  expiryDate: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
+  manual: boolean;
+}
+
+export interface StockLine {
+  itemId: string;
+  name: string;
+  sku: string;
+  baseUom: BaseUnit;
+  onHand: string;
+  reserved: string;
+  available: string;
+  threshold: string | null;
+}
+
+export interface LotLine {
+  lotId: string;
+  itemId: string;
+  name: string;
+  baseUom: BaseUnit;
+  lotCode: string | null;
+  expiryDate: string;
+  qtyRemaining: string;
+}
+
+export interface Overview {
+  businessDate: string;
+  out: StockLine[];
+  low: StockLine[];
+  short: StockLine[];
+  overstock: StockLine[];
+  expired: LotLine[];
+  expiring: LotLine[];
+  alerts: InventoryAlert[];
+  stockControl: { counted: number; total: number };
+  stockValue: string | null;
+}
+
+export function useOverview() {
+  return useQuery({
+    queryKey: ['inventory', 'overview'],
+    queryFn: ({ signal }) => api<Overview>('/inventory/overview', { signal }),
+    meta: { topics: ['inventory', 'alerts', 'menu'] },
+  });
+}
+
+export const MOVEMENT_TYPES = {
+  opening: 'Opening balance',
+  receipt: 'Received',
+  consumption: 'Used in an order',
+  waste: 'Waste',
+  count_adjustment: 'Count',
+  supplier_return: 'Returned to supplier',
+  cost_adjustment: 'Cost correction',
+  reversal: 'Receipt reversed',
+  rounding: 'Rounding',
+} as const;
+
+export interface Movement {
+  id: string;
+  occurredAt: string;
+  businessDate: string;
+  type: keyof typeof MOVEMENT_TYPES;
+  qtyDelta: string;
+  balanceAfter: string;
+  valueDelta: string | null;
+  unitCost: string | null;
+  source: string;
+  reasonCode: string | null;
+  flags: string[];
+  note: string | null;
+  actor: string | null;
+  lots: { lotCode: string | null; qtyDelta: string; expired: boolean }[];
+}
+
+export function useMovements(itemId: string, filter: { type: string; from: string; to: string }) {
+  const params = new URLSearchParams();
+  if (filter.type) params.set('type', filter.type);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
+  const query = params.toString();
+  return useQuery({
+    queryKey: ['inventory', 'movements', itemId, query],
+    queryFn: ({ signal }) =>
+      api<{ items: Movement[] }>(
+        `/inventory/items/${itemId}/movements${query ? `?${query}` : ''}`,
+        {
+          signal,
+        },
+      ),
+    meta: TOPICS,
+  });
+}

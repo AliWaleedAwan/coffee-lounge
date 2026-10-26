@@ -21,6 +21,7 @@ import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
 import { businessDateOf } from '../../platform/settings.ts';
 import { createInventoryItem, type InventoryItemInput } from './items.ts';
+import { reevaluateAlerts } from './ledger.ts';
 import { createLot } from './lots.ts';
 
 // ------------------------------------------------------------------ reading
@@ -335,12 +336,9 @@ export async function updateItem(
   input: ItemUpdate,
 ): Promise<{ id: string; version: number }> {
   return withTransaction(pool, async (tx) => {
-    // Switching lots on or off moves stock into or out of lots: balance first, then item,
+    // Lots and thresholds change what is in stock and its alerts: balance first, then item,
     // as every stock posting locks them.
-    const [balance] =
-      input.trackLots === undefined
-        ? []
-        : await tx.lock<{ on_hand: string }>('inventory_balances', [id]);
+    const [balance] = await tx.lock<{ on_hand: string }>('inventory_balances', [id]);
     const before = await lockItem(tx, id, input.expectedVersion);
     const next = {
       name: input.name ?? before.name,
@@ -408,6 +406,7 @@ export async function updateItem(
         ],
       );
       const version = rows[0]?.version ?? 0;
+      await reevaluateAlerts(tx, id);
       await changed(
         tx,
         who,
@@ -474,6 +473,11 @@ export async function archiveItem(
     const { rows } = await tx.query<{ version: number }>(
       `UPDATE cl.inventory_items SET archived_at = now(), is_active = false
         WHERE id = $1 RETURNING version`,
+      [id],
+    );
+    await tx.query(
+      `UPDATE cl.inventory_alerts SET state = 'resolved', resolved_at = now()
+        WHERE item_id = $1 AND state <> 'resolved' AND kind <> 'balance_mismatch'`,
       [id],
     );
     await tx.query('UPDATE cl.barcodes SET is_active = false WHERE item_id = $1 AND is_active', [

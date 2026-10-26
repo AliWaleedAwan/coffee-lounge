@@ -227,7 +227,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory items, suppliers, receiving, waste, counts and cost corrections (Phase 4 steps 4.1–4.6)
+### 5.9 Inventory (Phase 4 steps 4.1–4.7): items, suppliers, receiving, waste, counts, cost corrections, alerts
 
 Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing, returning and correcting a receipt, recording waste, and starting, submitting, approving, sending back or cancelling a count do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
@@ -253,6 +253,11 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /stock-counts/{countId}/approve` **[I]** | `inventory.count` + `inventory.count_approve`, or `stepUpId` of a `count.variance` step-up on this device | Never the submitter (`403`). Posts every line's variance as a `count_adjustment` delta (P4-5); a shortfall larger than what is left (sold since the line was counted) posts only what is there, flagged `count_clamped`; below reserved still posts, raising the shortfall alert (AT-29) |
 | `POST /stock-counts/{countId}/send-back` **[I]** | as approve | `{reason, lineIds?}`: back to counting; the named lines (default: those over the limits) must be counted again |
 | `POST /stock-counts/{countId}/cancel` **[I]** | `inventory.count` | A count still being counted is cancelled; nothing moves |
+| `GET /inventory/overview` | `inventory.read` | Step 4.7: what needs attention: `out`, `low`, `short` (on hand below reserved), `overstock` (items with on hand, reserved, available, threshold), `expired` and `expiring` lots, open `alerts`, `stockControl {counted, total}` (D-29), `stockValue` only with `inventory.cost_view` |
+| `GET /inventory/alerts` | `inventory.read` | Open and seen inventory alerts (balance mismatch first), each with item, lot, `detail` and `manual` (closed by a person) |
+| `POST /inventory/alerts/{alertId}/acknowledge` | `inventory.read` | Noted as seen; it stays listed until closed |
+| `POST /inventory/alerts/{alertId}/close` | `inventory.read` (+ rules) | `{note}`. Only alerts that never clear by themselves: `balance_mismatch` (the owner only, after investigating; AT-94), `found_stock` and an `expired` lot used in an order (anyone with `inventory.count`). Every other kind closes with the stock (`400`) |
+| `GET /inventory/items/{itemId}/movements?from=&to=&type=` | `inventory.read` | The item's movements, newest first (300): type, change, on hand after, source (GRN, count, order, waste, opening), reason, flags, note, who, lot shares; value and unit cost only with `inventory.cost_view` |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |
@@ -342,6 +347,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `receipt.changed` | Purchase receipt posted or reversed (stock also announces `availability.changed`) | `inventory` |
 | `supplier.changed` | Supplier added or changed | `inventory` |
 | `count.changed` | Stock count started, submitted, posted, sent back or cancelled | `inventory` |
+| `alert.changed` | Inventory alert noted as seen or closed by a person | `alerts`, `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 

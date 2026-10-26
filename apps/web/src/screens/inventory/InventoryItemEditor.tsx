@@ -9,7 +9,15 @@ import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { writeMessage } from '../menu/menu-api.ts';
-import { formatQty, useInventoryWrite, useItem, type ItemDetail } from './inventory-api.ts';
+import {
+  formatQty,
+  MOVEMENT_TYPES,
+  rupees,
+  useInventoryWrite,
+  useItem,
+  useMovements,
+  type ItemDetail,
+} from './inventory-api.ts';
 
 const QTY = /^\d{1,10}(\.\d{1,4})?$/;
 const BASE_UNITS: readonly { value: BaseUnit; label: string }[] = [
@@ -80,6 +88,7 @@ export function InventoryItemEditor({
           {data.trackLots ? <Lots item={data} /> : null}
           <Packs item={data} editable={editable} />
           <Barcodes item={data} editable={editable} linkCode={linkCode} />
+          <History item={data} />
           {editable ? <Archive item={data} onArchived={onClose} /> : null}
         </>
       ) : null}
@@ -694,6 +703,104 @@ function Archive({ item, onArchived }: { item: ItemDetail; onArchived: () => voi
         <div role="alert" className="banner banner-danger">
           {writeMessage(archive.error)}
         </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Every movement of the item, newest first, with the on-hand after it (step 4.7). */
+function History({ item }: { item: ItemDetail }) {
+  const [type, setType] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const movements = useMovements(item.id, { type, from, to });
+  const list = movements.data?.items ?? [];
+  const showValue = list.some((m) => m.valueDelta !== null);
+  return (
+    <section className="card stack" aria-labelledby="item-history">
+      <h2 id="item-history">Movement history</h2>
+      <div className="row">
+        <SelectField
+          label="Kind"
+          value={type}
+          options={[
+            { value: '', label: 'All' },
+            ...Object.entries(MOVEMENT_TYPES)
+              .filter(([k]) => k !== 'rounding')
+              .map(([value, label]) => ({ value, label })),
+          ]}
+          onChange={setType}
+        />
+        <Field
+          label="From"
+          type="date"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+          }}
+        />
+        <Field
+          label="To"
+          type="date"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
+          }}
+        />
+      </div>
+      {movements.isPending ? <Loading label="Loading movements" /> : null}
+      {movements.data && list.length === 0 ? <p className="muted">No movements.</p> : null}
+      {list.length > 0 ? (
+        <table className="data">
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">What</th>
+              <th scope="col">Change</th>
+              <th scope="col">On hand after</th>
+              {showValue ? <th scope="col">Value</th> : null}
+              <th scope="col">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((m) => (
+              <tr key={m.id}>
+                <td>
+                  {m.businessDate}
+                  <div className="muted">
+                    {new Date(m.occurredAt).toLocaleTimeString('en-GB', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </td>
+                <td>
+                  {MOVEMENT_TYPES[m.type]}
+                  <div className="muted">
+                    {[
+                      m.source,
+                      m.reasonCode,
+                      ...m.lots.map(
+                        (l) => `lot ${l.lotCode ?? '—'}${l.expired ? ' (expired)' : ''}`,
+                      ),
+                      ...m.flags.map((f) => f.replaceAll('_', ' ')),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                  {m.note ? <div className="muted">{m.note}</div> : null}
+                </td>
+                <td>
+                  {Number(m.qtyDelta) > 0 ? '+' : ''}
+                  {formatQty(m.qtyDelta, item.baseUom)}
+                </td>
+                <td>{formatQty(m.balanceAfter, item.baseUom)}</td>
+                {showValue ? <td>{m.valueDelta === null ? '—' : rupees(m.valueDelta)}</td> : null}
+                <td>{m.actor ?? 'System'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : null}
     </section>
   );

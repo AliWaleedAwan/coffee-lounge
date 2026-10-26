@@ -15,6 +15,7 @@ import { businessDateOf } from '../../platform/settings.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { authOf, consumeStepUp, factsOf } from '../identity/index.ts';
+import * as alerts from './alerts.ts';
 import * as counts from './counts.ts';
 import * as inventory from './inventory.ts';
 import { WASTE_REASONS } from './ledger.ts';
@@ -394,5 +395,57 @@ export async function stockRoutes(
     return command(`stock_count.cancel:${countId}`, request, reply, {}, (tx) =>
       counts.cancelCount(tx, counter(request), countId),
     );
+  });
+
+  // ------------------------------------------------------------ overview, alerts, history (4.7)
+  const costs = (request: FastifyRequest) => authOf(request).permissions.has('inventory.cost_view');
+
+  app.get('/inventory/overview', read, async (request) =>
+    alerts.inventoryOverview(pool, now(), costs(request)),
+  );
+
+  app.get('/inventory/alerts', read, async () => ({ items: await alerts.listAlerts(pool) }));
+
+  app.post('/inventory/alerts/:id/acknowledge', read, async (request) => {
+    parseInput(z.object({}).strict(), request.body);
+    return withTransaction(pool, (tx) => alerts.acknowledgeAlert(tx, idParam(request)));
+  });
+
+  app.post('/inventory/alerts/:id/close', read, async (request) => {
+    const body = parseInput(
+      z.object({ note: z.string().trim().min(3).max(200) }).strict(),
+      request.body,
+    );
+    const auth = authOf(request);
+    const who = whoOf(request);
+    return withTransaction(pool, (tx) =>
+      alerts.closeAlert(
+        tx,
+        { ...who, actor: { kind: 'user', userId: auth.user.id, deviceId: auth.device.id } },
+        { isOwner: auth.user.isOwner, canCount: auth.permissions.has('inventory.count') },
+        idParam(request),
+        body.note,
+      ),
+    );
+  });
+
+  app.get('/inventory/items/:id/movements', read, async (request) => {
+    const query = parseInput(
+      z
+        .object({
+          from: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
+          to: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
+          type: z.enum(alerts.MOVEMENT_TYPES).optional(),
+        })
+        .strict(),
+      request.query,
+    );
+    return { items: await alerts.movementHistory(pool, idParam(request), query, costs(request)) };
   });
 }

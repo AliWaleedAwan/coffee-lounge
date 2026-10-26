@@ -15,6 +15,9 @@ test('a clerk adds an item, a pack and a barcode, then scans it', async ({ page 
   await logIn(page, clerk.username, s.password);
   await page.getByRole('link', { name: 'Inventory' }).click();
   await expect(page.getByRole('heading', { name: 'Inventory', level: 1 })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
+  await expectAccessible(page, 'inventory overview');
+  await page.getByRole('tab', { name: 'Items' }).click();
 
   // A new item, its 1 L carton and the carton's barcode.
   await page.getByRole('button', { name: 'New item' }).click();

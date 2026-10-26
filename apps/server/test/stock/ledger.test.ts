@@ -475,7 +475,7 @@ describe('recipes and stock mode (D-29)', () => {
   });
 });
 
-describe('the nightly stock check (COST_VALUATION.md §11)', () => {
+describe('the nightly stock check (COST_VALUATION.md §11, AT-94)', () => {
   it('finds nothing wrong after real work, and reports a tampered balance without fixing it', async () => {
     expect(await findStockMismatches(fx.pool)).toEqual([]);
     const victim = await newItem({ qty: '100', cost: '1' });

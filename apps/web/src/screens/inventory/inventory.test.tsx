@@ -179,6 +179,87 @@ const countState: { detail: Record<string, unknown> } = {
   detail: { ...countBase, status: 'draft' },
 };
 
+const overview = {
+  businessDate: '2026-10-26',
+  out: [],
+  low: [
+    {
+      itemId: '7',
+      name: 'Whole milk',
+      sku: 'MILK-WHOLE',
+      baseUom: 'ml',
+      onHand: '2400.0000',
+      reserved: '300.0000',
+      available: '2100.0000',
+      threshold: '5000.0000',
+    },
+  ],
+  short: [],
+  overstock: [],
+  expired: [
+    {
+      lotId: '71',
+      itemId: '7',
+      name: 'Whole milk',
+      baseUom: 'ml',
+      lotCode: 'L7',
+      expiryDate: '2026-10-25',
+      qtyRemaining: '2400.0000',
+    },
+  ],
+  expiring: [],
+  alerts: [
+    {
+      id: 'a2',
+      kind: 'balance_mismatch',
+      state: 'open',
+      itemId: '7',
+      itemName: 'Whole milk',
+      baseUom: 'ml',
+      lotId: null,
+      lotCode: null,
+      expiryDate: null,
+      detail: { problems: ['on hand ≠ movements'] },
+      createdAt: '2026-10-26T04:10:00Z',
+      manual: true,
+    },
+    {
+      id: 'a1',
+      kind: 'low',
+      state: 'open',
+      itemId: '7',
+      itemName: 'Whole milk',
+      baseUom: 'ml',
+      lotId: null,
+      lotCode: null,
+      expiryDate: null,
+      detail: {},
+      createdAt: '2026-10-26T09:00:00Z',
+      manual: false,
+    },
+  ],
+  stockControl: { counted: 1, total: 2 },
+  stockValue: null,
+};
+const movements = [
+  {
+    id: 'm2',
+    occurredAt: '2026-10-26T10:00:00Z',
+    businessDate: '2026-10-26',
+    type: 'waste',
+    qtyDelta: '-100.0000',
+    balanceAfter: '2400.0000',
+    valueDelta: null,
+    unitCost: null,
+    source: 'Waste',
+    reasonCode: 'spilled',
+    flags: [],
+    note: null,
+    actor: 'Faisal',
+    lots: [{ lotCode: 'L7', qtyDelta: '-100.0000', expired: false }],
+  },
+];
+
 interface Call {
   method: string;
   url: string;
@@ -215,6 +296,8 @@ function serve(me: object, writes: (call: Call) => Response = () => json(201, { 
         const code = decodeURIComponent(url.split('code=')[1] ?? '');
         return Promise.resolve(json(200, { code, match: null }));
       }
+      if (url.endsWith('/inventory/overview')) return Promise.resolve(json(200, overview));
+      if (url.includes('/movements')) return Promise.resolve(json(200, { items: movements }));
       if (url.endsWith('/stock-counts/c1')) return Promise.resolve(json(200, countState.detail));
       if (url.endsWith('/stock-counts')) {
         return Promise.resolve(json(200, { items: [countState.detail] }));
@@ -242,14 +325,16 @@ function serve(me: object, writes: (call: Call) => Response = () => json(201, { 
   return calls;
 }
 
-function renderInventory() {
-  return render(
+/** The Inventory area, opened on a tab (the Overview opens by default). */
+async function renderInventory(tab: string | null = 'Items') {
+  render(
     <QueryClientProvider client={createQueryClient()}>
       <MemoryRouter initialEntries={['/inventory']}>
         <AppRoutes />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  if (tab) fireEvent.click(await screen.findByRole('tab', { name: tab }));
 }
 
 const CLERK = ['inventory.read', 'inventory.items_manage'];
@@ -273,7 +358,7 @@ afterEach(() => {
 describe('inventory screen', () => {
   it('lists items with stock and tracking; a scan opens the exact item (AT-14)', async () => {
     serve(meWith('inventory_clerk', CLERK));
-    renderInventory();
+    await renderInventory();
     const row = await screen.findByRole('row', { name: /Whole milk/ });
     expect(within(row).getByText('2,400 ml')).toBeTruthy();
     expect(within(row).getByText('Lots')).toBeTruthy();
@@ -302,7 +387,7 @@ describe('inventory screen', () => {
           })
         : json(200, {}),
     );
-    renderInventory();
+    await renderInventory();
     await scan('4006381333931');
     expect((await screen.findByRole('alert')).textContent).toMatch(
       /Barcode 4006381333931 isn’t linked to any item yet/,
@@ -324,7 +409,7 @@ describe('inventory screen', () => {
 
   it('a typed SKU opens its item; a name only filters', async () => {
     const calls = serve(meWith('inventory_clerk', CLERK));
-    renderInventory();
+    await renderInventory();
     await scan('cup-12');
     expect(await screen.findByRole('heading', { name: 'Cup 12 oz' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back to inventory' }));
@@ -337,7 +422,7 @@ describe('inventory screen', () => {
 
   it('gives a manager the items to read, with nothing to change', async () => {
     serve(meWith('manager', ['inventory.read']));
-    renderInventory();
+    await renderInventory();
     await screen.findByRole('row', { name: /Whole milk/ });
     expect(screen.queryByRole('button', { name: 'New item' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Open\s*Whole milk/ }));
@@ -351,7 +436,7 @@ describe('inventory screen', () => {
 
   it('creates an item and sends its settings', async () => {
     const calls = serve(meWith('inventory_clerk', CLERK), () => json(201, { id: '8' }));
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('button', { name: 'New item' }));
     fireEvent.change(screen.getByLabelText('SKU'), { target: { value: 'cup-12' } });
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Cup 12 oz' } });
@@ -401,7 +486,7 @@ describe('receive stock', () => {
       ],
     };
     const calls = serve(meWith('inventory_clerk', RECEIVER), () => json(201, posted));
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Receive stock' }));
     await scan('8960000000017');
     const line = await screen.findByRole('group', { name: 'Line: Whole milk' });
@@ -451,7 +536,7 @@ describe('receive stock', () => {
     const calls = serve(meWith('inventory_clerk', RECEIVER), () =>
       json(201, { receiptId: '1', receiptNo: 'GRN-2026-00043', totalCost: '7000.00', lines: [] }),
     );
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Receive stock' }));
     await scan('cup');
     fireEvent.click(await screen.findByRole('button', { name: /Add Cup 12 oz/ }));
@@ -481,9 +566,10 @@ describe('receive stock', () => {
 
   it('offers no Receive stock tab without inventory.receive', async () => {
     serve(meWith('manager', ['inventory.read']));
-    renderInventory();
+    await renderInventory();
     await screen.findByRole('row', { name: /Whole milk/ });
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Overview',
       'Items',
       'Receipts',
       'Waste',
@@ -496,7 +582,7 @@ describe('receive stock', () => {
 describe('lots (step 4.3)', () => {
   it('lists an item’s lots earliest expiry first, marking expired ones', async () => {
     serve(meWith('inventory_clerk', CLERK));
-    renderInventory();
+    await renderInventory();
     await scan('8960000000017');
     const lots = await screen.findByRole('region', { name: 'Lots' });
     const row = within(lots).getByRole('row', { name: /L7/ });
@@ -509,7 +595,7 @@ describe('lots (step 4.3)', () => {
 
   it('asks for the expiry of stock on hand when lots and expiry are switched on (P4-3)', async () => {
     const calls = serve(meWith('inventory_clerk', CLERK), () => json(200, { id: '8', version: 4 }));
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*Cup 12 oz/ }));
     await screen.findByRole('heading', { name: 'Cup 12 oz' });
     expect(screen.queryByRole('region', { name: 'Lots' })).toBeNull();
@@ -539,7 +625,7 @@ describe('waste and supplier returns (step 4.4)', () => {
     const calls = serve(meWith('inventory_clerk', STAFF), () =>
       json(201, { itemId: '7', qtyBase: '2400.0000', value: null }),
     );
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Waste' }));
     expect(await screen.findByText('Nothing wasted yet today.')).toBeTruthy();
     await scan('8960000000017');
@@ -565,7 +651,7 @@ describe('waste and supplier returns (step 4.4)', () => {
         returnedSoFar: '3000.0000',
       }),
     );
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
     expect(await screen.findByText('1,000 ml returned to the supplier')).toBeTruthy();
@@ -605,7 +691,7 @@ describe('stock counts (step 4.5)', () => {
   it('counts blind per lot and submits (AT-108)', async () => {
     countState.detail = { ...countBase, status: 'draft' };
     const calls = serve(meWith('inventory_clerk', COUNTER), () => json(200, { lineId: '1' }));
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Counts' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*CNT-2026-00003/ }));
     const milk = await screen.findByRole('group', { name: 'Count Whole milk' });
@@ -655,7 +741,7 @@ describe('stock counts (step 4.5)', () => {
         ? json(201, { stepUpId: '99' })
         : json(200, { status: 'posted' }),
     );
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Counts' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*CNT-2026-00003/ }));
     const row = await screen.findByRole('row', { name: /Whole milk · lot L7/ });
@@ -700,7 +786,7 @@ describe('supplier price corrections (step 4.6)', () => {
           lineCostNow: '1750.00',
         }),
     );
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
     expect(await screen.findByText('corrected to Rs 1,800')).toBeTruthy();
@@ -723,10 +809,52 @@ describe('supplier price corrections (step 4.6)', () => {
 
   it('offers no correction without inventory.cost_adjust', async () => {
     serve(meWith('inventory_clerk', [...CLERK, 'inventory.receive']));
-    renderInventory();
+    await renderInventory();
     fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
     await screen.findByRole('heading', { name: 'GRN-2026-00007' });
     expect(screen.queryByRole('button', { name: /Correct cost…/ })).toBeNull();
+  });
+});
+
+describe('overview and history (step 4.7)', () => {
+  it('opens on what needs attention, mismatch first; seen and close by hand only where allowed', async () => {
+    const calls = serve(meWith('inventory_clerk', CLERK), () =>
+      json(200, { state: 'acknowledged' }),
+    );
+    await renderInventory(null);
+    const attention = await screen.findByRole('region', { name: 'Needs attention' });
+    const groups = within(attention).getAllByRole('group');
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Stock record does not add up: Whole milk',
+      'Low: Whole milk',
+    ]);
+    expect(within(groups[1] as HTMLElement).queryByRole('button', { name: 'Close…' })).toBeNull();
+    fireEvent.click(within(groups[1] as HTMLElement).getByRole('button', { name: 'Seen' }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === 'POST')?.url).toBe(
+        '/api/staff/v1/inventory/alerts/a1/acknowledge',
+      );
+    });
+    expect(screen.getByText('1 of 2')).toBeTruthy();
+    expect(screen.getByText(/1 item not counted yet/)).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Expired lots · 1' })).getByRole('row', {
+        name: /Whole milk L7 2026-10-25/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Stock value')).toBeNull(); // no cost rights
+  });
+
+  it('shows an item’s movement history with the on-hand after each', async () => {
+    serve(meWith('inventory_clerk', CLERK));
+    await renderInventory(null);
+    const low = await screen.findByRole('region', { name: 'Low · 1' });
+    fireEvent.click(within(low).getByRole('button', { name: /Open\s*Whole milk/ }));
+    const history = await screen.findByRole('region', { name: 'Movement history' });
+    const row = await within(history).findByRole('row', { name: /Waste/ });
+    expect(within(row).getByText('-100 ml')).toBeTruthy();
+    expect(within(row).getByText('2,400 ml')).toBeTruthy();
+    expect(within(row).getByText('Waste · spilled · lot L7')).toBeTruthy();
   });
 });

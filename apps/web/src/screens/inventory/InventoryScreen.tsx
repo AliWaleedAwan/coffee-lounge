@@ -1,5 +1,5 @@
 /**
- * Inventory area (UI_UX.md §6, clerk): items and scanning, receiving stock, past receipts
+ * Inventory area (UI_UX.md §6, clerk): an overview of what needs attention, items and scanning, receiving stock, past receipts
  * with supplier returns, waste, stock counts and suppliers. Tabs follow the user's permissions; the server checks every request.
  */
 import { useState } from 'react';
@@ -7,12 +7,13 @@ import { permissionSet } from '../../auth/session.ts';
 import { useSignedIn } from '../Shell.tsx';
 import { CountsTab } from './CountsTab.tsx';
 import { ItemsTab } from './ItemsTab.tsx';
+import { OverviewTab } from './OverviewTab.tsx';
 import { ReceiptsTab } from './ReceiptsTab.tsx';
 import { ReceiveTab } from './ReceiveTab.tsx';
 import { SuppliersTab } from './SuppliersTab.tsx';
 import { WasteTab } from './WasteTab.tsx';
 
-type Tab = 'items' | 'receive' | 'receipts' | 'waste' | 'counts' | 'suppliers';
+type Tab = 'overview' | 'items' | 'receive' | 'receipts' | 'waste' | 'counts' | 'suppliers';
 
 export function InventoryScreen() {
   const permissions = permissionSet(useSignedIn());
@@ -27,6 +28,7 @@ export function InventoryScreen() {
     correctCost: permissions.has('inventory.cost_adjust'),
   };
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
     { id: 'items', label: 'Items' },
     ...(can.receive ? [{ id: 'receive' as const, label: 'Receive stock' }] : []),
     { id: 'receipts', label: 'Receipts' },
@@ -34,7 +36,7 @@ export function InventoryScreen() {
     { id: 'counts', label: 'Counts' },
     { id: 'suppliers', label: 'Suppliers' },
   ];
-  const [tab, setTab] = useState<Tab>('items');
+  const [tab, setTab] = useState<Tab>('overview');
 
   return (
     <>
@@ -62,6 +64,7 @@ export function InventoryScreen() {
         aria-labelledby={`inventory-tab-${tab}`}
         className="stack"
       >
+        {tab === 'overview' ? <OverviewTab canManage={can.manageItems} /> : null}
         {tab === 'items' ? <ItemsTab canManage={can.manageItems} /> : null}
         {tab === 'receive' ? (
           <ReceiveTab canLink={can.manageItems} canStartStockControl={can.startStockControl} />

@@ -175,6 +175,8 @@ Reason codes (editable list): spilled, remade, expired, damaged, quality, custom
 
 Only one open alert per item and kind exists at a time (database rule). Alerts resolve automatically when the condition clears, except balance mismatch, which the owner must resolve manually.
 
+**As built (Phase 4 step 4.7):** low, zero, shortfall and overstock are re-checked with every stock change and when an item's thresholds change; near expiry and expired per lot by the 04:05 scan; archiving an item closes its alerts (not a balance mismatch). Besides the balance mismatch (owner), two more are closed by a person because their condition never clears: found stock at a pickup, and an expired lot that went into an order (anyone who counts stock, with a note, audited). Any alert can be noted as seen. The Inventory area opens on the overview of all of this.
+
 ## 11. Supplier returns
 
 Return of unused stock to a supplier: `supplier_return` movement against the original receipt line (and lot), valued at the **current average** (COST_VALUATION.md §4). Refund received → ledger entry `cash_in` with reference.

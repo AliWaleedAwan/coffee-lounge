@@ -168,7 +168,8 @@ type AlertKind =
   | 'balance_mismatch'
   | 'stale_reservation'
   | 'near_expiry'
-  | 'expired';
+  | 'expired'
+  | 'overstock';
 
 export async function openAlert(
   tx: Tx,
@@ -205,11 +206,17 @@ async function resolveAlert(tx: Tx, itemId: string, kind: AlertKind): Promise<vo
 /**
  * Opens or resolves the alerts that follow from a balance (RECIPE_INVENTORY.md §10):
  * low (available ≤ threshold), zero (available ≤ 0), reservation shortfall (on hand
- * below reserved). Called with the balance still locked.
+ * below reserved), overstock (on hand ≥ threshold). Each kind is open at most once per
+ * item (database rule) and resolves when its condition clears (AT-111). Called with the
+ * balance still locked.
  */
 async function evaluateAlerts(tx: Tx, b: LockedBalance): Promise<void> {
-  const { rows } = await tx.query<{ low_threshold: string | null; stock_control_active: boolean }>(
-    'SELECT low_threshold, stock_control_active FROM cl.inventory_items WHERE id = $1',
+  const { rows } = await tx.query<{
+    low_threshold: string | null;
+    overstock_threshold: string | null;
+    stock_control_active: boolean;
+  }>(
+    'SELECT low_threshold, overstock_threshold, stock_control_active FROM cl.inventory_items WHERE id = $1',
     [b.itemId],
   );
   const item = rows[0];
@@ -229,6 +236,35 @@ async function evaluateAlerts(tx: Tx, b: LockedBalance): Promise<void> {
   }
   if (b.onHand.lessThan(b.reserved)) await openAlert(tx, b.itemId, 'reservation_shortfall', detail);
   else await resolveAlert(tx, b.itemId, 'reservation_shortfall');
+  if (
+    item.overstock_threshold !== null &&
+    b.onHand.greaterThanOrEqualTo(item.overstock_threshold)
+  ) {
+    await openAlert(tx, b.itemId, 'overstock', { ...detail, threshold: item.overstock_threshold });
+  } else {
+    await resolveAlert(tx, b.itemId, 'overstock');
+  }
+}
+
+/**
+ * Re-checks an item's alerts after its thresholds changed. The caller already holds the
+ * item's balance lock (taken before the item row, as every posting does).
+ */
+export async function reevaluateAlerts(tx: Tx, itemId: string): Promise<void> {
+  const { rows } = await tx.query<BalanceRow>(
+    `SELECT item_id::text, on_hand::text, reserved::text, inventory_value::text, last_unit_cost::text
+       FROM cl.inventory_balances WHERE item_id = $1`,
+    [itemId],
+  );
+  const r = rows[0];
+  if (!r) return;
+  await evaluateAlerts(tx, {
+    itemId: r.item_id,
+    onHand: new Decimal(r.on_hand),
+    reserved: new Decimal(r.reserved),
+    value: new Decimal(r.inventory_value),
+    lastUnitCost: r.last_unit_cost === null ? null : new Decimal(r.last_unit_cost),
+  });
 }
 
 // ---------------------------------------------------------------- opening balance
