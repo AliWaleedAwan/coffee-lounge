@@ -13,6 +13,7 @@ import { orderRoutes } from './modules/orders/index.ts';
 import { printingRoutes } from './modules/printing/index.ts';
 import { purchasingRoutes } from './modules/purchasing/index.ts';
 import { importRoutes } from './modules/imports/index.ts';
+import { ledgerRoutes } from './modules/ledger/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -58,4 +59,5 @@ export async function registerStaffRoutes(
   await stockRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await purchasingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await importRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await ledgerRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
 }

@@ -17,6 +17,7 @@ export const TOPIC_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   deliveries: ['delivery.create', 'delivery.dispatch'],
   printers: ['printers.manage', 'kitchen.reprint'],
   system: ['system.health'],
+  ledger: ['ledger.read'],
   inventory: ['inventory.read'],
   menu: [],
   alerts: [],

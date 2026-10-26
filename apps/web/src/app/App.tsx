@@ -10,6 +10,7 @@ import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
 import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
+import { LedgerScreen } from '../screens/ledger/LedgerScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
 import { ShiftScreen } from '../screens/counter/ShiftScreen.tsx';
@@ -49,6 +50,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   floor: FloorScreen,
   health: HealthScreen,
   inventory: InventoryScreen,
+  ledger: LedgerScreen,
   menu: MenuScreen,
   operations: OperationsScreen,
   pickup: PickupScreen,

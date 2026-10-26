@@ -174,6 +174,7 @@ describe('job queue', () => {
   it('schedules every task with a handler: housekeeping, printing, order and stock alerts, the nightly stock check', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
+      'ledger:reconcile',
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_logs',
       'maintenance:prune_outbox',
@@ -210,6 +211,7 @@ describe('job queue', () => {
       'stock:stale_reservations': '15 * * * *',
       'stock:expiry_scan': '5 4 * * *',
       'stock:reconcile': '10 4 * * *',
+      'ledger:reconcile': '15 4 * * *',
     });
     for (const line of CRONTAB.split('\n')) expect(tasks[line.split(' ')[5] ?? '']).toBeDefined();
   });
