@@ -1,6 +1,6 @@
 /**
- * Inventory items and modifier recipe rules, the parts the Phase 3 fixture needs. The
- * inventory screens (Phase 4) add editing, packs, barcodes and archiving on top.
+ * Creating inventory items, and modifier recipe rules. Editing, packs, barcodes and
+ * archiving are in inventory.ts.
  */
 import { writeAudit, type AuditContext } from '../../platform/audit.ts';
 import type { Tx } from '../../platform/db/tx.ts';
@@ -9,9 +9,13 @@ import { AppError } from '../../platform/errors.ts';
 export interface InventoryItemInput {
   sku: string;
   name: string;
-  category?: string;
+  category?: string | undefined;
   baseUom: 'g' | 'ml' | 'pcs';
-  lowThreshold?: string;
+  trackLots?: boolean | undefined;
+  trackExpiry?: boolean | undefined;
+  lowThreshold?: string | undefined;
+  overstockThreshold?: string | undefined;
+  nearExpiryDays?: number | undefined;
 }
 
 /** A new item starts outside stock control until its opening balance is posted (D-29). */
@@ -22,9 +26,21 @@ export async function createInventoryItem(
 ): Promise<{ id: string }> {
   try {
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO cl.inventory_items (sku, name, category, base_uom, low_threshold)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id::text`,
-      [input.sku, input.name, input.category ?? null, input.baseUom, input.lowThreshold ?? null],
+      `INSERT INTO cl.inventory_items
+         (sku, name, category, base_uom, track_lots, track_expiry, low_threshold,
+          overstock_threshold, near_expiry_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id::text`,
+      [
+        input.sku,
+        input.name,
+        input.category ?? null,
+        input.baseUom,
+        input.trackLots ?? false,
+        input.trackExpiry ?? false,
+        input.lowThreshold ?? null,
+        input.overstockThreshold ?? null,
+        input.nearExpiryDays ?? null,
+      ],
     );
     const id = rows[0]?.id ?? '';
     await writeAudit(tx, audit, {

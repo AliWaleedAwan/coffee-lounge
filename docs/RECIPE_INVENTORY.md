@@ -53,6 +53,7 @@ Recommended: lots + expiry for milk, cream, bakery and other perishables; neithe
 - Active versions are frozen. Editing creates a new draft (copied from the active one). Activating the draft retires the previous version **immediately for future acceptances**.
 - Rounds accepted earlier keep the version they were accepted with (`order_line_components` snapshot). Pending rounds use whichever version is active **at acceptance**.
 - Activation requires `recipes.manage`, is audited, and checks §2's rule (all ingredients stock-controlled).
+- As built (Phase 4 step 4.8): a size has one draft at a time; saving replaces the draft's whole ingredient list; quantities may be entered in any unit of the ingredient's dimension and the waste factor as a percentage. Rules added by a choice must add or replace in counted ingredients, and a replacement keeps the same kind of unit. The editor's preview uses the same explosion as acceptance.
 
 ### 4.2 Components
 Each component: ingredient, quantity in base unit, optional **waste factor**, and which order types it applies to (e.g., cup + lid only for takeaway and delivery).
@@ -106,8 +107,20 @@ For each line with stock mode **recipe**:
 | Release (cancel *n* units not made) | `qty_per_unit × n`, with the same last-units rule |
 | Cancel "already made" | Consume as Picked up, then classify as waste (no stock returned) |
 
-### FEFO lot picking (expiry-tracked items)
+### FEFO lot picking (lot-tracked items)
 At consumption, take from lots ordered by **expiry date, then received date**, skipping quarantined lots. If non-expired lots don't cover the quantity (e.g., a lot expired between acceptance and pickup), the remainder is taken from the earliest expired lot. The movement is flagged `expired_lot_used` and an alert is raised. Physical reality is recorded, not hidden.
+
+**Lots in practice (Phase 4 step 4.3):**
+
+| Rule | Detail |
+|---|---|
+| Expired | A lot is expired from the business day after its expiry date (the printed date is the last day of use). Expired and quarantined lots are on hand but not usable: they do not count as available and cannot be reserved |
+| Unknown expiry | A lot without a date (stock on hand when expiry tracking began without one, found stock) is usable and picked last |
+| Where lots come from | A receipt line (one lot each), the opening balance, stock on hand when lots are switched on (one lot, with the expiry the clerk enters), and stock found at pickup |
+| Waste | Waste can name a lot (an expired one); otherwise it is taken FEFO like a pickup. Waste only from expired lots is recorded as `expired_lot` waste |
+| Reversing a receipt | Allowed only while the receipt's own lot still holds its quantity |
+| Switching lots off | The quantity stays on the item; which lot it was in is forgotten |
+| Alerts | The nightly expiry scan (04:05) raises one `near_expiry` or `expired` alert per lot and clears them when the lot is empty or no longer near; an alert recording that an expired lot went into an order stays until a person closes it |
 
 ## 7. Receiving stock (purchase receipts)
 
@@ -143,6 +156,8 @@ Reason codes (editable list): spilled, remade, expired, damaged, quality, custom
 | Approve | Owner/manager with `inventory.count_approve`, not the submitter. Can send lines back for recount. |
 | Post | Each line posts a `count_adjustment` movement for the **variance (a delta)**, not an absolute overwrite, so sales during the count are not lost. |
 
+**As built (Phase 4 step 4.5):** one count is open at a time. Submitting posts at once when no line is over the limits; otherwise the count waits for someone other than the submitter with `inventory.count_approve` (the owner by default), who approves here or by PIN on the counting device, or sends lines back (those lines are counted again, with a fresh book quantity). Lot-tracked items are counted per lot, plus a line for stock found in no known lot (it becomes a new lot, with an expiry if given). If more was sold after a line was counted than the count found missing, only what is still there is taken out, flagged `count_clamped`.
+
 **Count below reserved quantity:** if posting makes `on_hand < reserved`, the adjustment is still posted (truth wins). A `reservation_shortfall` alert is raised, new acceptances needing that item are blocked, and a manager resolves the open orders (cancel or confirm they were already made).
 
 ## 10. Alerts
@@ -161,6 +176,10 @@ Reason codes (editable list): spilled, remade, expired, damaged, quality, custom
 
 Only one open alert per item and kind exists at a time (database rule). Alerts resolve automatically when the condition clears, except balance mismatch, which the owner must resolve manually.
 
+**As built (Phase 4 step 4.7):** low, zero, shortfall and overstock are re-checked with every stock change and when an item's thresholds change; near expiry and expired per lot by the 04:05 scan; archiving an item closes its alerts (not a balance mismatch). Besides the balance mismatch (owner), two more are closed by a person because their condition never clears: found stock at a pickup, and an expired lot that went into an order (anyone who counts stock, with a note, audited). Any alert can be noted as seen. The Inventory area opens on the overview of all of this.
+
 ## 11. Supplier returns
 
 Return of unused stock to a supplier: `supplier_return` movement against the original receipt line (and lot), valued at the **current average** (COST_VALUATION.md §4). Refund received → ledger entry `cash_in` with reference.
+
+As built (Phase 4 step 4.4): a line can be returned in parts, never more than it brought in; a lot-tracked item comes out of the line's own lot, anything else out of what is available (accepted orders stay covered). The refund's amount, channel and reference are recorded on the return now; the ledger entry is written in Phase 5 (P4-2). A receipt with returns is no longer reversed: the rest is returned or wasted.

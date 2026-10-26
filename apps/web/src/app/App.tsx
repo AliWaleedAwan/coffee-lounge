@@ -9,6 +9,7 @@ import { AREAS, homePath } from '../nav/areas.ts';
 import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
+import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
 import { ShiftScreen } from '../screens/counter/ShiftScreen.tsx';
@@ -47,6 +48,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   devices: DevicesScreen,
   floor: FloorScreen,
   health: HealthScreen,
+  inventory: InventoryScreen,
   menu: MenuScreen,
   operations: OperationsScreen,
   pickup: PickupScreen,

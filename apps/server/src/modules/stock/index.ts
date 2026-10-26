@@ -1,13 +1,19 @@
 /** Public interface of the stock module (other modules import only from here). */
 export { stockAvailability, type StockAvailability } from './availability.ts';
 export {
+  adjustCost,
   consume,
   findStockMismatches,
+  postCountLines,
   postOpeningBalance,
   raiseMismatchAlerts,
   raiseStaleReservationAlerts,
+  receiveStock,
+  scanExpiry,
   release,
   reserve,
+  returnStock,
+  reverseReceiptStock,
   wasteIngredient,
   WASTE_REASONS,
   holdStock,
@@ -17,6 +23,9 @@ export {
   type Shortage,
   type StockContext,
   type StockMismatch,
+  type CountLinePosting,
+  type ReceiptLineReversal,
+  type ReceiptLineStock,
   type Take,
 } from './ledger.ts';
 export {
@@ -43,3 +52,24 @@ export {
   type InventoryItemInput,
   type ModifierRuleInput,
 } from './items.ts';
+export {
+  addBarcode,
+  addPackSize,
+  archiveItem,
+  createItem,
+  deactivateBarcode,
+  listItems,
+  lookupBarcode,
+  readItem,
+  updateItem,
+  updatePackSize,
+  type Barcode,
+  type ItemSummary,
+  type ItemUpdate,
+  type PackSize,
+  type ScanMatch,
+} from './inventory.ts';
+export { stockRoutes } from './routes.ts';
+export { listWaste, recordWaste, type WasteInput, type WasteRecord } from './waste.ts';
+export { reevaluateAlerts } from './ledger.ts';
+export { addRule, retireRule, saveDraft, startDraft } from './recipe-editor.ts';

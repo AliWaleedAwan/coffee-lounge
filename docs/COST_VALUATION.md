@@ -26,6 +26,8 @@ movement: qty_delta = +q, unit_cost, value_delta = +line_cost
 
 Opening balance: the clerk enters quantity and **unit cost** (or total value) per item/lot. It's posted as an `opening` movement with the same formulas.
 
+**Reversing a receipt** (added in Phase 4 step 4.2; allowed only while its quantity is still available): when nothing else has moved the item since the receipt, the reversal takes out exactly `q` and `line_cost` and restores `L` to its value before the receipt, so the item is exactly as it was. Otherwise `q` leaves like an issue (§4) at the current average, flagged `at_average`: the receipt's cost stays blended into what remains, and value can never go negative. Either way it is one `reversal` movement per line pointing at the receipt's movement.
+
 ## 4. Issues (consumption, waste, negative count adjustment, supplier return)
 
 ```text
@@ -61,6 +63,8 @@ V := V + share_to_stock
 Under WAC we can't know which physical units remain, so the proportion of current stock to the received quantity is used. This is a documented approximation that keeps past periods unchanged. Posted as a `cost_adjustment` movement (quantity 0) plus a `cost_adjustments` record. Requires `inventory.cost_adjust` (owner).
 
 If Δ is negative and `share_to_stock` would make V negative, the excess goes to variance as well.
+
+**As built (Phase 4 step 4.6):** the owner enters what the line really cost; Δ is taken against the cost on record (the line cost plus earlier corrections), so a second correction corrects the first. `Q` is the item's on-hand at the moment of the correction (later receipts count). With nothing on hand all of Δ is variance (V must stay 0 at Q = 0). A corrected receipt is no longer reversed; returns stay possible.
 
 ## 7. Cost of a sold line (COGS)
 

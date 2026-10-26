@@ -50,7 +50,7 @@ export const AREAS: readonly Area[] = [
     label: 'Inventory',
     path: '/inventory',
     anyOf: ['inventory.read'],
-    ready: false,
+    ready: true,
   },
   {
     id: 'menu',

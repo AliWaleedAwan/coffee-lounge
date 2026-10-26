@@ -6,12 +6,22 @@
  * value, reservations, movements and line costs always change together or not at all.
  * Quantities are base units (g, ml, pcs) as Decimals.
  */
-import { Decimal } from '@cl/shared';
+import { Decimal, unitCostOf } from '@cl/shared';
 import { writeAudit, type AuditContext } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
+import { businessDateOf } from '../../platform/settings.ts';
+import {
+  createLot,
+  lotSettings,
+  recordLotShares,
+  resolveEmptyLotAlerts,
+  takeFromLots,
+  unusableQty,
+  type LotTake,
+} from './lots.ts';
 import { averageCost, foundStockUnitCost, issueValue, round4, type Balance } from './math.ts';
 
 /** Who and when, for every movement. */
@@ -76,7 +86,15 @@ async function saveBalance(tx: Tx, b: LockedBalance): Promise<void> {
 
 interface MovementInput {
   itemId: string;
-  type: 'opening' | 'consumption' | 'waste' | 'count_adjustment';
+  type:
+    | 'opening'
+    | 'receipt'
+    | 'reversal'
+    | 'consumption'
+    | 'waste'
+    | 'count_adjustment'
+    | 'supplier_return'
+    | 'cost_adjustment';
   qtyDelta: Decimal;
   unitCost: Decimal | null;
   valueDelta: Decimal;
@@ -86,14 +104,15 @@ interface MovementInput {
   reasonCode?: string;
   flags?: string[];
   note?: string;
+  reversesMovementId?: string;
 }
 
 async function insertMovement(tx: Tx, ctx: StockContext, m: MovementInput): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
     `INSERT INTO cl.stock_movements
        (item_id, movement_type, qty_delta, unit_cost, value_delta, source_type, source_id, source_key,
-        reason_code, flags, actor_user_id, business_date, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id::text`,
+        reason_code, flags, actor_user_id, business_date, note, reverses_movement_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id::text`,
     [
       m.itemId,
       m.type,
@@ -108,6 +127,7 @@ async function insertMovement(tx: Tx, ctx: StockContext, m: MovementInput): Prom
       ctx.actorUserId,
       ctx.businessDate,
       m.note ?? null,
+      m.reversesMovementId ?? null,
     ],
   );
   const id = rows[0]?.id;
@@ -146,14 +166,23 @@ type AlertKind =
   | 'reservation_shortfall'
   | 'found_stock'
   | 'balance_mismatch'
-  | 'stale_reservation';
+  | 'stale_reservation'
+  | 'near_expiry'
+  | 'expired'
+  | 'overstock';
 
-async function openAlert(tx: Tx, itemId: string, kind: AlertKind, detail: object): Promise<void> {
+export async function openAlert(
+  tx: Tx,
+  itemId: string,
+  kind: AlertKind,
+  detail: object,
+  lotId?: string,
+): Promise<void> {
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO cl.inventory_alerts (item_id, kind, detail) VALUES ($1, $2, $3)
+    `INSERT INTO cl.inventory_alerts (item_id, lot_id, kind, detail) VALUES ($1, $2, $3, $4)
      ON CONFLICT (kind, item_id, lot_id) WHERE state <> 'resolved' DO NOTHING
      RETURNING id::text`,
-    [itemId, kind, JSON.stringify(detail)],
+    [itemId, lotId ?? null, kind, JSON.stringify(detail)],
   );
   const id = rows[0]?.id;
   if (id !== undefined) {
@@ -177,11 +206,17 @@ async function resolveAlert(tx: Tx, itemId: string, kind: AlertKind): Promise<vo
 /**
  * Opens or resolves the alerts that follow from a balance (RECIPE_INVENTORY.md §10):
  * low (available ≤ threshold), zero (available ≤ 0), reservation shortfall (on hand
- * below reserved). Called with the balance still locked.
+ * below reserved), overstock (on hand ≥ threshold). Each kind is open at most once per
+ * item (database rule) and resolves when its condition clears (AT-111). Called with the
+ * balance still locked.
  */
 async function evaluateAlerts(tx: Tx, b: LockedBalance): Promise<void> {
-  const { rows } = await tx.query<{ low_threshold: string | null; stock_control_active: boolean }>(
-    'SELECT low_threshold, stock_control_active FROM cl.inventory_items WHERE id = $1',
+  const { rows } = await tx.query<{
+    low_threshold: string | null;
+    overstock_threshold: string | null;
+    stock_control_active: boolean;
+  }>(
+    'SELECT low_threshold, overstock_threshold, stock_control_active FROM cl.inventory_items WHERE id = $1',
     [b.itemId],
   );
   const item = rows[0];
@@ -201,6 +236,35 @@ async function evaluateAlerts(tx: Tx, b: LockedBalance): Promise<void> {
   }
   if (b.onHand.lessThan(b.reserved)) await openAlert(tx, b.itemId, 'reservation_shortfall', detail);
   else await resolveAlert(tx, b.itemId, 'reservation_shortfall');
+  if (
+    item.overstock_threshold !== null &&
+    b.onHand.greaterThanOrEqualTo(item.overstock_threshold)
+  ) {
+    await openAlert(tx, b.itemId, 'overstock', { ...detail, threshold: item.overstock_threshold });
+  } else {
+    await resolveAlert(tx, b.itemId, 'overstock');
+  }
+}
+
+/**
+ * Re-checks an item's alerts after its thresholds changed. The caller already holds the
+ * item's balance lock (taken before the item row, as every posting does).
+ */
+export async function reevaluateAlerts(tx: Tx, itemId: string): Promise<void> {
+  const { rows } = await tx.query<BalanceRow>(
+    `SELECT item_id::text, on_hand::text, reserved::text, inventory_value::text, last_unit_cost::text
+       FROM cl.inventory_balances WHERE item_id = $1`,
+    [itemId],
+  );
+  const r = rows[0];
+  if (!r) return;
+  await evaluateAlerts(tx, {
+    itemId: r.item_id,
+    onHand: new Decimal(r.on_hand),
+    reserved: new Decimal(r.reserved),
+    value: new Decimal(r.inventory_value),
+    lastUnitCost: r.last_unit_cost === null ? null : new Decimal(r.last_unit_cost),
+  });
 }
 
 // ---------------------------------------------------------------- opening balance
@@ -213,7 +277,14 @@ export async function postOpeningBalance(
   tx: Tx,
   ctx: StockContext,
   audit: AuditContext,
-  input: { itemId: string; qty: Decimal; unitCost: Decimal },
+  input: {
+    itemId: string;
+    qty: Decimal;
+    unitCost: Decimal;
+    /** Lot-tracked items: the opening lot. */
+    lotCode?: string | null;
+    expiryDate?: string | null;
+  },
 ): Promise<void> {
   if (input.qty.isNegative() || input.unitCost.isNegative()) {
     throw new AppError('VALIDATION_FAILED', 'Opening quantity and cost cannot be negative');
@@ -233,7 +304,7 @@ export async function postOpeningBalance(
   const q = round4(input.qty);
   const value = round4(q.times(input.unitCost));
   if (q.greaterThan(0)) {
-    await insertMovement(tx, ctx, {
+    const movementId = await insertMovement(tx, ctx, {
       itemId: input.itemId,
       type: 'opening',
       qtyDelta: q,
@@ -243,6 +314,16 @@ export async function postOpeningBalance(
       sourceId: input.itemId,
       sourceKey: `opening:item:${input.itemId}`,
     });
+    if ((await lotSettings(tx, [input.itemId])).get(input.itemId)?.trackLots) {
+      const lotId = await createLot(tx, {
+        itemId: input.itemId,
+        qty: q,
+        origin: 'opening',
+        lotCode: input.lotCode ?? null,
+        expiryDate: input.expiryDate ?? null,
+      });
+      await recordLotShares(tx, movementId, [{ lotId, qty: q }], 1);
+    }
   }
   b.onHand = b.onHand.plus(q);
   b.value = b.value.plus(value);
@@ -259,6 +340,230 @@ export async function postOpeningBalance(
   });
   await evaluateAlerts(tx, b);
   await announce(tx, [input.itemId]);
+}
+
+// ---------------------------------------------------------------- purchase receipts
+
+export interface ReceiptLineStock {
+  itemId: string;
+  /** Base units, > 0. */
+  qty: Decimal;
+  /** What was paid for the line (PKR, 2 dp), ≥ 0. */
+  lineCost: Decimal;
+  /** The purchase receipt line. */
+  sourceId: string;
+  /** For lot-tracked items: the lot as received. */
+  lotCode?: string | null;
+  expiryDate?: string | null;
+}
+
+/**
+ * Stock in from a purchase receipt (COST_VALUATION.md §3): per line, unit cost = line
+ * cost ÷ quantity to 8 dp, Q + q, V + line cost, L = unit cost; one `receipt` movement
+ * each. Balances are locked once, in ascending item id, before anything is written.
+ * `startStockControl` lists items that had no opening count and start from this receipt
+ * (their shelf was empty, D-29). Returns the movement id per line.
+ */
+export async function receiveStock(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly ReceiptLineStock[],
+  startStockControl: ReadonlySet<string> = new Set(),
+): Promise<Map<string, string>> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const { rows: items } = await tx.query<{
+    id: string;
+    name: string;
+    stock_control_active: boolean;
+    archived: boolean;
+  }>(
+    `SELECT id::text, name, stock_control_active, archived_at IS NOT NULL AS archived
+       FROM cl.inventory_items WHERE id = ANY($1::bigint[]) ORDER BY inventory_items.id FOR UPDATE`,
+    [itemIds],
+  );
+  for (const item of items) {
+    if (item.archived) throw new AppError('VALIDATION_FAILED', `${item.name} is archived`);
+    if (!item.stock_control_active && !startStockControl.has(item.id)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `${item.name} is not counted yet: confirm its shelf was empty to start stock control ` +
+          'from this receipt, or post its opening count first',
+        { itemId: item.id },
+      );
+    }
+  }
+  const lots = await lotSettings(tx, itemIds);
+  const movements = new Map<string, string>();
+  for (const line of lines) {
+    const b = balances.get(line.itemId);
+    if (!b) continue;
+    if (line.qty.lessThanOrEqualTo(0) || line.lineCost.isNegative()) {
+      throw new AppError('VALIDATION_FAILED', 'A receipt line needs a quantity and a cost');
+    }
+    const unitCost = unitCostOf(line.lineCost, line.qty);
+    const movementId = await insertMovement(tx, ctx, {
+      itemId: line.itemId,
+      type: 'receipt',
+      qtyDelta: line.qty,
+      unitCost,
+      valueDelta: line.lineCost,
+      sourceType: 'purchase_receipt_line',
+      sourceId: line.sourceId,
+      sourceKey: `receipt:line:${line.sourceId}`,
+    });
+    movements.set(line.sourceId, movementId);
+    if (lots.get(line.itemId)?.trackLots) {
+      const lotId = await createLot(tx, {
+        itemId: line.itemId,
+        qty: line.qty,
+        origin: 'receipt',
+        lotCode: line.lotCode ?? null,
+        expiryDate: line.expiryDate ?? null,
+        receiptLineId: line.sourceId,
+      });
+      await recordLotShares(tx, movementId, [{ lotId, qty: line.qty }], 1);
+    }
+    b.onHand = b.onHand.plus(line.qty);
+    b.value = b.value.plus(line.lineCost);
+    b.lastUnitCost = unitCost;
+  }
+  const started = items.filter((i) => !i.stock_control_active).map((i) => i.id);
+  if (started.length > 0) {
+    await tx.query(
+      'UPDATE cl.inventory_items SET stock_control_active = true WHERE id = ANY($1::bigint[])',
+      [started],
+    );
+  }
+  for (const b of balances.values()) {
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+  }
+  await announce(tx, itemIds);
+  return movements;
+}
+
+export interface ReceiptLineReversal extends ReceiptLineStock {
+  /** The line's `receipt` movement. */
+  movementId: string;
+}
+
+/**
+ * Takes a whole receipt back out (RECIPE_INVENTORY.md §7 "Corrections"), only while its
+ * stock is still available: what is reserved for accepted orders stays covered. When
+ * nothing else has moved an item since the receipt, the item returns exactly to its
+ * quantity, value and last cost from before the receipt; otherwise the quantity leaves at
+ * the current average like any issue (COST_VALUATION.md §4), so value never goes negative.
+ * One `reversal` movement per line.
+ */
+export async function reverseReceiptStock(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly ReceiptLineReversal[],
+): Promise<void> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const { rows: names } = await tx.query<{ id: string; name: string; base_uom: string }>(
+    'SELECT id::text, name, base_uom FROM cl.inventory_items WHERE id = ANY($1::bigint[])',
+    [itemIds],
+  );
+  const name = new Map(names.map((n) => [n.id, n]));
+  const { rows: ownLots } = await tx.query<{
+    id: string;
+    receipt_line_id: string;
+    qty_remaining: string;
+    qty_received: string;
+  }>(
+    `SELECT id::text, receipt_line_id::text, qty_remaining::text, qty_received::text
+       FROM cl.inventory_lots WHERE receipt_line_id = ANY($1::bigint[])`,
+    [lines.map((l) => l.sourceId)],
+  );
+  const lotOf = new Map(ownLots.map((l) => [l.receipt_line_id, l]));
+  for (const line of lines) {
+    const lot = lotOf.get(line.sourceId);
+    if (lot && new Decimal(lot.qty_remaining).lessThan(line.qty)) {
+      const item = name.get(line.itemId);
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `Part of the ${item?.name ?? 'item'} lot from this receipt is already used ` +
+          `(${new Decimal(lot.qty_remaining).toString()} of ${line.qty.toString()} ${item?.base_uom ?? ''} left). ` +
+          'Record a waste or a supplier return instead.',
+      );
+    }
+  }
+  for (const itemId of itemIds) {
+    const b = balances.get(itemId);
+    const q = lines
+      .filter((l) => l.itemId === itemId)
+      .reduce((sum, l) => sum.plus(l.qty), new Decimal(0));
+    if (!b) continue;
+    const available = b.onHand.minus(b.reserved);
+    if (available.lessThan(q)) {
+      const item = name.get(itemId);
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `Only ${available.toString()} ${item?.base_uom ?? ''} of ${item?.name ?? 'an item'} is ` +
+          `still available, and this receipt brought in ${q.toString()}. ` +
+          'Record a waste or a supplier return instead.',
+      );
+    }
+  }
+  for (const itemId of itemIds) {
+    const b = balances.get(itemId);
+    if (!b) continue;
+    const own = lines.filter((l) => l.itemId === itemId);
+    const ownIds = own.map((l) => l.movementId);
+    const { rows } = await tx.query<{ later: boolean; previous_cost: string | null }>(
+      `SELECT EXISTS (SELECT 1 FROM cl.stock_movements
+                       WHERE item_id = $1 AND id > $2 AND NOT (id = ANY($3::bigint[]))) AS later,
+              (SELECT unit_cost::text FROM cl.stock_movements
+                WHERE item_id = $1 AND id < $2 AND unit_cost IS NOT NULL
+                ORDER BY stock_movements.id DESC LIMIT 1) AS previous_cost`,
+      [itemId, minId(ownIds), ownIds],
+    );
+    const exact = rows[0]?.later === false;
+    for (const line of own) {
+      let value: Decimal;
+      let unitCost: Decimal | null;
+      if (exact) {
+        value = line.lineCost;
+        unitCost = unitCostOf(line.lineCost, line.qty);
+        b.onHand = b.onHand.minus(line.qty);
+        b.value = b.value.minus(value);
+      } else {
+        ({ value, unitCost } = issue(b, line.qty));
+      }
+      const reversalId = await insertMovement(tx, ctx, {
+        itemId,
+        type: 'reversal',
+        qtyDelta: line.qty.negated(),
+        unitCost,
+        valueDelta: value.negated(),
+        sourceType: 'purchase_receipt_line',
+        sourceId: line.sourceId,
+        sourceKey: `receipt:reverse:line:${line.sourceId}`,
+        reversesMovementId: line.movementId,
+        ...(exact ? {} : { flags: ['at_average'] }),
+      });
+      const lot = lotOf.get(line.sourceId);
+      if (lot) {
+        const takes = await takeFromLots(tx, itemId, line.qty, ctx.businessDate, lot.id);
+        await recordLotShares(tx, reversalId, takes, -1);
+      }
+    }
+    await resolveEmptyLotAlerts(tx, itemId);
+    if (exact) {
+      const previous = rows[0]?.previous_cost;
+      b.lastUnitCost = previous ? new Decimal(previous) : null;
+    }
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+  }
+  await announce(tx, itemIds);
+}
+
+function minId(ids: readonly string[]): string {
+  return ids.reduce((a, b) => (BigInt(a) <= BigInt(b) ? a : b));
 }
 
 // ---------------------------------------------------------------- reservations
@@ -293,7 +598,12 @@ export interface StockHold {
  * needed it, and nothing is written. The caller then inserts its lines (taking document
  * numbers last, DATABASE.md §14) and commits the hold.
  */
-export async function holdStock(tx: Tx, lines: readonly LineRequirement[]): Promise<StockHold> {
+export async function holdStock(
+  tx: Tx,
+  lines: readonly LineRequirement[],
+  /** Business date for expiry (default: today's). */
+  asOf?: string,
+): Promise<StockHold> {
   const total = new Map<string, Decimal>();
   const users = new Map<string, string[]>();
   for (const line of lines) {
@@ -314,11 +624,13 @@ export async function holdStock(tx: Tx, lines: readonly LineRequirement[]): Prom
     // Cannot happen through the services: a recipe goes live only when every ingredient is counted.
     throw new Error(`not stock-controlled: ${untracked.map((r) => r.name).join(', ')}`);
   }
+  // Expired and quarantined lots are on hand but not usable (AT-13).
+  const unusable = await unusableQty(tx, itemIds, asOf ?? (await businessDateOf(tx, new Date())));
   const shortages: Shortage[] = [];
   for (const [itemId, q] of total) {
     const b = balances.get(itemId);
     if (!b) continue;
-    const available = b.onHand.minus(b.reserved);
+    const available = b.onHand.minus(b.reserved).minus(unusable.get(itemId) ?? 0);
     if (available.lessThan(q)) {
       shortages.push({
         itemId,
@@ -479,6 +791,7 @@ export async function consume(
   if (itemIds.length === 0) return { value: new Decimal(0), byLine };
   const balances = await lockBalances(tx, itemIds);
   const reservations = await lockReservations(tx, lines);
+  const lots = await lotSettings(tx, itemIds);
   let total = new Decimal(0);
   for (const line of lines) {
     for (const take of [...line.takes].sort(byItemId)) {
@@ -493,7 +806,7 @@ export async function consume(
         const missing = q.minus(b.onHand);
         const cost = foundStockUnitCost(b, b.lastUnitCost) ?? new Decimal(0);
         const value = round4(missing.times(cost));
-        await insertMovement(tx, ctx, {
+        const foundId = await insertMovement(tx, ctx, {
           itemId: take.itemId,
           type: 'count_adjustment',
           qtyDelta: missing,
@@ -504,6 +817,10 @@ export async function consume(
           sourceKey: `found:${key}`,
           flags: ['auto_found_stock'],
         });
+        if (lots.get(take.itemId)?.trackLots) {
+          const lotId = await createLot(tx, { itemId: take.itemId, qty: missing, origin: 'found' });
+          await recordLotShares(tx, foundId, [{ lotId, qty: missing }], 1);
+        }
         b.onHand = b.onHand.plus(missing);
         b.value = b.value.plus(value);
         await openAlert(tx, take.itemId, 'found_stock', {
@@ -514,6 +831,10 @@ export async function consume(
       }
 
       const { value, unitCost } = issue(b, q);
+      const lotTakes: LotTake[] = lots.get(take.itemId)?.trackLots
+        ? await takeFromLots(tx, take.itemId, q, ctx.businessDate)
+        : [];
+      const expiredUsed = lotTakes.filter((t) => t.expired);
       const movementId = await insertMovement(tx, ctx, {
         itemId: take.itemId,
         type: 'consumption',
@@ -523,7 +844,19 @@ export async function consume(
         sourceType: 'order_line',
         sourceId: line.orderLineId,
         sourceKey: `consume:${key}:lot:0`,
+        ...(expiredUsed.length > 0 ? { flags: ['expired_lot_used'] } : {}),
       });
+      await recordLotShares(tx, movementId, lotTakes, -1);
+      // Physical reality is recorded, not hidden (RECIPE_INVENTORY.md §6, AT-30).
+      for (const t of expiredUsed) {
+        await openAlert(
+          tx,
+          take.itemId,
+          'expired',
+          { usedBy: line.orderLineId, qty: t.qty.toFixed(4), movementId },
+          t.lotId,
+        );
+      }
       await tx.query(
         'INSERT INTO cl.order_line_costs (order_line_id, item_id, movement_id, qty_base, value) VALUES ($1, $2, $3, $4, $5)',
         [line.orderLineId, take.itemId, movementId, q.toFixed(4), value.toFixed(4)],
@@ -537,6 +870,7 @@ export async function consume(
   for (const b of balances.values()) {
     await saveBalance(tx, b);
     await evaluateAlerts(tx, b);
+    if (lots.get(b.itemId)?.trackLots) await resolveEmptyLotAlerts(tx, b.itemId);
   }
   await announce(tx, itemIds);
   return { value: total, byLine };
@@ -589,7 +923,15 @@ export async function wasteIngredient(
   tx: Tx,
   ctx: StockContext & { actorUserId: string },
   audit: AuditContext,
-  input: { itemId: string; qty: Decimal; reasonCode: string; note?: string; key: string },
+  input: {
+    itemId: string;
+    qty: Decimal;
+    reasonCode: string;
+    note?: string;
+    key: string;
+    /** Lot-tracked items: waste from this lot (e.g. the expired one); else FEFO. */
+    lotId?: string;
+  },
 ): Promise<{ value: Decimal }> {
   const q = round4(input.qty);
   if (q.lessThanOrEqualTo(0))
@@ -611,6 +953,29 @@ export async function wasteIngredient(
       },
     );
   }
+  const tracked = (await lotSettings(tx, [input.itemId])).get(input.itemId)?.trackLots ?? false;
+  if (input.lotId !== undefined && !tracked) {
+    throw new AppError('VALIDATION_FAILED', 'This item has no lots');
+  }
+  let lotTakes: LotTake[] = [];
+  if (tracked) {
+    if (input.lotId !== undefined) {
+      const { rows } = await tx.query<{ q: string }>(
+        'SELECT qty_remaining::text AS q FROM cl.inventory_lots WHERE id = $1 AND item_id = $2',
+        [input.lotId, input.itemId],
+      );
+      const left = rows[0]?.q;
+      if (left === undefined)
+        throw new AppError('VALIDATION_FAILED', 'That lot belongs to another item');
+      if (q.greaterThan(left)) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          `That lot holds only ${new Decimal(left).toString()}`,
+        );
+      }
+    }
+    lotTakes = await takeFromLots(tx, input.itemId, q, ctx.businessDate, input.lotId);
+  }
   const { value, unitCost } = issue(b, q);
   const movementId = await insertMovement(tx, ctx, {
     itemId: input.itemId,
@@ -625,8 +990,8 @@ export async function wasteIngredient(
     ...(input.note ? { note: input.note } : {}),
   });
   await tx.query(
-    `INSERT INTO cl.wastage_records (kind, item_id, qty, reason_code, cost_value, movement_id, recorded_by, business_date, note)
-     VALUES ('ingredient', $1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO cl.wastage_records (kind, item_id, qty, reason_code, cost_value, movement_id, recorded_by, business_date, note, lot_id)
+     VALUES ($9, $1, $2, $3, $4, $5, $6, $7, $8, $10)`,
     [
       input.itemId,
       q.toFixed(4),
@@ -636,8 +1001,12 @@ export async function wasteIngredient(
       ctx.actorUserId,
       ctx.businessDate,
       input.note ?? null,
+      lotTakes.length > 0 && lotTakes.every((t) => t.expired) ? 'expired_lot' : 'ingredient',
+      lotTakes.length === 1 ? (lotTakes[0]?.lotId ?? null) : null,
     ],
   );
+  await recordLotShares(tx, movementId, lotTakes, -1);
+  if (tracked) await resolveEmptyLotAlerts(tx, input.itemId);
   await saveBalance(tx, b);
   await writeAudit(tx, audit, {
     action: 'stock.waste',
@@ -651,6 +1020,237 @@ export async function wasteIngredient(
   return { value };
 }
 
+// ---------------------------------------------------------------- supplier returns
+
+/**
+ * Stock back to the supplier (RECIPE_INVENTORY.md §11): an issue at the current average
+ * (COST_VALUATION.md §4), one `supplier_return` movement against the receipt line. For a
+ * lot-tracked item it comes out of the line's own lot, which must still hold it; anything
+ * else needs the quantity available, so accepted orders stay covered. The caller holds
+ * the receipt's row lock and checks what the line has left to return.
+ */
+export async function returnStock(
+  tx: Tx,
+  ctx: StockContext,
+  input: { itemId: string; qty: Decimal; receiptLineId: string; key: string; note: string },
+): Promise<{ movementId: string; value: Decimal; lotId: string | null }> {
+  const q = round4(input.qty);
+  if (q.lessThanOrEqualTo(0)) throw new AppError('VALIDATION_FAILED', 'Return more than zero');
+  const b = (await lockBalances(tx, [input.itemId])).get(input.itemId);
+  if (!b) throw new AppError('NOT_FOUND', 'Stock item not found');
+  const { rows: items } = await tx.query<{ name: string; base_uom: string; track_lots: boolean }>(
+    'SELECT name, base_uom, track_lots FROM cl.inventory_items WHERE id = $1',
+    [input.itemId],
+  );
+  const item = items[0];
+  const available = b.onHand.minus(b.reserved);
+  if (available.lessThan(q)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `Only ${available.toString()} ${item?.base_uom ?? ''} of ${item?.name ?? 'the item'} is available to return`,
+    );
+  }
+  let lotTakes: LotTake[] = [];
+  let lotId: string | null = null;
+  if (item?.track_lots) {
+    const { rows } = await tx.query<{ id: string; q: string }>(
+      'SELECT id::text, qty_remaining::text AS q FROM cl.inventory_lots WHERE receipt_line_id = $1',
+      [input.receiptLineId],
+    );
+    const lot = rows[0];
+    if (!lot || q.greaterThan(lot.q)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `The lot from this receipt holds only ${new Decimal(lot?.q ?? '0').toString()} ${item.base_uom}`,
+      );
+    }
+    lotId = lot.id;
+    lotTakes = await takeFromLots(tx, input.itemId, q, ctx.businessDate, lot.id);
+  }
+  const { value, unitCost } = issue(b, q);
+  const movementId = await insertMovement(tx, ctx, {
+    itemId: input.itemId,
+    type: 'supplier_return',
+    qtyDelta: q.negated(),
+    unitCost,
+    valueDelta: value.negated(),
+    sourceType: 'purchase_receipt_line',
+    sourceId: input.receiptLineId,
+    sourceKey: `return:${input.key}:line:${input.receiptLineId}`,
+    note: input.note,
+  });
+  await recordLotShares(tx, movementId, lotTakes, -1);
+  if (item?.track_lots) await resolveEmptyLotAlerts(tx, input.itemId);
+  await saveBalance(tx, b);
+  await evaluateAlerts(tx, b);
+  await announce(tx, [input.itemId]);
+  return { movementId, value, lotId };
+}
+
+// ---------------------------------------------------------------- stock counts
+
+export interface CountLinePosting {
+  lineId: string;
+  itemId: string;
+  /** The counted lot; null for the item (or stock found in no known lot). */
+  lotId: string | null;
+  /** counted − book at entry: posted as a delta (P4-5, RECIPE_INVENTORY.md §9). */
+  variance: Decimal;
+  /** Stock found in no known lot becomes a lot with this expiry. */
+  newLotExpiry: string | null;
+}
+
+/**
+ * Posts a count's variances as `count_adjustment` deltas, so sales made while counting
+ * are kept. More found than booked comes in at the average (else the last cost,
+ * COST_VALUATION.md §5); less leaves like an issue (§4). A shortfall bigger than what is
+ * still there (sold since the line was counted) is posted only as far as the stock goes,
+ * flagged `count_clamped`. Counting below what is reserved is posted anyway: the
+ * shortfall alert follows and new acceptances needing the item are refused (D-18,
+ * AT-29). Returns the delta posted and the movement per line.
+ */
+export async function postCountLines(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly CountLinePosting[],
+): Promise<Map<string, { posted: Decimal; movementId: string | null }>> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const lots = await lotSettings(tx, itemIds);
+  const result = new Map<string, { posted: Decimal; movementId: string | null }>();
+  for (const line of lines) {
+    const b = balances.get(line.itemId);
+    if (!b) continue;
+    const tracked = lots.get(line.itemId)?.trackLots ?? false;
+    const base = {
+      itemId: line.itemId,
+      type: 'count_adjustment' as const,
+      sourceType: 'stock_count_line',
+      sourceId: line.lineId,
+      sourceKey: `count:line:${line.lineId}`,
+    };
+    if (line.variance.isZero()) {
+      result.set(line.lineId, { posted: new Decimal(0), movementId: null });
+      continue;
+    }
+    if (line.variance.greaterThan(0)) {
+      const q = line.variance;
+      const cost = foundStockUnitCost(b, b.lastUnitCost) ?? new Decimal(0);
+      const value = round4(q.times(cost));
+      const movementId = await insertMovement(tx, ctx, {
+        ...base,
+        qtyDelta: q,
+        unitCost: cost,
+        valueDelta: value,
+      });
+      if (tracked) {
+        let lotId = line.lotId;
+        if (lotId === null) {
+          lotId = await createLot(tx, {
+            itemId: line.itemId,
+            qty: q,
+            origin: 'count',
+            expiryDate: line.newLotExpiry,
+          });
+        } else {
+          await tx.query(
+            'UPDATE cl.inventory_lots SET qty_remaining = qty_remaining + $2 WHERE id = $1',
+            [lotId, q.toFixed(4)],
+          );
+        }
+        await recordLotShares(tx, movementId, [{ lotId, qty: q }], 1);
+      }
+      b.onHand = b.onHand.plus(q);
+      b.value = b.value.plus(value);
+      result.set(line.lineId, { posted: q, movementId });
+      continue;
+    }
+    // Less than booked: never more than is still there.
+    let there = b.onHand;
+    if (tracked && line.lotId !== null) {
+      const { rows } = await tx.query<{ q: string }>(
+        'SELECT qty_remaining::text AS q FROM cl.inventory_lots WHERE id = $1',
+        [line.lotId],
+      );
+      there = Decimal.min(there, new Decimal(rows[0]?.q ?? '0'));
+    }
+    const q = Decimal.min(line.variance.negated(), there);
+    if (q.isZero()) {
+      result.set(line.lineId, { posted: new Decimal(0), movementId: null });
+      continue;
+    }
+    const lotTakes =
+      tracked && line.lotId !== null
+        ? await takeFromLots(tx, line.itemId, q, ctx.businessDate, line.lotId)
+        : tracked
+          ? await takeFromLots(tx, line.itemId, q, ctx.businessDate)
+          : [];
+    const { value, unitCost } = issue(b, q);
+    const movementId = await insertMovement(tx, ctx, {
+      ...base,
+      qtyDelta: q.negated(),
+      unitCost,
+      valueDelta: value.negated(),
+      ...(q.lessThan(line.variance.negated()) ? { flags: ['count_clamped'] } : {}),
+    });
+    await recordLotShares(tx, movementId, lotTakes, -1);
+    result.set(line.lineId, { posted: q.negated(), movementId });
+  }
+  for (const b of balances.values()) {
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+    if (lots.get(b.itemId)?.trackLots) await resolveEmptyLotAlerts(tx, b.itemId);
+  }
+  await announce(tx, itemIds);
+  return result;
+}
+
+// ---------------------------------------------------------------- cost corrections
+
+/**
+ * A supplier price correction (COST_VALUATION.md §6, AT-68): of Δ on a receipt line of
+ * `qtyReceived`, the share Δ × min(1, Q ÷ qtyReceived) is assumed still on hand and goes
+ * into stock value now; the rest is purchase price variance today. A negative share never
+ * takes the value below zero (the excess goes to variance too), and with nothing on hand
+ * all of Δ is variance. One `cost_adjustment` movement with quantity 0; nothing earlier
+ * is touched, so past averages and line costs stay (AT-19).
+ */
+export async function adjustCost(
+  tx: Tx,
+  ctx: StockContext,
+  input: {
+    itemId: string;
+    receiptLineId: string;
+    qtyReceived: Decimal;
+    delta: Decimal;
+    key: string;
+    note: string;
+  },
+): Promise<{ toInventory: Decimal; toVariance: Decimal; movementId: string }> {
+  if (input.delta.isZero()) throw new AppError('VALIDATION_FAILED', 'The correction is zero');
+  const b = (await lockBalances(tx, [input.itemId])).get(input.itemId);
+  if (!b) throw new AppError('NOT_FOUND', 'Stock item not found');
+  const share = Decimal.min(1, b.onHand.dividedBy(input.qtyReceived));
+  let toInventory = round4(input.delta.times(share));
+  if (b.value.plus(toInventory).isNegative()) toInventory = b.value.negated();
+  if (b.onHand.isZero()) toInventory = new Decimal(0);
+  const toVariance = input.delta.minus(toInventory);
+  const movementId = await insertMovement(tx, ctx, {
+    itemId: input.itemId,
+    type: 'cost_adjustment',
+    qtyDelta: new Decimal(0),
+    unitCost: null,
+    valueDelta: toInventory,
+    sourceType: 'purchase_receipt_line',
+    sourceId: input.receiptLineId,
+    sourceKey: `cost:${input.key}:line:${input.receiptLineId}`,
+    note: input.note,
+  });
+  b.value = b.value.plus(toInventory);
+  await saveBalance(tx, b);
+  return { toInventory, toVariance, movementId };
+}
+
 // ---------------------------------------------------------------- reconciliation
 
 export interface StockMismatch {
@@ -661,7 +1261,8 @@ export interface StockMismatch {
 /**
  * The integrity check of COST_VALUATION.md §11 (nightly job, restore check, tests):
  * balance = Σ movements in quantity and value; nothing negative; no value without
- * quantity; reserved = Σ open reservations; one equal line cost per consumption.
+ * quantity; reserved = Σ open reservations; on hand = Σ lots for lot-tracked items (and
+ * no lot stock for others); one equal line cost per consumption.
  * Reports only: nothing is ever corrected automatically.
  */
 export async function findStockMismatches(db: Queryable): Promise<StockMismatch[]> {
@@ -683,6 +1284,12 @@ export async function findStockMismatches(db: Queryable): Promise<StockMismatch[
      SELECT b.item_id::text, 'negative or orphan value'
        FROM cl.inventory_balances b
       WHERE b.on_hand < 0 OR b.inventory_value < 0 OR (b.on_hand = 0 AND b.inventory_value <> 0)
+     UNION ALL
+     SELECT b.item_id::text, 'on hand ' || b.on_hand || ' ≠ lots ' || COALESCE(l.q, 0)
+       FROM cl.inventory_balances b JOIN cl.inventory_items i ON i.id = b.item_id
+       LEFT JOIN (SELECT item_id, sum(qty_remaining) AS q FROM cl.inventory_lots GROUP BY item_id) l
+         ON l.item_id = b.item_id
+      WHERE (i.track_lots AND b.on_hand <> COALESCE(l.q, 0)) OR (NOT i.track_lots AND COALESCE(l.q, 0) <> 0)
      UNION ALL
      SELECT mv.item_id::text, 'consumption ' || mv.id || ' has no equal line cost'
        FROM cl.stock_movements mv LEFT JOIN cl.order_line_costs c ON c.movement_id = mv.id
@@ -726,4 +1333,59 @@ export async function raiseStaleReservationAlerts(tx: Tx, now: Date, hours = 12)
     [now, hours],
   );
   return rows.length;
+}
+
+// ---------------------------------------------------------------- expiry
+
+/**
+ * The expiry scan (RECIPE_INVENTORY.md §10; nightly at 04:05, after the business-day
+ * cutoff): one `expired` alert per lot past its expiry that still holds stock, one
+ * `near_expiry` alert per lot within the item's near-expiry days; alerts whose condition
+ * cleared are resolved. Menus are told to refetch for items with lots that just expired,
+ * since those lots stop counting as available (AT-13).
+ */
+export async function scanExpiry(
+  tx: Tx,
+  asOf: string,
+): Promise<{ expired: number; nearExpiry: number }> {
+  const { rows } = await tx.query<{
+    lot_id: string;
+    item_id: string;
+    expiry_date: string;
+    qty: string;
+    state: 'expired' | 'near_expiry';
+  }>(
+    `SELECT l.id::text AS lot_id, l.item_id::text, l.expiry_date::text, l.qty_remaining::text AS qty,
+            CASE WHEN l.expiry_date < $1::date THEN 'expired' ELSE 'near_expiry' END AS state
+       FROM cl.inventory_lots l JOIN cl.inventory_items i ON i.id = l.item_id AND i.track_lots
+      WHERE l.qty_remaining > 0 AND l.expiry_date IS NOT NULL
+        AND (l.expiry_date < $1::date
+             OR (i.near_expiry_days IS NOT NULL AND l.expiry_date <= $1::date + i.near_expiry_days))
+      ORDER BY l.item_id, l.id`,
+    [asOf],
+  );
+  // Clear what no longer applies: near expiry that is now expired or empty, expired that is empty.
+  await tx.query(
+    `UPDATE cl.inventory_alerts a SET state = 'resolved', resolved_at = now()
+      WHERE a.kind IN ('near_expiry','expired') AND a.state <> 'resolved' AND a.lot_id IS NOT NULL
+        AND NOT (a.detail ? 'usedBy')
+        AND NOT (a.lot_id::text, a.kind) IN (SELECT x, y FROM unnest($1::text[], $2::text[]) AS t(x, y))`,
+    [rows.map((r) => r.lot_id), rows.map((r) => r.state)],
+  );
+  const newlyExpired = new Set<string>();
+  for (const r of rows) {
+    const { rowCount } = await tx.query(
+      `SELECT 1 FROM cl.inventory_alerts
+        WHERE lot_id = $1 AND kind = $2 AND state <> 'resolved' AND NOT (detail ? 'usedBy')`,
+      [r.lot_id, r.state],
+    );
+    if (rowCount) continue;
+    await openAlert(tx, r.item_id, r.state, { expiryDate: r.expiry_date, qty: r.qty }, r.lot_id);
+    if (r.state === 'expired') newlyExpired.add(r.item_id);
+  }
+  await announce(tx, newlyExpired);
+  return {
+    expired: rows.filter((r) => r.state === 'expired').length,
+    nearExpiry: rows.filter((r) => r.state === 'near_expiry').length,
+  };
 }

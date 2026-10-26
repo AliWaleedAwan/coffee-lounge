@@ -40,6 +40,7 @@ const TITLES: Record<ErrorCode, string> = {
   STALE_STATE: 'Someone else changed this first',
   IDEMPOTENCY_KEY_REUSED: 'Request key reused for a different request',
   TABLE_OCCUPIED: 'The table is occupied',
+  BARCODE_IN_USE: 'This barcode already belongs to another item',
   INSUFFICIENT_STOCK: 'Not enough stock',
   PRICE_CHANGED_LOCK_EXPIRED: 'The price changed',
   AMOUNT_EXCEEDS_DUE: 'Amount exceeds what is due',

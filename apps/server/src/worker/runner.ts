@@ -10,8 +10,13 @@ import {
   expireUnpaidTakeaways,
   scanUncollected,
 } from '../modules/orders/index.ts';
-import { raiseMismatchAlerts, raiseStaleReservationAlerts } from '../modules/stock/index.ts';
+import {
+  raiseMismatchAlerts,
+  raiseStaleReservationAlerts,
+  scanExpiry,
+} from '../modules/stock/index.ts';
 import { withTransaction } from '../platform/db/tx.ts';
+import { businessDateOf } from '../platform/settings.ts';
 import {
   dispatchPrinter,
   defaultTransports,
@@ -80,6 +85,15 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
       const raised = await scanStaleSessions(pool, new Date());
       if (raised > 0) helpers.logger.info(`raised ${String(raised)} stale-session alerts`);
     },
+    // RECIPE_INVENTORY.md §10: expired and near-expiry lots, after the business-day cutoff.
+    'stock:expiry_scan': async (_payload, helpers) => {
+      const found = await withTransaction(pool, async (tx) =>
+        scanExpiry(tx, await businessDateOf(tx, new Date())),
+      );
+      helpers.logger.info(
+        `expiry scan: ${String(found.expired)} expired, ${String(found.nearExpiry)} near expiry`,
+      );
+    },
     // COST_VALUATION.md §11: report, never correct.
     'stock:reconcile': async (_payload, helpers) => {
       const mismatches = await withTransaction(pool, (tx) => raiseMismatchAlerts(tx));
@@ -93,8 +107,8 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
 }
 
 /**
- * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the stock check runs nightly just after the
- * business-day cutoff (04:00 shop time, D-22).
+ * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the expiry scan (04:05) and the stock check (04:10)
+ * run nightly just after the business-day cutoff (04:00 shop time, D-22).
  */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
@@ -106,6 +120,7 @@ export const CRONTAB = [
   '*/5 * * * * orders:uncollected_scan',
   '*/10 * * * * sessions:stale_scan',
   '15 * * * * stock:stale_reservations',
+  '5 4 * * * stock:expiry_scan',
   '10 4 * * * stock:reconcile',
 ].join('\n');
 

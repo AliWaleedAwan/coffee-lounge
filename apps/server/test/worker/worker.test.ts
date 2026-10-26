@@ -183,6 +183,7 @@ describe('job queue', () => {
       'print:dispatch',
       'print:sweep',
       'sessions:stale_scan',
+      'stock:expiry_scan',
       'stock:reconcile',
       'stock:stale_reservations',
     ]);
@@ -207,6 +208,7 @@ describe('job queue', () => {
       'orders:uncollected_scan': '*/5 * * * *',
       'sessions:stale_scan': '*/10 * * * *',
       'stock:stale_reservations': '15 * * * *',
+      'stock:expiry_scan': '5 4 * * *',
       'stock:reconcile': '10 4 * * *',
     });
     for (const line of CRONTAB.split('\n')) expect(tasks[line.split(' ')[5] ?? '']).toBeDefined();

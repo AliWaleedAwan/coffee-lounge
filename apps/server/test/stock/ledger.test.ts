@@ -135,7 +135,7 @@ describe('reserve, consume and release', () => {
     expect((await balance(beans))?.reserved).toBe('0.0000');
   });
 
-  it('consumes part, then the exact rest, freezing each cost; the drain rule leaves no value', async () => {
+  it('consumes part, then the exact rest, freezing each cost; the drain rule leaves no value (AT-65)', async () => {
     const milk = await newItem({ qty: '315', cost: '0.26833333' }); // value 84.5250
     const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('315')]]) }));
@@ -206,7 +206,7 @@ describe('reserve, consume and release', () => {
     expect((await balance(milk))?.reserved).toBe('0.0000');
   });
 
-  it('never blocks a pickup the book cannot cover: posts found stock first and alerts the owner', async () => {
+  it('never blocks a pickup the book cannot cover: posts found stock first and alerts the owner (AT-67)', async () => {
     const milk = await newItem({ qty: '300', cost: '0.3' });
     const line = await nextLine();
     await tx((t) => reserve(t, { orderLineId: line, requirement: new Map([[milk, d('300')]]) }));
@@ -352,7 +352,7 @@ describe('recipes and stock mode (D-29)', () => {
     return { menuItemId, variantId, draftId: draft.id };
   }
 
-  it('activates a recipe only when every ingredient is counted, then freezes it', async () => {
+  it('activates a recipe only when every ingredient is counted, then freezes it (AT-63)', async () => {
     const counted = await newItem({ qty: '1000', cost: '1' });
     const uncounted = await newItem();
     const { variantId, draftId } = await variantWithRecipe([
@@ -475,7 +475,7 @@ describe('recipes and stock mode (D-29)', () => {
   });
 });
 
-describe('the nightly stock check (COST_VALUATION.md §11)', () => {
+describe('the nightly stock check (COST_VALUATION.md §11, AT-94)', () => {
   it('finds nothing wrong after real work, and reports a tampered balance without fixing it', async () => {
     expect(await findStockMismatches(fx.pool)).toEqual([]);
     const victim = await newItem({ qty: '100', cost: '1' });

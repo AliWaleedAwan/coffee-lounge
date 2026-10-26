@@ -1,13 +1,15 @@
 /**
  * Stock-based availability (RECIPE_INVENTORY.md §5): advisory, recomputed on every read.
- * A recipe-mode size is available when every ingredient's available quantity
- * (on hand − reserved) covers one unit with no modifiers. A choice is unavailable when
+ * A recipe-mode size is available when every ingredient's usable available quantity
+ * (on hand − reserved − expired or quarantined lots) covers one unit with no modifiers. A choice is unavailable when
  * the ingredient it adds, or replaces in, is short for one unit of the item's default
  * size. The authoritative check is at acceptance, under row locks (`reserve`).
  * Untracked sizes (D-29) are always available as far as stock is concerned.
  */
 import { Decimal } from '@cl/shared';
 import type { Queryable } from '../../platform/db/pool.ts';
+import { businessDateOf } from '../../platform/settings.ts';
+import { unusableQty } from './lots.ts';
 import { componentApplies, explodeRecipe, round4, type OrderType } from './math.ts';
 import {
   loadActiveRecipes,
@@ -27,14 +29,19 @@ export async function stockAvailability(
   db: Queryable,
   options: { at: Date; orderType: OrderType },
 ): Promise<StockAvailability> {
-  const [recipes, rules, balances] = await Promise.all([
-    loadActiveRecipes(db),
-    loadModifierRules(db, options.at),
-    db.query<{ item_id: string; available: string }>(
-      'SELECT item_id::text, (on_hand - reserved)::text AS available FROM cl.inventory_balances',
-    ),
-  ]);
-  const available = new Map(balances.rows.map((r) => [r.item_id, new Decimal(r.available)]));
+  const recipes = await loadActiveRecipes(db);
+  const rules = await loadModifierRules(db, options.at);
+  const balances = await db.query<{ item_id: string; available: string }>(
+    'SELECT item_id::text, (on_hand - reserved)::text AS available FROM cl.inventory_balances',
+  );
+  // Expired and quarantined lots are on hand but cannot be used (AT-13).
+  const unusable = await unusableQty(db, null, await businessDateOf(db, options.at));
+  const available = new Map(
+    balances.rows.map((r) => [
+      r.item_id,
+      new Decimal(r.available).minus(unusable.get(r.item_id) ?? 0),
+    ]),
+  );
   const enough = (itemId: string, q: Decimal) =>
     (available.get(itemId) ?? new Decimal(0)).greaterThanOrEqualTo(q);
 
