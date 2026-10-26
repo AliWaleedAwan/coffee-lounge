@@ -330,3 +330,70 @@ export interface SupplierReturn {
   returnedBy: string;
   businessDate: string;
 }
+
+// ---------------------------------------------------------------- stock counts (step 4.5)
+
+export type CountStatus = 'draft' | 'submitted' | 'posted' | 'cancelled';
+
+export interface CountSummary {
+  id: string;
+  countNo: string;
+  status: CountStatus;
+  blind: boolean;
+  scope: 'all' | 'category' | 'items';
+  category: string | null;
+  startedBy: string;
+  startedAt: string;
+  submittedBy: string | null;
+  approvedBy: string | null;
+  postedAt: string | null;
+  sentBackReason: string | null;
+  lineCount: number;
+}
+
+export interface CountLine {
+  id: string;
+  itemId: string;
+  lotId: string | null;
+  countedQty: string;
+  bookQty: string | null;
+  varianceQty: string | null;
+  varianceValue: string | null;
+  needsApproval: boolean | null;
+  newLotExpiry: string | null;
+  postedQty: string | null;
+  enteredBy: string;
+}
+
+export interface CountItem {
+  id: string;
+  name: string;
+  sku: string;
+  category: string | null;
+  baseUom: BaseUnit;
+  trackLots: boolean;
+  lots: {
+    id: string;
+    lotCode: string | null;
+    expiryDate: string | null;
+    qtyRemaining: string | null;
+  }[];
+}
+
+export type CountDetail = CountSummary & { items: CountItem[]; lines: CountLine[] };
+
+export function useCounts() {
+  return useQuery({
+    queryKey: ['inventory', 'counts'],
+    queryFn: ({ signal }) => api<{ items: CountSummary[] }>('/stock-counts', { signal }),
+    meta: TOPICS,
+  });
+}
+
+export function useCount(id: string) {
+  return useQuery({
+    queryKey: ['inventory', 'count', id],
+    queryFn: ({ signal }) => api<CountDetail>(`/stock-counts/${id}`, { signal }),
+    meta: TOPICS,
+  });
+}

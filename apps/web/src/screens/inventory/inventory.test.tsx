@@ -148,6 +148,36 @@ const receipt = {
   ],
 };
 
+const countBase = {
+  id: 'c1',
+  countNo: 'CNT-2026-00003',
+  blind: true,
+  scope: 'category',
+  category: 'Dairy',
+  startedBy: 'Faisal',
+  startedAt: '2026-10-26T06:00:00Z',
+  submittedBy: null,
+  approvedBy: null,
+  postedAt: null,
+  sentBackReason: null,
+  lineCount: 0,
+  items: [
+    {
+      id: '7',
+      name: 'Whole milk',
+      sku: 'MILK-WHOLE',
+      category: 'Dairy',
+      baseUom: 'ml',
+      trackLots: true,
+      lots: [{ id: '71', lotCode: 'L7', expiryDate: '2026-11-02', qtyRemaining: null }],
+    },
+  ],
+  lines: [] as unknown[],
+};
+const countState: { detail: Record<string, unknown> } = {
+  detail: { ...countBase, status: 'draft' },
+};
+
 interface Call {
   method: string;
   url: string;
@@ -183,6 +213,10 @@ function serve(me: object, writes: (call: Call) => Response = () => json(201, { 
       if (url.includes('/inventory/scan?code=')) {
         const code = decodeURIComponent(url.split('code=')[1] ?? '');
         return Promise.resolve(json(200, { code, match: null }));
+      }
+      if (url.endsWith('/stock-counts/c1')) return Promise.resolve(json(200, countState.detail));
+      if (url.endsWith('/stock-counts')) {
+        return Promise.resolve(json(200, { items: [countState.detail] }));
       }
       if (url.endsWith('/inventory/waste')) {
         return Promise.resolve(json(200, { date: '2026-10-26', items: [] }));
@@ -452,6 +486,7 @@ describe('receive stock', () => {
       'Items',
       'Receipts',
       'Waste',
+      'Counts',
       'Suppliers',
     ]);
   });
@@ -559,6 +594,90 @@ describe('waste and supplier returns (step 4.4)', () => {
           refundChannel: 'transfer',
         },
       });
+    });
+  });
+});
+
+describe('stock counts (step 4.5)', () => {
+  const COUNTER = [...CLERK, 'inventory.count'];
+
+  it('counts blind per lot and submits (AT-108)', async () => {
+    countState.detail = { ...countBase, status: 'draft' };
+    const calls = serve(meWith('inventory_clerk', COUNTER), () => json(200, { lineId: '1' }));
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Counts' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*CNT-2026-00003/ }));
+    const milk = await screen.findByRole('group', { name: 'Count Whole milk' });
+    // Blind: the lot is shown without what the book says.
+    const lotField = within(milk).getByLabelText('Lot L7 · expires 2026-11-02');
+    fireEvent.change(lotField, { target: { value: '2.35' } });
+    fireEvent.change(within(milk).getByLabelText('Unit for Lot L7 · expires 2026-11-02'), {
+      target: { value: 'l' },
+    });
+    fireEvent.click(within(milk).getByRole('button', { name: /Save\s*Lot L7/ }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.url.endsWith('/stock-counts/c1/lines'))?.body).toEqual({
+        itemId: '7',
+        lotId: '71',
+        countedQty: '2.35',
+        uom: 'l',
+      });
+    });
+    expect(within(milk).getByLabelText('Found in no lot above')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Start count' })).toBeNull();
+  });
+
+  it('lets an owner approve by PIN on the clerk’s device', async () => {
+    countState.detail = {
+      ...countBase,
+      status: 'submitted',
+      submittedBy: 'Faisal',
+      lineCount: 1,
+      lines: [
+        {
+          id: 'l1',
+          itemId: '7',
+          lotId: '71',
+          countedQty: '2000.0000',
+          bookQty: '2400.0000',
+          varianceQty: '-400.0000',
+          varianceValue: null,
+          needsApproval: true,
+          newLotExpiry: null,
+          postedQty: null,
+          enteredBy: 'Faisal',
+        },
+      ],
+    };
+    const calls = serve(meWith('inventory_clerk', COUNTER), (call) =>
+      call.url.endsWith('/auth/step-up')
+        ? json(201, { stepUpId: '99' })
+        : json(200, { status: 'posted' }),
+    );
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Counts' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*CNT-2026-00003/ }));
+    const row = await screen.findByRole('row', { name: /Whole milk · lot L7/ });
+    expect(within(row).getByText('-400 ml')).toBeTruthy();
+    expect(within(row).getByText('Over the limit')).toBeTruthy();
+    const approveButton = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Approve and post',
+    });
+    expect(approveButton.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Manager username'), { target: { value: 'owner' } });
+    fireEvent.change(screen.getByLabelText('Manager PIN'), { target: { value: '7391' } });
+    fireEvent.click(approveButton);
+    await waitFor(() => {
+      expect(calls.find((c) => c.url.endsWith('/stock-counts/c1/approve'))?.body).toEqual({
+        stepUpId: '99',
+      });
+    });
+    expect(calls.find((c) => c.url.endsWith('/auth/step-up'))?.body).toMatchObject({
+      action: 'count.variance',
+      entityType: 'stock_count',
+      entityId: 'c1',
+      approverUsername: 'owner',
+      approverPin: '7391',
     });
   });
 });

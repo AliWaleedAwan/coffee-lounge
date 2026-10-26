@@ -64,7 +64,7 @@ test('J7: scan and receive three items with lot and expiry; link an unknown code
     { sku: 'rcv-cups', name: 'Paper cups 8 oz', baseUom: 'pcs' },
     { name: 'Sleeve of 50', qty: '50', uom: 'pcs', code: '8960000000129' },
   );
-  await post(page, '/purchase-receipts', {
+  const setup = (await post(page, '/purchase-receipts', {
     paidNow: false,
     startStockControl: [milk, oat, cups],
     lines: [
@@ -72,7 +72,7 @@ test('J7: scan and receive three items with lot and expiry; link an unknown code
       { itemId: oat, qty: '500', lineCost: '300', expiryDate: '2099-01-01' },
       { itemId: cups, qty: '20', lineCost: '300' },
     ],
-  });
+  })) as { receiptNo: string };
   await post(page, '/suppliers', { name: 'E2E Dairy' });
   await page.getByRole('link', { name: 'Inventory' }).click();
   await expect(page.getByRole('heading', { name: 'Inventory', level: 1 })).toBeVisible();
@@ -184,10 +184,7 @@ test('J7: scan and receive three items with lot and expiry; link an unknown code
 
   // Supplier return (AT-110 on screen): 5 cups of the first receipt go back, refunded in cash.
   await page.getByRole('tab', { name: 'Receipts' }).click();
-  await page
-    .getByRole('button', { name: /^Open\s*GRN-/ })
-    .last()
-    .click();
+  await page.getByRole('button', { name: new RegExp(`^Open\\s*${setup.receiptNo}$`) }).click();
   await page.getByRole('button', { name: /Return…\s*Paper cups 8 oz/ }).click();
   const back = page.getByRole('form', { name: 'Return Paper cups 8 oz to the supplier' });
   await back.getByLabel('How much goes back').fill('5');

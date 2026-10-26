@@ -9,10 +9,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import type { AuditContext } from '../../platform/audit.ts';
+import { AppError } from '../../platform/errors.ts';
 import { handleCommand, IDEMPOTENCY_HEADER } from '../../platform/idempotency.ts';
 import { businessDateOf } from '../../platform/settings.ts';
 import { parseInput } from '../../platform/validation.ts';
-import { authOf, factsOf } from '../identity/index.ts';
+import { withTransaction, type Tx } from '../../platform/db/tx.ts';
+import { authOf, consumeStepUp, factsOf } from '../identity/index.ts';
+import * as counts from './counts.ts';
 import * as inventory from './inventory.ts';
 import { WASTE_REASONS } from './ledger.ts';
 import { listWaste, recordWaste } from './waste.ts';
@@ -242,4 +245,154 @@ export async function stockRoutes(
       );
     },
   );
+
+  // ------------------------------------------------------------ stock counts (step 4.5)
+  const counter = (request: FastifyRequest): counts.Counter => {
+    const auth = authOf(request);
+    return { userId: auth.user.id, permissions: auth.permissions, audit: whoOf(request) };
+  };
+  /** A count command moves stock or decides on it: Idempotency-Key required ([I]). */
+  const command = <T>(
+    scope: string,
+    request: FastifyRequest,
+    reply: Parameters<typeof handleCommand>[2],
+    payload: unknown,
+    run: (tx: Tx) => Promise<T>,
+    status = 200,
+  ) =>
+    handleCommand(
+      pool,
+      request,
+      reply,
+      { scope, actorRef: `user:${authOf(request).user.id}`, payload },
+      async (tx) => ({ status, body: await run(tx) }),
+    );
+  /**
+   * Who decides on a count's variances (D-18): the caller with `inventory.count_approve`,
+   * or a manager or owner approving by PIN on this device (step-up `count.variance`).
+   */
+  const approver = async (tx: Tx, request: FastifyRequest, countId: string, stepUpId?: string) => {
+    const auth = authOf(request);
+    if (auth.permissions.has('inventory.count_approve')) return auth.user.id;
+    if (stepUpId === undefined) {
+      throw new AppError('STEP_UP_REQUIRED', 'A manager or the owner must approve this count');
+    }
+    return consumeStepUp(tx, auth, {
+      stepUpId,
+      action: 'count.variance',
+      entityType: 'stock_count',
+      entityId: countId,
+    });
+  };
+  const count = { config: { permission: 'inventory.count' } };
+
+  app.get('/stock-counts', read, async () => ({ items: await counts.listCounts(pool) }));
+
+  app.get('/stock-counts/:id', read, async (request) =>
+    counts.readCount(pool, idParam(request), {
+      costs: authOf(request).permissions.has('inventory.cost_view'),
+    }),
+  );
+
+  app.post('/stock-counts', count, async (request, reply) => {
+    const body = parseInput(
+      z
+        .object({
+          scope: z.enum(['all', 'category', 'items']),
+          category: z.string().trim().min(1).max(40).optional(),
+          itemIds: z.array(id).min(1).max(500).optional(),
+          blind: z.boolean().optional(),
+          note: z.string().trim().max(200).optional(),
+        })
+        .strict()
+        .refine((b) => b.scope !== 'category' || b.category !== undefined, 'category needed')
+        .refine((b) => b.scope !== 'items' || b.itemIds !== undefined, 'itemIds needed'),
+      request.body,
+    );
+    return command(
+      'stock_count.start',
+      request,
+      reply,
+      body,
+      (tx) => counts.startCount(tx, counter(request), { ...body, now: now() }),
+      201,
+    );
+  });
+
+  app.post('/stock-counts/:id/lines', count, async (request) => {
+    const body = parseInput(
+      z
+        .object({
+          itemId: id,
+          lotId: id.optional(),
+          countedQty: z
+            .string()
+            .regex(/^\d{1,10}(\.\d{1,4})?$/, 'a quantity such as 0, 500 or 2.5'),
+          uom: z.enum(UNIT_CODES).optional(),
+          newLotExpiry: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
+        })
+        .strict(),
+      request.body,
+    );
+    return withTransaction(pool, (tx) =>
+      counts.enterLine(tx, counter(request), idParam(request), body),
+    );
+  });
+
+  app.delete('/stock-counts/:id/lines/:lineId', count, async (request, reply) => {
+    const params = parseInput(z.object({ id, lineId: id }), request.params);
+    await withTransaction(pool, (tx) => counts.removeLine(tx, params.id, params.lineId));
+    return reply.code(204).send();
+  });
+
+  app.post('/stock-counts/:id/submit', count, async (request, reply) => {
+    const countId = idParam(request);
+    parseInput(z.object({}).strict(), request.body);
+    return command(`stock_count.submit:${countId}`, request, reply, {}, (tx) =>
+      counts.submitCount(tx, counter(request), countId, now()),
+    );
+  });
+
+  app.post('/stock-counts/:id/approve', count, async (request, reply) => {
+    const countId = idParam(request);
+    const body = parseInput(z.object({ stepUpId: id.optional() }).strict(), request.body);
+    return command(`stock_count.approve:${countId}`, request, reply, body, async (tx) =>
+      counts.approveCount(
+        tx,
+        counter(request),
+        countId,
+        now(),
+        await approver(tx, request, countId, body.stepUpId),
+      ),
+    );
+  });
+
+  app.post('/stock-counts/:id/send-back', count, async (request, reply) => {
+    const countId = idParam(request);
+    const body = parseInput(
+      z
+        .object({
+          reason: z.string().trim().min(3).max(200),
+          lineIds: z.array(id).min(1).max(500).optional(),
+          stepUpId: id.optional(),
+        })
+        .strict(),
+      request.body,
+    );
+    return command(`stock_count.send_back:${countId}`, request, reply, body, async (tx) => {
+      await approver(tx, request, countId, body.stepUpId);
+      return counts.sendBack(tx, counter(request), countId, body);
+    });
+  });
+
+  app.post('/stock-counts/:id/cancel', count, async (request, reply) => {
+    const countId = idParam(request);
+    parseInput(z.object({}).strict(), request.body);
+    return command(`stock_count.cancel:${countId}`, request, reply, {}, (tx) =>
+      counts.cancelCount(tx, counter(request), countId),
+    );
+  });
 }

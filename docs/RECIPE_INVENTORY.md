@@ -155,6 +155,8 @@ Reason codes (editable list): spilled, remade, expired, damaged, quality, custom
 | Approve | Owner/manager with `inventory.count_approve`, not the submitter. Can send lines back for recount. |
 | Post | Each line posts a `count_adjustment` movement for the **variance (a delta)**, not an absolute overwrite, so sales during the count are not lost. |
 
+**As built (Phase 4 step 4.5):** one count is open at a time. Submitting posts at once when no line is over the limits; otherwise the count waits for someone other than the submitter with `inventory.count_approve` (the owner by default), who approves here or by PIN on the counting device, or sends lines back (those lines are counted again, with a fresh book quantity). Lot-tracked items are counted per lot, plus a line for stock found in no known lot (it becomes a new lot, with an expiry if given). If more was sold after a line was counted than the count found missing, only what is still there is taken out, flagged `count_clamped`.
+
 **Count below reserved quantity:** if posting makes `on_hand < reserved`, the adjustment is still posted (truth wins). A `reservation_shortfall` alert is raised, new acceptances needing that item are blocked, and a manager resolves the open orders (cancel or confirm they were already made).
 
 ## 10. Alerts

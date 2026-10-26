@@ -1050,6 +1050,124 @@ export async function returnStock(
   return { movementId, value, lotId };
 }
 
+// ---------------------------------------------------------------- stock counts
+
+export interface CountLinePosting {
+  lineId: string;
+  itemId: string;
+  /** The counted lot; null for the item (or stock found in no known lot). */
+  lotId: string | null;
+  /** counted − book at entry: posted as a delta (P4-5, RECIPE_INVENTORY.md §9). */
+  variance: Decimal;
+  /** Stock found in no known lot becomes a lot with this expiry. */
+  newLotExpiry: string | null;
+}
+
+/**
+ * Posts a count's variances as `count_adjustment` deltas, so sales made while counting
+ * are kept. More found than booked comes in at the average (else the last cost,
+ * COST_VALUATION.md §5); less leaves like an issue (§4). A shortfall bigger than what is
+ * still there (sold since the line was counted) is posted only as far as the stock goes,
+ * flagged `count_clamped`. Counting below what is reserved is posted anyway: the
+ * shortfall alert follows and new acceptances needing the item are refused (D-18,
+ * AT-29). Returns the delta posted and the movement per line.
+ */
+export async function postCountLines(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly CountLinePosting[],
+): Promise<Map<string, { posted: Decimal; movementId: string | null }>> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const lots = await lotSettings(tx, itemIds);
+  const result = new Map<string, { posted: Decimal; movementId: string | null }>();
+  for (const line of lines) {
+    const b = balances.get(line.itemId);
+    if (!b) continue;
+    const tracked = lots.get(line.itemId)?.trackLots ?? false;
+    const base = {
+      itemId: line.itemId,
+      type: 'count_adjustment' as const,
+      sourceType: 'stock_count_line',
+      sourceId: line.lineId,
+      sourceKey: `count:line:${line.lineId}`,
+    };
+    if (line.variance.isZero()) {
+      result.set(line.lineId, { posted: new Decimal(0), movementId: null });
+      continue;
+    }
+    if (line.variance.greaterThan(0)) {
+      const q = line.variance;
+      const cost = foundStockUnitCost(b, b.lastUnitCost) ?? new Decimal(0);
+      const value = round4(q.times(cost));
+      const movementId = await insertMovement(tx, ctx, {
+        ...base,
+        qtyDelta: q,
+        unitCost: cost,
+        valueDelta: value,
+      });
+      if (tracked) {
+        let lotId = line.lotId;
+        if (lotId === null) {
+          lotId = await createLot(tx, {
+            itemId: line.itemId,
+            qty: q,
+            origin: 'count',
+            expiryDate: line.newLotExpiry,
+          });
+        } else {
+          await tx.query(
+            'UPDATE cl.inventory_lots SET qty_remaining = qty_remaining + $2 WHERE id = $1',
+            [lotId, q.toFixed(4)],
+          );
+        }
+        await recordLotShares(tx, movementId, [{ lotId, qty: q }], 1);
+      }
+      b.onHand = b.onHand.plus(q);
+      b.value = b.value.plus(value);
+      result.set(line.lineId, { posted: q, movementId });
+      continue;
+    }
+    // Less than booked: never more than is still there.
+    let there = b.onHand;
+    if (tracked && line.lotId !== null) {
+      const { rows } = await tx.query<{ q: string }>(
+        'SELECT qty_remaining::text AS q FROM cl.inventory_lots WHERE id = $1',
+        [line.lotId],
+      );
+      there = Decimal.min(there, new Decimal(rows[0]?.q ?? '0'));
+    }
+    const q = Decimal.min(line.variance.negated(), there);
+    if (q.isZero()) {
+      result.set(line.lineId, { posted: new Decimal(0), movementId: null });
+      continue;
+    }
+    const lotTakes =
+      tracked && line.lotId !== null
+        ? await takeFromLots(tx, line.itemId, q, ctx.businessDate, line.lotId)
+        : tracked
+          ? await takeFromLots(tx, line.itemId, q, ctx.businessDate)
+          : [];
+    const { value, unitCost } = issue(b, q);
+    const movementId = await insertMovement(tx, ctx, {
+      ...base,
+      qtyDelta: q.negated(),
+      unitCost,
+      valueDelta: value.negated(),
+      ...(q.lessThan(line.variance.negated()) ? { flags: ['count_clamped'] } : {}),
+    });
+    await recordLotShares(tx, movementId, lotTakes, -1);
+    result.set(line.lineId, { posted: q.negated(), movementId });
+  }
+  for (const b of balances.values()) {
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+    if (lots.get(b.itemId)?.trackLots) await resolveEmptyLotAlerts(tx, b.itemId);
+  }
+  await announce(tx, itemIds);
+  return result;
+}
+
 // ---------------------------------------------------------------- reconciliation
 
 export interface StockMismatch {

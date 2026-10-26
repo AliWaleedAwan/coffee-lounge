@@ -3,6 +3,7 @@ export { stockAvailability, type StockAvailability } from './availability.ts';
 export {
   consume,
   findStockMismatches,
+  postCountLines,
   postOpeningBalance,
   raiseMismatchAlerts,
   raiseStaleReservationAlerts,
@@ -21,6 +22,7 @@ export {
   type Shortage,
   type StockContext,
   type StockMismatch,
+  type CountLinePosting,
   type ReceiptLineReversal,
   type ReceiptLineStock,
   type Take,

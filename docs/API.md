@@ -227,9 +227,9 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory items, suppliers, receiving and waste (Phase 4 steps 4.1–4.4)
+### 5.9 Inventory items, suppliers, receiving, waste and counts (Phase 4 steps 4.1–4.5)
 
-Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing and returning a receipt and recording waste do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
+Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing and returning a receipt, recording waste, and starting, submitting, approving, sending back or cancelling a count do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
 | Method & path | Permission | Purpose |
 |---|---|---|
@@ -245,6 +245,13 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /purchase-receipts/{receiptId}/returns` **[I]** | `inventory.receive` | `{lineId, qty, uom?, reason, refundAmount?, refundChannel?, refundReference?}` (step 4.4, AT-110): stock back to the supplier against that line, never more than the line brought in less what already went back; for a lot-tracked item out of the line's own lot, otherwise from what is available. A `supplier_return` movement at the current average; the refund is recorded for Phase 5's ledger (P4-2). Returns `qtyBase`, `value`, `returnedSoFar`. A receipt with returns can no longer be reversed. `GET /purchase-receipts/{id}` shows `returnedQty` per line and the `returns` (value and refund only with cost rights) |
 | `POST /inventory/waste` **[I]** | `inventory.waste` | `{itemId, qty, uom?, reasonCode, note?, lotId?}` (step 4.4, AT-109): ingredient waste at the current average; reasons `spilled`, `remade`, `expired`, `damaged`, `quality`, `other` (needs a note); for a lot-tracked item from the named lot or earliest expiry first; not more than the book quantity (a count instead). Waste only from expired lots is recorded as `expired_lot`. `value` is `null` without `inventory.cost_view` |
 | `GET /inventory/waste?date=` | `inventory.read` | A business day's waste (default today), newest first: ingredients, expired lots, prepared items and failed deliveries, with lot, reason, who; `value` only with `inventory.cost_view` |
+| `POST /stock-counts` **[I]** | `inventory.count` | `{scope: 'all' \| 'category' \| 'items', category?, itemIds?, blind? (default true), note?}` (step 4.5): a count of the stock-controlled items in scope, numbered `CNT-YYYY-NNNNN`. One count is open at a time |
+| `GET /stock-counts`, `GET /stock-counts/{countId}` | `inventory.read` | Recent counts; one count with the items in scope (lots of lot-tracked items) and its lines. While a blind count is being counted, book quantities, variances and lot quantities are `null`; `varianceValue` only with `inventory.cost_view` |
+| `POST /stock-counts/{countId}/lines` | `inventory.count` | `{itemId, lotId?, countedQty, uom?, newLotExpiry?}` enters or re-enters a line; its book quantity is taken now (per lot for lot-tracked items; without `lotId` a lot-tracked item's line is stock found in no known lot, book 0). A line is over the limits when its variance is above `inventory.count_variance_pct` or `inventory.count_variance_amount` (D-18). `DELETE /stock-counts/{countId}/lines/{lineId}` removes one while counting |
+| `POST /stock-counts/{countId}/submit` **[I]** | `inventory.count` | Posts at once when no line is over the limits (`{status: 'posted'}`), else waits for approval (`{status: 'submitted', needsApproval}`) |
+| `POST /stock-counts/{countId}/approve` **[I]** | `inventory.count` + `inventory.count_approve`, or `stepUpId` of a `count.variance` step-up on this device | Never the submitter (`403`). Posts every line's variance as a `count_adjustment` delta (P4-5); a shortfall larger than what is left (sold since the line was counted) posts only what is there, flagged `count_clamped`; below reserved still posts, raising the shortfall alert (AT-29) |
+| `POST /stock-counts/{countId}/send-back` **[I]** | as approve | `{reason, lineIds?}`: back to counting; the named lines (default: those over the limits) must be counted again |
+| `POST /stock-counts/{countId}/cancel` **[I]** | `inventory.count` | A count still being counted is cancelled; nothing moves |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |
@@ -333,6 +340,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `inventory.changed` | Inventory item, pack size or barcode added, changed or archived (Phase 4) | `inventory` |
 | `receipt.changed` | Purchase receipt posted or reversed (stock also announces `availability.changed`) | `inventory` |
 | `supplier.changed` | Supplier added or changed | `inventory` |
+| `count.changed` | Stock count started, submitted, posted, sent back or cancelled | `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 
