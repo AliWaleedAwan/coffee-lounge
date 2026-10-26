@@ -227,6 +227,23 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
+### 5.9 Inventory items (Phase 4 step 4.1)
+
+Nothing here moves stock, so no `Idempotency-Key`. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
+
+| Method & path | Permission | Purpose |
+|---|---|---|
+| `GET /inventory/items?q=&category=&includeArchived=` | `inventory.read` | Items by part of the name or SKU, or an exact active barcode; archived ones only with `includeArchived=true`. Each with its settings, `stockControlActive`, `onHand`, `reserved`, active pack and barcode counts, `version`; plus the `categories` in use |
+| `GET /inventory/items/{itemId}` | `inventory.read` | One item with its `packs` (`name`, `qtyBase`, `isActive`, `version`) and active `barcodes` (`code`, `packSizeId`, `packName`, `version`) |
+| `GET /inventory/scan?code=` | `inventory.read` | What a scanned code names (AT-14): `{code, match: {itemId, sku, name, baseUom, pack: {id, name, qtyBase} \| null} \| null}`. `match: null` is an unknown code ("Link to item"). A code is 1–64 printable characters without spaces |
+| `POST /inventory/items` | `inventory.items_manage` | `{sku, name, baseUom, category?, trackLots?, trackExpiry?, lowThreshold?, overstockThreshold?, nearExpiryDays?}`. The SKU is kept upper-case and never reused; expiry needs lots; overstock must be above low (RECIPE_INVENTORY.md §3). A new item is outside stock control until its opening count (D-29) |
+| `PATCH /inventory/items/{itemId}` | `inventory.items_manage` | `{expectedVersion, …the same settings, name?}`; `null` clears a threshold. The base unit changes only while no pack, movement, recipe component or modifier rule uses the item |
+| `POST /inventory/items/{itemId}/archive` | `inventory.items_manage` | `{expectedVersion}`. Refused while anything is on hand or reserved, or an active recipe or modifier rule uses it (the message names them). Frees its barcodes and retires its packs (D-31) |
+| `POST /inventory/items/{itemId}/pack-sizes` | `inventory.items_manage` | `{name, qty, uom}` with `uom` any unit of the item's dimension (`l` for an item in `ml`, `kg` for `g`); stored as `qtyBase` (`1 l` → `1000.0000`, AT-31). Another dimension is refused (AT-32). Names are unique among an item's active packs |
+| `PATCH /inventory/pack-sizes/{packId}` | `inventory.items_manage` | `{expectedVersion, name?, isActive?}`. What a pack holds never changes (a new size is a new pack); stopping a pack frees its barcodes |
+| `POST /inventory/items/{itemId}/barcodes` | `inventory.items_manage` | `{code, packSizeId?}` (a pack of this item; without one a scan means one base unit). A code with an active owner is refused with `409 BARCODE_IN_USE`, naming the owner, also when two people link it at once |
+| `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
+
 ## 6. Errors
 
 `application/problem+json`:
@@ -262,6 +279,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | 409 | `STALE_STATE` | `expectedVersion` mismatch: reload and reapply |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | Client bug: new intent needs a new key |
 | 409 | `TABLE_OCCUPIED` | Transfer/open to an occupied table |
+| 409 | `BARCODE_IN_USE` | The code already has an active owner, named in `detail` and `owner`: remove it there first, or scan the right item |
 | 422 | `INSUFFICIENT_STOCK` | `shortages[]`: reject the round (D-06) or remove items (staff round) |
 | 422 | `PRICE_CHANGED_LOCK_EXPIRED` | Reject; guest resubmits (PROVISIONAL D-08) |
 | 422 | `AMOUNT_EXCEEDS_DUE` | Includes `remainingDue` |
@@ -303,6 +321,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `menu.changed` | Catalogue edit: category, item, size, price, choice or promotion | `menu` |
 | `availability.changed` | Stock-driven or manual availability change | `menu` |
 | `print_job.changed` | Failure, uncertain, recovery | `printers` |
+| `inventory.changed` | Inventory item, pack size or barcode added, changed or archived (Phase 4) | `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 
@@ -313,6 +332,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | Guest | `session:<own>` and `menu`, nothing else |
 | Waiter | `floor`, `approvals` (rounds in scope + escalated), `kitchen`, `session:*` for assigned tables, `menu`, `alerts` (uncollected on own tables) |
 | Cashier | `floor`, `approvals` (cashier scope), `kitchen`, `cashier`, `deliveries`, `printers`, `menu`, `alerts` |
+| Inventory clerk | `inventory`, `menu`, `alerts` |
 | Manager / Owner | All topics |
 
 **Reliability rules:** heartbeat comment every 15 s · browser reconnects automatically with `Last-Event-ID` · replay from the outbox if within 24 h, else `resync` · after 2 missed heartbeats the UI shows "Reconnecting…" and disables Accept, Pick up, Lock and Pay until it has refetched · nothing is ever decided from an event alone.

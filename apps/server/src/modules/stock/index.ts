@@ -43,3 +43,21 @@ export {
   type InventoryItemInput,
   type ModifierRuleInput,
 } from './items.ts';
+export {
+  addBarcode,
+  addPackSize,
+  archiveItem,
+  createItem,
+  deactivateBarcode,
+  listItems,
+  lookupBarcode,
+  readItem,
+  updateItem,
+  updatePackSize,
+  type Barcode,
+  type ItemSummary,
+  type ItemUpdate,
+  type PackSize,
+  type ScanMatch,
+} from './inventory.ts';
+export { stockRoutes } from './routes.ts';

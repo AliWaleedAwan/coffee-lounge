@@ -1,6 +1,6 @@
 # Phase 4 — Recipe-to-Stock Build Plan
 
-> **For owner approval before any Phase 4 code.** Builds on the approved design (G1) and on Phase 3, whose software is complete and merged (`docs/phase-3/ACCEPTANCE.md`). Where the Phase 0 roadmap and later decisions differ, the decisions win (§3).
+> **Approved 26 Oct 2026** with P4-1…P4-5 as recommended. Builds on the approved design (G1) and on Phase 3, whose software is complete and merged (`docs/phase-3/ACCEPTANCE.md`). Where the Phase 0 roadmap and later decisions differ, the decisions win (§3).
 
 | | |
 |---|---|
@@ -45,7 +45,7 @@ Each step is a vertical slice: migration, API, screens and tests together. Scree
 
 | Step | Work | Tests that must pass | Depends on |
 |---|---|---|---|
-| 4.1 | **Items, units, pack sizes, barcodes.** Item editor (SKU, base unit, settings from RECIPE_INVENTORY.md §3: lots, expiry, low and overstock thresholds, near-expiry days), pack sizes with their base quantity, barcodes (one active owner per code), conversion rules. Scanner input on screen as keyboard entry ending in Enter (P4-4). Inventory area opens for the clerk | AT-31, AT-32, AT-14 (API part), PT-04 | Phase 3 |
+| 4.1 ✅ | **Items, units, pack sizes, barcodes.** Item editor (SKU, base unit, settings from RECIPE_INVENTORY.md §3: lots, expiry, low and overstock thresholds, near-expiry days), pack sizes with their base quantity, barcodes (one active owner per code), conversion rules. Scanner input on screen as keyboard entry ending in Enter (P4-4). Inventory area opens for the clerk | AT-31, AT-32, AT-14 (API part), PT-04 | Phase 3 |
 | 4.2 | **Suppliers and receiving.** Suppliers; purchase receipts: scan or search, packs → base quantity shown, line cost → unit cost to 8 dp, post with a gapless `GRN` number, stock and average cost updated, availability refreshed; reversal of a receipt whose stock is still on hand; payment channel and reference recorded (P4-2). **Receive stock** screen as prototyped, with "Link to item" for an unknown barcode | AT-31, AT-14 (E2E), UX-J7 (3 items in ≤ 90 s), CT: receipt posting vs acceptance of the same item | 4.1 |
 | 4.3 | **Lots, expiry, FEFO.** Receipts create lots; consumption, waste and returns take lots earliest-expiry first; expired lots stop counting as available; a lot that expires between acceptance and pickup still posts, flagged `expired_lot_used`. Existing stock when lot tracking is switched on (P4-3). Nightly expiry scan at 04:05 | AT-13, AT-30, AT-129, AT-102 (with E2E on guest and staff menus) | 4.2 |
 | 4.4 | **Waste and supplier returns.** Waste screen (ingredient and expired lot, with lot and reason; prepared-item waste stays with voids); supplier return against the receipt line and lot at current average (COST_VALUATION.md §4) | AT-109, AT-110 (stock and value; the ledger part in Phase 5) | 4.3 |

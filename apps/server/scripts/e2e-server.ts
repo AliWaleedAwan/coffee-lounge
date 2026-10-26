@@ -52,7 +52,7 @@ await adoptJobQueue(ownerPool);
 await ownerPool.end();
 const pool = createPool({ connectionString: urlFor(db.name), max: 10, sessionRole: 'cl_app' });
 
-// Test users: an owner (password), a waiter and a cashier (password and PIN).
+// Test users: an owner (password); a waiter, a cashier and an inventory clerk (password and PIN).
 const password = `e2e-${randomUUID()}`;
 const owner = { username: 'owner', name: 'Owner', password };
 const { userId: ownerId } = await createOwner(
@@ -63,6 +63,7 @@ const { userId: ownerId } = await createOwner(
 const staff = [
   { username: 'sara', name: 'Sara', role: 'waiter', pin: '2580' },
   { username: 'ali', name: 'Ali', role: 'cashier', pin: '3691' },
+  { username: 'faisal', name: 'Faisal', role: 'inventory_clerk', pin: '4812' },
 ];
 const passwordHash = await hashSecret(password);
 for (const s of staff) {
@@ -77,7 +78,7 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 18; i++) {
+for (let i = 1; i <= 20; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },
