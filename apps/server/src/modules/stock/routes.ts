@@ -113,6 +113,10 @@ export async function stockRoutes(app: FastifyInstance, options: { pool: pg.Pool
           expectedVersion,
           name: name.optional(),
           baseUom: baseUom.optional(),
+          existingStockExpiry: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
           ...settings,
         })
         .strict(),

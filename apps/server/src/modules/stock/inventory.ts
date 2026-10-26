@@ -19,7 +19,9 @@ import { writeAudit, type AuditContext } from '../../platform/audit.ts';
 import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
+import { businessDateOf } from '../../platform/settings.ts';
 import { createInventoryItem, type InventoryItemInput } from './items.ts';
+import { createLot } from './lots.ts';
 
 // ------------------------------------------------------------------ reading
 
@@ -103,7 +105,7 @@ function escapeLike(text: string): string {
 export async function readItem(
   db: pg.Pool,
   id: string,
-): Promise<ItemSummary & { packs: PackSize[]; barcodes: Barcode[] }> {
+): Promise<ItemSummary & { packs: PackSize[]; barcodes: Barcode[]; lots: Lot[] }> {
   const { rows } = await db.query<ItemSummary>(`${SUMMARY} WHERE i.id = $1`, [id]);
   const item = rows[0];
   if (!item) throw new AppError('NOT_FOUND', 'Item not found');
@@ -118,7 +120,38 @@ export async function readItem(
       WHERE c.item_id = $1 AND c.is_active ORDER BY c.code`,
     [id],
   );
-  return { ...item, packs: packs.rows, barcodes: barcodes.rows };
+  const asOf = await businessDateOf(db, new Date());
+  const lots = await db.query<Lot>(
+    `SELECT l.id::text, l.lot_code AS "lotCode", l.received_at AS "receivedAt",
+            l.expiry_date::text AS "expiryDate", l.qty_received::text AS "qtyReceived",
+            l.qty_remaining::text AS "qtyRemaining", l.origin, l.status, r.receipt_no AS "receiptNo",
+            COALESCE(l.expiry_date < $2::date, false) AS expired,
+            COALESCE(l.expiry_date >= $2::date AND l.expiry_date <= $2::date + i.near_expiry_days, false)
+              AS "nearExpiry"
+       FROM cl.inventory_lots l
+       JOIN cl.inventory_items i ON i.id = l.item_id
+       LEFT JOIN cl.purchase_receipt_lines pl ON pl.id = l.receipt_line_id
+       LEFT JOIN cl.purchase_receipts r ON r.id = pl.receipt_id
+      WHERE l.item_id = $1 AND l.qty_remaining > 0
+      ORDER BY l.expiry_date NULLS LAST, l.received_at, l.id`,
+    [id, asOf],
+  );
+  return { ...item, packs: packs.rows, barcodes: barcodes.rows, lots: lots.rows };
+}
+
+/** A lot with stock, in FEFO order (RECIPE_INVENTORY.md §6). */
+export interface Lot {
+  id: string;
+  lotCode: string | null;
+  receivedAt: string;
+  expiryDate: string | null;
+  qtyReceived: string;
+  qtyRemaining: string;
+  origin: 'receipt' | 'opening' | 'found' | 'count';
+  status: 'active' | 'quarantined';
+  receiptNo: string | null;
+  expired: boolean;
+  nearExpiry: boolean;
 }
 
 export interface ScanMatch {
@@ -291,6 +324,8 @@ export interface ItemUpdate {
   lowThreshold?: string | null | undefined;
   overstockThreshold?: string | null | undefined;
   nearExpiryDays?: number | null | undefined;
+  /** With `trackLots: true` on an item holding stock: that stock's expiry (P4-3). */
+  existingStockExpiry?: string | undefined;
 }
 
 export async function updateItem(
@@ -300,6 +335,12 @@ export async function updateItem(
   input: ItemUpdate,
 ): Promise<{ id: string; version: number }> {
   return withTransaction(pool, async (tx) => {
+    // Switching lots on or off moves stock into or out of lots: balance first, then item,
+    // as every stock posting locks them.
+    const [balance] =
+      input.trackLots === undefined
+        ? []
+        : await tx.lock<{ on_hand: string }>('inventory_balances', [id]);
     const before = await lockItem(tx, id, input.expectedVersion);
     const next = {
       name: input.name ?? before.name,
@@ -316,6 +357,38 @@ export async function updateItem(
         input.nearExpiryDays === undefined ? before.near_expiry_days : input.nearExpiryDays,
     };
     checkSettings(next);
+    const onHand = new Decimal(balance?.on_hand ?? '0');
+    if (next.trackLots && !before.track_lots && onHand.greaterThan(0)) {
+      // P4-3: what is on hand becomes one opening lot, with the expiry the clerk enters.
+      if (next.trackExpiry && !input.existingStockExpiry) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          `Enter the expiry date of the ${new Decimal(onHand).toString()} ${before.base_uom} on hand`,
+        );
+      }
+      await createLot(tx, {
+        itemId: id,
+        qty: onHand,
+        origin: 'opening',
+        expiryDate: next.trackExpiry ? (input.existingStockExpiry ?? null) : null,
+      });
+    } else if (!next.trackLots && before.track_lots) {
+      // Lot detail is dropped; the quantity stays on the item.
+      await tx.query(
+        'UPDATE cl.inventory_lots SET qty_remaining = 0 WHERE item_id = $1 AND qty_remaining > 0',
+        [id],
+      );
+      await tx.query(
+        `UPDATE cl.inventory_alerts SET state = 'resolved', resolved_at = now()
+          WHERE item_id = $1 AND kind IN ('near_expiry','expired') AND state <> 'resolved'`,
+        [id],
+      );
+    } else if (input.existingStockExpiry !== undefined) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'An expiry for stock on hand is only for switching lots on',
+      );
+    }
     try {
       const { rows } = await tx.query<{ version: number }>(
         `UPDATE cl.inventory_items

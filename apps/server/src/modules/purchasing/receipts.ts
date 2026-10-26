@@ -259,6 +259,8 @@ export async function postReceipt(
       qty: p.qtyBase,
       lineCost: p.lineCost,
       sourceId: lineIds[i] ?? '',
+      lotCode: p.lotCode,
+      expiryDate: p.line.expiryDate ?? null,
     })),
     start,
   );

@@ -77,6 +77,7 @@ export function InventoryItemEditor({
       {data ? (
         <>
           <Stock item={data} />
+          {data.trackLots ? <Lots item={data} /> : null}
           <Packs item={data} editable={editable} />
           <Barcodes item={data} editable={editable} linkCode={linkCode} />
           {editable ? <Archive item={data} onArchived={onClose} /> : null}
@@ -105,6 +106,11 @@ function ItemDetails({
   const [low, setLow] = useState(trimQty(item?.lowThreshold));
   const [overstock, setOverstock] = useState(trimQty(item?.overstockThreshold));
   const [nearDays, setNearDays] = useState(item?.nearExpiryDays?.toString() ?? '');
+  // P4-3: lots switched on for stock already on hand need that stock's expiry.
+  const [existingExpiry, setExistingExpiry] = useState('');
+  const startsLots = item !== null && !item.trackLots && trackLots && Number(item.onHand) > 0;
+  const needsExisting = startsLots && trackExpiry;
+  const onHandText = item ? formatQty(item.onHand, item.baseUom) : '';
   const [saved, setSaved] = useState(false);
   const save = useInventoryWrite<{ id: string }>((result) => {
     if (item) setSaved(true);
@@ -117,7 +123,13 @@ function ItemDetails({
     (QTY.test(overstock) && (low === '' || !lowOk || new Decimal(overstock).greaterThan(low)));
   const daysOk = nearDays === '' || /^\d{1,3}$/.test(nearDays);
   const skuOk = item !== null || /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(sku.trim());
-  const valid = skuOk && name.trim().length > 0 && lowOk && overOk && daysOk;
+  const valid =
+    skuOk &&
+    name.trim().length > 0 &&
+    lowOk &&
+    overOk &&
+    daysOk &&
+    (!needsExisting || existingExpiry !== '');
 
   const submit = (event: SubmitEvent): void => {
     event.preventDefault();
@@ -137,7 +149,11 @@ function ItemDetails({
       save.mutate({
         path: `/inventory/items/${item.id}`,
         method: 'PATCH',
-        body: { expectedVersion: item.version, ...settings },
+        body: {
+          expectedVersion: item.version,
+          ...settings,
+          ...(needsExisting ? { existingStockExpiry: existingExpiry } : {}),
+        },
       });
     } else {
       save.mutate({ path: '/inventory/items', body: { sku: sku.trim(), ...settings } });
@@ -233,6 +249,23 @@ function ItemDetails({
             }}
           />
         ) : null}
+        {needsExisting ? (
+          <Field
+            label={`Expiry date of the ${onHandText} on hand`}
+            hint="What is on the shelf now becomes one lot with this date."
+            type="date"
+            value={existingExpiry}
+            error={existingExpiry ? null : 'Required to switch lots on'}
+            onChange={(e) => {
+              setExistingExpiry(e.target.value);
+            }}
+          />
+        ) : null}
+        {item?.trackLots && !trackLots && Number(item.onHand) > 0 ? (
+          <p className="field-hint">
+            Switching lots off keeps the quantity on hand but forgets which lot it is in.
+          </p>
+        ) : null}
         <p className="field-hint">
           Recommended: lots and expiry for milk, cream and bakery; neither for cups and sachets.
           {item ? ' The base unit cannot change once packs, stock or recipes use it.' : ''}
@@ -288,6 +321,73 @@ function Stock({ item }: { item: ItemDetail }) {
     </section>
   );
 }
+
+/** Lots with stock, earliest expiry first: the order pickups use them (FEFO). */
+function Lots({ item }: { item: ItemDetail }) {
+  return (
+    <section className="card stack" aria-labelledby="item-lots">
+      <h2 id="item-lots">Lots</h2>
+      {item.lots.length === 0 ? (
+        <p className="muted">No stock in lots.</p>
+      ) : (
+        <table className="data">
+          <thead>
+            <tr>
+              <th scope="col">Lot</th>
+              <th scope="col">Expiry</th>
+              <th scope="col">Left</th>
+              <th scope="col">From</th>
+            </tr>
+          </thead>
+          <tbody>
+            {item.lots.map((lot) => (
+              <tr key={lot.id}>
+                <td>{lot.lotCode ?? '—'}</td>
+                <td>
+                  {lot.expiryDate ?? 'Unknown'}
+                  {lot.expired ? (
+                    <>
+                      {' '}
+                      <span className="chip chip-danger">Expired</span>
+                    </>
+                  ) : lot.nearExpiry ? (
+                    <>
+                      {' '}
+                      <span className="chip chip-warning">Use first</span>
+                    </>
+                  ) : null}
+                  {lot.status === 'quarantined' ? (
+                    <>
+                      {' '}
+                      <span className="chip chip-warning">On hold</span>
+                    </>
+                  ) : null}
+                </td>
+                <td>
+                  {formatQty(lot.qtyRemaining, item.baseUom)}
+                  <div className="muted">of {formatQty(lot.qtyReceived, item.baseUom)}</div>
+                </td>
+                <td>{lot.receiptNo ?? ORIGIN[lot.origin]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {item.lots.some((l) => l.expired) ? (
+        <p className="field-error">
+          Expired lots do not count as available. Record them as waste when they are thrown away.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+const ORIGIN = {
+  receipt: 'Receipt',
+  opening: 'Stock on hand when lots began',
+  found: 'Found at pickup',
+  count: 'Stock count',
+} as const;
 
 function Packs({ item, editable }: { item: ItemDetail; editable: boolean }) {
   const writes = useWritesAllowed();

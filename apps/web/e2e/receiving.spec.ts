@@ -154,4 +154,14 @@ test('J7: scan and receive three items with lot and expiry; link an unknown code
   await expect(page.getByText('Delivered to the wrong shop')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reverse this receipt…' })).toHaveCount(0);
   await expectAccessible(page, 'receipt');
+
+  // Lots (step 4.3): the reversal took its own lot back out; what is left, earliest expiry first.
+  await page.getByRole('tab', { name: 'Items' }).click();
+  const search = page.getByLabel('Scan or type barcode / name');
+  await search.pressSequentially('8960000000105');
+  await search.press('Enter');
+  const lots = page.getByRole('region', { name: 'Lots' });
+  await expect(lots.getByRole('row')).toHaveCount(2); // header + the first receipt's lot
+  await expect(lots.getByRole('row', { name: /2099-01-01 500 ml of 500 ml GRN-/ })).toBeVisible();
+  await expectAccessible(page, 'item lots');
 });

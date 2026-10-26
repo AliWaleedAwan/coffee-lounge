@@ -7,6 +7,7 @@ export {
   raiseMismatchAlerts,
   raiseStaleReservationAlerts,
   receiveStock,
+  scanExpiry,
   release,
   reserve,
   reverseReceiptStock,

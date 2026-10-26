@@ -106,8 +106,20 @@ For each line with stock mode **recipe**:
 | Release (cancel *n* units not made) | `qty_per_unit × n`, with the same last-units rule |
 | Cancel "already made" | Consume as Picked up, then classify as waste (no stock returned) |
 
-### FEFO lot picking (expiry-tracked items)
+### FEFO lot picking (lot-tracked items)
 At consumption, take from lots ordered by **expiry date, then received date**, skipping quarantined lots. If non-expired lots don't cover the quantity (e.g., a lot expired between acceptance and pickup), the remainder is taken from the earliest expired lot. The movement is flagged `expired_lot_used` and an alert is raised. Physical reality is recorded, not hidden.
+
+**Lots in practice (Phase 4 step 4.3):**
+
+| Rule | Detail |
+|---|---|
+| Expired | A lot is expired from the business day after its expiry date (the printed date is the last day of use). Expired and quarantined lots are on hand but not usable: they do not count as available and cannot be reserved |
+| Unknown expiry | A lot without a date (stock on hand when expiry tracking began without one, found stock) is usable and picked last |
+| Where lots come from | A receipt line (one lot each), the opening balance, stock on hand when lots are switched on (one lot, with the expiry the clerk enters), and stock found at pickup |
+| Waste | Waste can name a lot (an expired one); otherwise it is taken FEFO like a pickup. Waste only from expired lots is recorded as `expired_lot` waste |
+| Reversing a receipt | Allowed only while the receipt's own lot still holds its quantity |
+| Switching lots off | The quantity stays on the item; which lot it was in is forgotten |
+| Alerts | The nightly expiry scan (04:05) raises one `near_expiry` or `expired` alert per lot and clears them when the lot is empty or no longer near; an alert recording that an expired lot went into an order stays until a person closes it |
 
 ## 7. Receiving stock (purchase receipts)
 

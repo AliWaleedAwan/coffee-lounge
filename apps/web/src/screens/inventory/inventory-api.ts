@@ -44,7 +44,21 @@ export interface Barcode {
   version: number;
 }
 
-export type ItemDetail = ItemSummary & { packs: PackSize[]; barcodes: Barcode[] };
+export interface Lot {
+  id: string;
+  lotCode: string | null;
+  receivedAt: string;
+  expiryDate: string | null;
+  qtyReceived: string;
+  qtyRemaining: string;
+  origin: 'receipt' | 'opening' | 'found' | 'count';
+  status: 'active' | 'quarantined';
+  receiptNo: string | null;
+  expired: boolean;
+  nearExpiry: boolean;
+}
+
+export type ItemDetail = ItemSummary & { packs: PackSize[]; barcodes: Barcode[]; lots: Lot[] };
 
 export interface ScanResult {
   code: string;

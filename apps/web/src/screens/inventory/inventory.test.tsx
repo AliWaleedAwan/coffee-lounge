@@ -66,6 +66,21 @@ const milk: ItemDetail = {
   barcodes: [
     { id: '700', code: '8960000000017', packSizeId: '70', packName: '1 L carton', version: 1 },
   ],
+  lots: [
+    {
+      id: '71',
+      lotCode: 'L7',
+      receivedAt: '2026-10-20T08:00:00Z',
+      expiryDate: '2026-10-25',
+      qtyReceived: '3000.0000',
+      qtyRemaining: '2400.0000',
+      origin: 'receipt',
+      status: 'active',
+      receiptNo: 'GRN-2026-00041',
+      expired: true,
+      nearExpiry: false,
+    },
+  ],
 };
 const cups = {
   ...milk,
@@ -79,6 +94,7 @@ const cups = {
   stockControlActive: false,
   packs: [],
   barcodes: [],
+  lots: [],
 };
 
 interface Call {
@@ -379,5 +395,44 @@ describe('receive stock', () => {
       'Receipts',
       'Suppliers',
     ]);
+  });
+});
+
+describe('lots (step 4.3)', () => {
+  it('lists an item’s lots earliest expiry first, marking expired ones', async () => {
+    serve(meWith('inventory_clerk', CLERK));
+    renderInventory();
+    await scan('8960000000017');
+    const lots = await screen.findByRole('region', { name: 'Lots' });
+    const row = within(lots).getByRole('row', { name: /L7/ });
+    expect(within(row).getByText('Expired')).toBeTruthy();
+    expect(within(row).getByText('2,400 ml')).toBeTruthy();
+    expect(within(row).getByText('of 3,000 ml')).toBeTruthy();
+    expect(within(row).getByText('GRN-2026-00041')).toBeTruthy();
+    expect(within(lots).getByText(/Expired lots do not count as available/)).toBeTruthy();
+  });
+
+  it('asks for the expiry of stock on hand when lots and expiry are switched on (P4-3)', async () => {
+    const calls = serve(meWith('inventory_clerk', CLERK), () => json(200, { id: '8', version: 4 }));
+    renderInventory();
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*Cup 12 oz/ }));
+    await screen.findByRole('heading', { name: 'Cup 12 oz' });
+    expect(screen.queryByRole('region', { name: 'Lots' })).toBeNull();
+    fireEvent.click(
+      screen.getByLabelText('Track lots (receipts create lots, used earliest expiry first)'),
+    );
+    fireEvent.click(screen.getByLabelText('Track expiry dates'));
+    const expiry = screen.getByLabelText('Expiry date of the 2,400 pcs on hand');
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save changes' });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(expiry, { target: { value: '2026-11-30' } });
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({
+        trackLots: true,
+        trackExpiry: true,
+        existingStockExpiry: '2026-11-30',
+      });
+    });
   });
 });
