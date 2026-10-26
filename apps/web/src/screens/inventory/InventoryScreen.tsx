@@ -1,6 +1,6 @@
 /**
  * Inventory area (UI_UX.md §6, clerk): items and scanning, receiving stock, past receipts
- * and suppliers. Tabs follow the user's permissions; the server checks every request.
+ * with supplier returns, waste and suppliers. Tabs follow the user's permissions; the server checks every request.
  */
 import { useState } from 'react';
 import { permissionSet } from '../../auth/session.ts';
@@ -9,8 +9,9 @@ import { ItemsTab } from './ItemsTab.tsx';
 import { ReceiptsTab } from './ReceiptsTab.tsx';
 import { ReceiveTab } from './ReceiveTab.tsx';
 import { SuppliersTab } from './SuppliersTab.tsx';
+import { WasteTab } from './WasteTab.tsx';
 
-type Tab = 'items' | 'receive' | 'receipts' | 'suppliers';
+type Tab = 'items' | 'receive' | 'receipts' | 'waste' | 'suppliers';
 
 export function InventoryScreen() {
   const permissions = permissionSet(useSignedIn());
@@ -19,11 +20,13 @@ export function InventoryScreen() {
     receive: permissions.has('inventory.receive'),
     startStockControl: permissions.has('inventory.stock_control_activate'),
     manageSuppliers: permissions.has('suppliers.manage'),
+    waste: permissions.has('inventory.waste'),
   };
   const tabs: { id: Tab; label: string }[] = [
     { id: 'items', label: 'Items' },
     ...(can.receive ? [{ id: 'receive' as const, label: 'Receive stock' }] : []),
     { id: 'receipts', label: 'Receipts' },
+    { id: 'waste', label: 'Waste' },
     { id: 'suppliers', label: 'Suppliers' },
   ];
   const [tab, setTab] = useState<Tab>('items');
@@ -59,6 +62,7 @@ export function InventoryScreen() {
           <ReceiveTab canLink={can.manageItems} canStartStockControl={can.startStockControl} />
         ) : null}
         {tab === 'receipts' ? <ReceiptsTab canReverse={can.receive} /> : null}
+        {tab === 'waste' ? <WasteTab canRecord={can.waste} /> : null}
         {tab === 'suppliers' ? <SuppliersTab canManage={can.manageSuppliers} /> : null}
       </div>
     </>

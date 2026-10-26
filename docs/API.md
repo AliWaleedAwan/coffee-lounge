@@ -227,9 +227,9 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory items, suppliers and receiving (Phase 4 steps 4.1–4.2)
+### 5.9 Inventory items, suppliers, receiving and waste (Phase 4 steps 4.1–4.4)
 
-Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting and reversing a receipt do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
+Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing and returning a receipt and recording waste do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
 | Method & path | Permission | Purpose |
 |---|---|---|
@@ -242,6 +242,9 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /inventory/items/{itemId}/pack-sizes` | `inventory.items_manage` | `{name, qty, uom}` with `uom` any unit of the item's dimension (`l` for an item in `ml`, `kg` for `g`); stored as `qtyBase` (`1 l` → `1000.0000`, AT-31). Another dimension is refused (AT-32). Names are unique among an item's active packs |
 | `PATCH /inventory/pack-sizes/{packId}` | `inventory.items_manage` | `{expectedVersion, name?, isActive?}`. What a pack holds never changes (a new size is a new pack); stopping a pack frees its barcodes |
 | `POST /inventory/items/{itemId}/barcodes` | `inventory.items_manage` | `{code, packSizeId?}` (a pack of this item; without one a scan means one base unit). A code with an active owner is refused with `409 BARCODE_IN_USE`, naming the owner, also when two people link it at once |
+| `POST /purchase-receipts/{receiptId}/returns` **[I]** | `inventory.receive` | `{lineId, qty, uom?, reason, refundAmount?, refundChannel?, refundReference?}` (step 4.4, AT-110): stock back to the supplier against that line, never more than the line brought in less what already went back; for a lot-tracked item out of the line's own lot, otherwise from what is available. A `supplier_return` movement at the current average; the refund is recorded for Phase 5's ledger (P4-2). Returns `qtyBase`, `value`, `returnedSoFar`. A receipt with returns can no longer be reversed. `GET /purchase-receipts/{id}` shows `returnedQty` per line and the `returns` (value and refund only with cost rights) |
+| `POST /inventory/waste` **[I]** | `inventory.waste` | `{itemId, qty, uom?, reasonCode, note?, lotId?}` (step 4.4, AT-109): ingredient waste at the current average; reasons `spilled`, `remade`, `expired`, `damaged`, `quality`, `other` (needs a note); for a lot-tracked item from the named lot or earliest expiry first; not more than the book quantity (a count instead). Waste only from expired lots is recorded as `expired_lot`. `value` is `null` without `inventory.cost_view` |
+| `GET /inventory/waste?date=` | `inventory.read` | A business day's waste (default today), newest first: ingredients, expired lots, prepared items and failed deliveries, with lot, reason, who; `value` only with `inventory.cost_view` |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |

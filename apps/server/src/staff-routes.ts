@@ -54,6 +54,6 @@ export async function registerStaffRoutes(
   await operationsRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await deliveryRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
-  await stockRoutes(app, { pool: deps.pool });
+  await stockRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await purchasingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
 }

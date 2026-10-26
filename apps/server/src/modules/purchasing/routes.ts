@@ -21,6 +21,7 @@ import {
   reverseReceipt,
   type ReceiptSummary,
 } from './receipts.ts';
+import { returnToSupplier } from './returns.ts';
 import { createSupplier, listSuppliers, updateSupplier } from './suppliers.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
@@ -139,6 +140,7 @@ export async function purchasingRoutes(
       return {
         ...withoutCost(receipt),
         lines: receipt.lines.map((l) => ({ ...l, lineCost: null, unitCost: null })),
+        returns: receipt.returns.map((r) => ({ ...r, value: null, refundAmount: null })),
       };
     },
   );
@@ -197,6 +199,47 @@ export async function purchasingRoutes(
         async (tx) => ({
           status: 200,
           body: await reverseReceipt(tx, ctx, auth, receiptId, body.reason),
+        }),
+      );
+    },
+  );
+
+  app.post(
+    '/purchase-receipts/:id/returns',
+    { config: { permission: 'inventory.receive' } },
+    async (request, reply) => {
+      const receiptId = idParam(request);
+      const body = parseInput(
+        z
+          .object({
+            lineId: id,
+            qty: quantity,
+            uom: z.enum(UNIT_CODES).optional(),
+            reason: z.string().trim().min(3).max(200),
+            refundAmount: z
+              .string()
+              .regex(/^\d{1,10}(\.\d{1,2})?$/, 'rupees, e.g. 600')
+              .optional(),
+            refundChannel: z.enum(PAYMENT_CHANNELS).optional(),
+            refundReference: z.string().trim().max(60).optional(),
+          })
+          .strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const ctx = commandContext(request, now());
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        {
+          scope: `purchase_receipt.return:${receiptId}`,
+          actorRef: `user:${auth.user.id}`,
+          payload: body,
+        },
+        async (tx) => ({
+          status: 201,
+          body: await returnToSupplier(tx, ctx, auth, receiptId, body),
         }),
       );
     },

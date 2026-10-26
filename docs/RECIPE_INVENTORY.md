@@ -176,3 +176,5 @@ Only one open alert per item and kind exists at a time (database rule). Alerts r
 ## 11. Supplier returns
 
 Return of unused stock to a supplier: `supplier_return` movement against the original receipt line (and lot), valued at the **current average** (COST_VALUATION.md §4). Refund received → ledger entry `cash_in` with reference.
+
+As built (Phase 4 step 4.4): a line can be returned in parts, never more than it brought in; a lot-tracked item comes out of the line's own lot, anything else out of what is available (accepted orders stay covered). The refund's amount, channel and reference are recorded on the return now; the ledger entry is written in Phase 5 (P4-2). A receipt with returns is no longer reversed: the rest is returned or wasted.

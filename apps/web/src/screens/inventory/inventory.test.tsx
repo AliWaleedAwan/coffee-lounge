@@ -97,6 +97,57 @@ const cups = {
   lots: [],
 };
 
+const receipt = {
+  id: '5',
+  receiptNo: 'GRN-2026-00007',
+  status: 'posted',
+  businessDate: '2026-10-26',
+  postedAt: '2026-10-26T08:00:00Z',
+  supplierName: 'Haleeb Foods',
+  supplierInvoiceRef: null,
+  totalCost: '1650.00',
+  lineCount: 1,
+  paidNow: false,
+  paymentChannel: null,
+  postedBy: 'Faisal',
+  paymentReference: null,
+  note: null,
+  reversedAt: null,
+  reversalReason: null,
+  lines: [
+    {
+      lineId: '51',
+      itemId: '7',
+      name: 'Whole milk',
+      baseUom: 'ml',
+      packName: '1 L carton',
+      packQty: '6.000',
+      qtyBase: '6000.0000',
+      lineCost: '1650.00',
+      unitCost: '0.27500000',
+      lotCode: 'L7',
+      expiryDate: '2026-11-02',
+      returnedQty: '1000.0000',
+    },
+  ],
+  returns: [
+    {
+      id: '1',
+      lineId: '51',
+      name: 'Whole milk',
+      baseUom: 'ml',
+      qtyBase: '1000.0000',
+      value: '275.0000',
+      reason: 'Leaking carton',
+      refundAmount: '275.00',
+      refundChannel: 'cash',
+      refundReference: null,
+      returnedBy: 'Faisal',
+      businessDate: '2026-10-26',
+    },
+  ],
+};
+
 interface Call {
   method: string;
   url: string;
@@ -132,6 +183,13 @@ function serve(me: object, writes: (call: Call) => Response = () => json(201, { 
       if (url.includes('/inventory/scan?code=')) {
         const code = decodeURIComponent(url.split('code=')[1] ?? '');
         return Promise.resolve(json(200, { code, match: null }));
+      }
+      if (url.endsWith('/inventory/waste')) {
+        return Promise.resolve(json(200, { date: '2026-10-26', items: [] }));
+      }
+      if (url.endsWith('/purchase-receipts/5')) return Promise.resolve(json(200, receipt));
+      if (url.endsWith('/purchase-receipts')) {
+        return Promise.resolve(json(200, { items: [receipt] }));
       }
       if (url.includes('/suppliers')) {
         return Promise.resolve(json(200, { items: [{ id: '3', name: 'Haleeb Foods' }] }));
@@ -393,6 +451,7 @@ describe('receive stock', () => {
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'Items',
       'Receipts',
+      'Waste',
       'Suppliers',
     ]);
   });
@@ -432,6 +491,73 @@ describe('lots (step 4.3)', () => {
         trackLots: true,
         trackExpiry: true,
         existingStockExpiry: '2026-11-30',
+      });
+    });
+  });
+});
+
+describe('waste and supplier returns (step 4.4)', () => {
+  const STAFF = [...CLERK, 'inventory.receive', 'inventory.waste'];
+
+  it('records waste of an expired lot with its reason (AT-109)', async () => {
+    const calls = serve(meWith('inventory_clerk', STAFF), () =>
+      json(201, { itemId: '7', qtyBase: '2400.0000', value: null }),
+    );
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Waste' }));
+    expect(await screen.findByText('Nothing wasted yet today.')).toBeTruthy();
+    await scan('8960000000017');
+    const form = await screen.findByRole('form', { name: 'Waste of Whole milk' });
+    fireEvent.change(within(form).getByLabelText('How much'), { target: { value: '2.4' } });
+    fireEvent.change(within(form).getByLabelText('Unit'), { target: { value: 'l' } });
+    fireEvent.change(within(form).getByLabelText('Lot'), { target: { value: '71' } });
+    expect(within(form).getByLabelText<HTMLSelectElement>('Reason').value).toBe('expired');
+    fireEvent.click(within(form).getByRole('button', { name: 'Record waste' }));
+    expect(await screen.findByText('Recorded: 2,400 ml of Whole milk.')).toBeTruthy();
+    expect(calls.find((c) => c.method === 'POST')).toMatchObject({
+      url: '/api/staff/v1/inventory/waste',
+      body: { itemId: '7', qty: '2.4', uom: 'l', reasonCode: 'expired', lotId: '71' },
+    });
+  });
+
+  it('returns part of a receipt line to the supplier with a refund (AT-110)', async () => {
+    const calls = serve(meWith('inventory_clerk', STAFF), () =>
+      json(201, {
+        returnId: '2',
+        qtyBase: '2000.0000',
+        value: '550.0000',
+        returnedSoFar: '3000.0000',
+      }),
+    );
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Receipts' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open\s*GRN-2026-00007/ }));
+    expect(await screen.findByText('1,000 ml returned to the supplier')).toBeTruthy();
+    const returns = screen.getByRole('region', { name: 'Returned to the supplier' });
+    expect(within(returns).getByRole('row', { name: /Leaking carton Rs 275 · Cash/ })).toBeTruthy();
+    // A receipt with returns is not reversed: the rest is returned or wasted.
+    expect(screen.queryByRole('button', { name: 'Reverse this receipt…' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Return…\s*Whole milk/ }));
+    const form = screen.getByRole('form', { name: 'Return Whole milk to the supplier' });
+    expect(within(form).getByText(/up to 5,000 ml/)).toBeTruthy();
+    fireEvent.change(within(form).getByLabelText('How much goes back'), { target: { value: '2' } });
+    fireEvent.change(within(form).getByLabelText('Unit'), { target: { value: 'l' } });
+    fireEvent.change(within(form).getByLabelText('Why'), { target: { value: 'Two leaking' } });
+    fireEvent.click(within(form).getByLabelText('The supplier refunded us'));
+    fireEvent.change(within(form).getByLabelText('Refund (Rs)'), { target: { value: '550' } });
+    fireEvent.change(within(form).getByLabelText('Refunded by'), { target: { value: 'transfer' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Return to supplier' }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === 'POST')).toMatchObject({
+        url: '/api/staff/v1/purchase-receipts/5/returns',
+        body: {
+          lineId: '51',
+          qty: '2',
+          uom: 'l',
+          reason: 'Two leaking',
+          refundAmount: '550',
+          refundChannel: 'transfer',
+        },
       });
     });
   });

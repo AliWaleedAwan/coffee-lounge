@@ -201,9 +201,12 @@ export interface ReceiptLine {
   unitCost: string | null;
   lotCode: string | null;
   expiryDate: string | null;
+  /** How much of the line went back to the supplier. */
+  returnedQty: string;
 }
 
 export type ReceiptDetail = ReceiptSummary & {
+  returns: SupplierReturn[];
   paymentReference: string | null;
   note: string | null;
   reversedAt: string | null;
@@ -215,7 +218,7 @@ export interface PostedReceipt {
   receiptId: string;
   receiptNo: string;
   totalCost: string;
-  lines: (Omit<ReceiptLine, 'lotCode' | 'expiryDate'> & { onHandAfter: string })[];
+  lines: (Omit<ReceiptLine, 'lotCode' | 'expiryDate' | 'returnedQty'> & { onHandAfter: string })[];
 }
 
 export function useReceipts() {
@@ -275,4 +278,55 @@ export function rupees(amount: string): string {
     minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+// ---------------------------------------------------------------- waste and returns (step 4.4)
+
+/** RECIPE_INVENTORY.md §8 reason codes for ingredient waste. */
+export const WASTE_REASONS = [
+  { value: 'spilled', label: 'Spilled' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'damaged', label: 'Damaged' },
+  { value: 'quality', label: 'Quality' },
+  { value: 'remade', label: 'Remade' },
+  { value: 'other', label: 'Other (say what)' },
+] as const;
+
+export interface WasteRecord {
+  id: string;
+  kind: 'ingredient' | 'expired_lot' | 'prepared_item' | 'failed_delivery';
+  itemId: string | null;
+  name: string;
+  baseUom: BaseUnit | null;
+  qty: string;
+  reasonCode: string;
+  note: string | null;
+  lotCode: string | null;
+  value: string | null;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+export function useWaste() {
+  return useQuery({
+    queryKey: ['inventory', 'waste'],
+    queryFn: ({ signal }) =>
+      api<{ date: string; items: WasteRecord[] }>('/inventory/waste', { signal }),
+    meta: TOPICS,
+  });
+}
+
+export interface SupplierReturn {
+  id: string;
+  lineId: string;
+  name: string;
+  baseUom: BaseUnit;
+  qtyBase: string;
+  value: string | null;
+  reason: string;
+  refundAmount: string | null;
+  refundChannel: PaymentChannel | null;
+  refundReference: string | null;
+  returnedBy: string;
+  businessDate: string;
 }

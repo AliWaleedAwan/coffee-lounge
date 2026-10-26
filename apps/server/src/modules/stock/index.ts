@@ -10,6 +10,7 @@ export {
   scanExpiry,
   release,
   reserve,
+  returnStock,
   reverseReceiptStock,
   wasteIngredient,
   WASTE_REASONS,
@@ -66,3 +67,4 @@ export {
   type ScanMatch,
 } from './inventory.ts';
 export { stockRoutes } from './routes.ts';
+export { listWaste, recordWaste, type WasteInput, type WasteRecord } from './waste.ts';

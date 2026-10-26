@@ -164,4 +164,42 @@ test('J7: scan and receive three items with lot and expiry; link an unknown code
   await expect(lots.getByRole('row')).toHaveCount(2); // header + the first receipt's lot
   await expect(lots.getByRole('row', { name: /2099-01-01 500 ml of 500 ml GRN-/ })).toBeVisible();
   await expectAccessible(page, 'item lots');
+
+  // Waste (step 4.4, AT-109 on screen): 100 ml spilled, earliest expiry first.
+  await page.getByRole('tab', { name: 'Waste' }).click();
+  const wasteBox = page.getByLabel('Scan or type barcode / name');
+  await wasteBox.pressSequentially('8960000000105');
+  await wasteBox.press('Enter');
+  const waste = page.getByRole('form', { name: 'Waste of Fresh milk' });
+  await waste.getByLabel('How much').fill('100');
+  await waste.getByLabel('Reason').selectOption('spilled');
+  await waste.getByRole('button', { name: 'Record waste' }).click();
+  await expect(page.getByText('Recorded: 100 ml of Fresh milk.')).toBeVisible();
+  await expect(
+    page
+      .getByRole('region', { name: /^Waste today/ })
+      .getByRole('row', { name: /Fresh milk .* 100 ml Spilled/ }),
+  ).toBeVisible();
+  await expectAccessible(page, 'waste');
+
+  // Supplier return (AT-110 on screen): 5 cups of the first receipt go back, refunded in cash.
+  await page.getByRole('tab', { name: 'Receipts' }).click();
+  await page
+    .getByRole('button', { name: /^Open\s*GRN-/ })
+    .last()
+    .click();
+  await page.getByRole('button', { name: /Return…\s*Paper cups 8 oz/ }).click();
+  const back = page.getByRole('form', { name: 'Return Paper cups 8 oz to the supplier' });
+  await back.getByLabel('How much goes back').fill('5');
+  await back.getByLabel('Why').fill('Crushed sleeve');
+  await back.getByLabel('The supplier refunded us').check();
+  await back.getByLabel('Refund (Rs)').fill('75');
+  await back.getByRole('button', { name: 'Return to supplier' }).click();
+  await expect(
+    page
+      .getByRole('region', { name: 'Returned to the supplier' })
+      .getByRole('row', { name: /Paper cups 8 oz .* 5 pcs Crushed sleeve Rs 75 · Cash/ }),
+  ).toBeVisible();
+  await expect(page.getByText('5 pcs returned to the supplier')).toBeVisible();
+  await expectAccessible(page, 'receipt with a return');
 });

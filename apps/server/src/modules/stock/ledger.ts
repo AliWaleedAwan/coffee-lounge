@@ -86,7 +86,14 @@ async function saveBalance(tx: Tx, b: LockedBalance): Promise<void> {
 
 interface MovementInput {
   itemId: string;
-  type: 'opening' | 'receipt' | 'reversal' | 'consumption' | 'waste' | 'count_adjustment';
+  type:
+    | 'opening'
+    | 'receipt'
+    | 'reversal'
+    | 'consumption'
+    | 'waste'
+    | 'count_adjustment'
+    | 'supplier_return';
   qtyDelta: Decimal;
   unitCost: Decimal | null;
   valueDelta: Decimal;
@@ -974,6 +981,73 @@ export async function wasteIngredient(
   await evaluateAlerts(tx, b);
   await announce(tx, [input.itemId]);
   return { value };
+}
+
+// ---------------------------------------------------------------- supplier returns
+
+/**
+ * Stock back to the supplier (RECIPE_INVENTORY.md §11): an issue at the current average
+ * (COST_VALUATION.md §4), one `supplier_return` movement against the receipt line. For a
+ * lot-tracked item it comes out of the line's own lot, which must still hold it; anything
+ * else needs the quantity available, so accepted orders stay covered. The caller holds
+ * the receipt's row lock and checks what the line has left to return.
+ */
+export async function returnStock(
+  tx: Tx,
+  ctx: StockContext,
+  input: { itemId: string; qty: Decimal; receiptLineId: string; key: string; note: string },
+): Promise<{ movementId: string; value: Decimal; lotId: string | null }> {
+  const q = round4(input.qty);
+  if (q.lessThanOrEqualTo(0)) throw new AppError('VALIDATION_FAILED', 'Return more than zero');
+  const b = (await lockBalances(tx, [input.itemId])).get(input.itemId);
+  if (!b) throw new AppError('NOT_FOUND', 'Stock item not found');
+  const { rows: items } = await tx.query<{ name: string; base_uom: string; track_lots: boolean }>(
+    'SELECT name, base_uom, track_lots FROM cl.inventory_items WHERE id = $1',
+    [input.itemId],
+  );
+  const item = items[0];
+  const available = b.onHand.minus(b.reserved);
+  if (available.lessThan(q)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `Only ${available.toString()} ${item?.base_uom ?? ''} of ${item?.name ?? 'the item'} is available to return`,
+    );
+  }
+  let lotTakes: LotTake[] = [];
+  let lotId: string | null = null;
+  if (item?.track_lots) {
+    const { rows } = await tx.query<{ id: string; q: string }>(
+      'SELECT id::text, qty_remaining::text AS q FROM cl.inventory_lots WHERE receipt_line_id = $1',
+      [input.receiptLineId],
+    );
+    const lot = rows[0];
+    if (!lot || q.greaterThan(lot.q)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `The lot from this receipt holds only ${new Decimal(lot?.q ?? '0').toString()} ${item.base_uom}`,
+      );
+    }
+    lotId = lot.id;
+    lotTakes = await takeFromLots(tx, input.itemId, q, ctx.businessDate, lot.id);
+  }
+  const { value, unitCost } = issue(b, q);
+  const movementId = await insertMovement(tx, ctx, {
+    itemId: input.itemId,
+    type: 'supplier_return',
+    qtyDelta: q.negated(),
+    unitCost,
+    valueDelta: value.negated(),
+    sourceType: 'purchase_receipt_line',
+    sourceId: input.receiptLineId,
+    sourceKey: `return:${input.key}:line:${input.receiptLineId}`,
+    note: input.note,
+  });
+  await recordLotShares(tx, movementId, lotTakes, -1);
+  if (item?.track_lots) await resolveEmptyLotAlerts(tx, input.itemId);
+  await saveBalance(tx, b);
+  await evaluateAlerts(tx, b);
+  await announce(tx, [input.itemId]);
+  return { movementId, value, lotId };
 }
 
 // ---------------------------------------------------------------- reconciliation

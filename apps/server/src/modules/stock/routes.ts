@@ -1,16 +1,21 @@
 /**
- * Inventory item routes (API.md §5.9). Reading needs `inventory.read`; items, packs and
- * barcodes `inventory.items_manage`. Edits carry `expectedVersion` (409 STALE_STATE when
- * someone else changed it first). Nothing here moves stock, so no Idempotency-Key.
+ * Inventory item and waste routes (API.md §5.9). Reading needs `inventory.read`; items,
+ * packs and barcodes `inventory.items_manage`; waste `inventory.waste`. Edits carry
+ * `expectedVersion` (409 STALE_STATE when someone else changed it first). Waste moves
+ * stock, so it needs an Idempotency-Key; nothing else here does.
  */
 import { UNIT_CODES } from '@cl/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import type { AuditContext } from '../../platform/audit.ts';
+import { handleCommand, IDEMPOTENCY_HEADER } from '../../platform/idempotency.ts';
+import { businessDateOf } from '../../platform/settings.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
 import * as inventory from './inventory.ts';
+import { WASTE_REASONS } from './ledger.ts';
+import { listWaste, recordWaste } from './waste.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
 const expectedVersion = z.number().int().min(1);
@@ -58,8 +63,12 @@ function whoOf(request: FastifyRequest): AuditContext {
 
 const idParam = (request: FastifyRequest) => parseInput(z.object({ id }), request.params).id;
 
-export async function stockRoutes(app: FastifyInstance, options: { pool: pg.Pool }): Promise<void> {
+export async function stockRoutes(
+  app: FastifyInstance,
+  options: { pool: pg.Pool; now?: () => Date },
+): Promise<void> {
   const { pool } = options;
+  const now = options.now ?? (() => new Date());
   const read = { config: { permission: 'inventory.read' } };
   const manage = { config: { permission: 'inventory.items_manage' } };
 
@@ -176,4 +185,61 @@ export async function stockRoutes(app: FastifyInstance, options: { pool: pg.Pool
       body.expectedVersion,
     );
   });
+
+  // ------------------------------------------------------------ waste (step 4.4)
+  app.get('/inventory/waste', read, async (request) => {
+    const query = parseInput(
+      z
+        .object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
+        })
+        .strict(),
+      request.query,
+    );
+    const date = query.date ?? (await businessDateOf(pool, now()));
+    const items = await listWaste(pool, date);
+    const seesCost = authOf(request).permissions.has('inventory.cost_view');
+    return { date, items: seesCost ? items : items.map((w) => ({ ...w, value: null })) };
+  });
+
+  app.post(
+    '/inventory/waste',
+    { config: { permission: 'inventory.waste' } },
+    async (request, reply) => {
+      const body = parseInput(
+        z
+          .object({
+            itemId: id,
+            qty: quantity,
+            uom: z.enum(UNIT_CODES).optional(),
+            reasonCode: z.enum(WASTE_REASONS),
+            note: z.string().trim().max(200).optional(),
+            lotId: id.optional(),
+          })
+          .strict(),
+        request.body,
+      );
+      const auth = authOf(request);
+      const key = String(request.headers[IDEMPOTENCY_HEADER] ?? '').toLowerCase();
+      return handleCommand(
+        pool,
+        request,
+        reply,
+        { scope: 'inventory.waste', actorRef: `user:${auth.user.id}`, payload: body },
+        async (tx) => {
+          const result = await recordWaste(
+            tx,
+            { actorUserId: auth.user.id, businessDate: await businessDateOf(tx, now()), key },
+            whoOf(request),
+            body,
+          );
+          const seesCost = auth.permissions.has('inventory.cost_view');
+          return { status: 201, body: seesCost ? result : { ...result, value: null } };
+        },
+      );
+    },
+  );
 }

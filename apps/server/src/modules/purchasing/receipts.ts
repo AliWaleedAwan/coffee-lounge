@@ -351,6 +351,17 @@ export async function reverseReceipt(
   if (receipt.status !== 'posted' || receipt.receipt_no === null) {
     throw new AppError('STALE_STATE', `This receipt is ${receipt.status}`);
   }
+  const { rowCount: returned } = await tx.query(
+    `SELECT 1 FROM cl.supplier_returns r JOIN cl.purchase_receipt_lines l ON l.id = r.receipt_line_id
+      WHERE l.receipt_id = $1 LIMIT 1`,
+    [receiptId],
+  );
+  if (returned) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Part of this receipt went back to the supplier. Return or waste the rest instead.',
+    );
+  }
   const { rows: lines } = await tx.query<{
     id: string;
     item_id: string;
@@ -457,10 +468,8 @@ export async function readReceipt(
     note: string | null;
     reversedAt: string | null;
     reversalReason: string | null;
-    lines: (Omit<PostedLine, 'onHandAfter'> & {
-      lotCode: string | null;
-      expiryDate: string | null;
-    })[];
+    lines: ReceiptLineDetail[];
+    returns: SupplierReturn[];
   }
 > {
   const { rows } = await db.query<
@@ -481,18 +490,54 @@ export async function readReceipt(
   );
   const receipt = rows[0];
   if (!receipt) throw new AppError('NOT_FOUND', 'Receipt not found');
-  const { rows: lines } = await db.query<
-    Omit<PostedLine, 'onHandAfter'> & { lotCode: string | null; expiryDate: string | null }
-  >(
+  const { rows: lines } = await db.query<ReceiptLineDetail>(
     `SELECT l.id::text AS "lineId", l.item_id::text AS "itemId", i.name, i.base_uom AS "baseUom",
             p.name AS "packName", l.pack_qty::text AS "packQty", l.qty_base::text AS "qtyBase",
             l.line_cost::text AS "lineCost", l.unit_cost_base::text AS "unitCost",
-            l.lot_code AS "lotCode", l.expiry_date::text AS "expiryDate"
+            l.lot_code AS "lotCode", l.expiry_date::text AS "expiryDate",
+            COALESCE((SELECT sum(r.qty_base) FROM cl.supplier_returns r WHERE r.receipt_line_id = l.id), 0)::numeric(18,4)::text
+              AS "returnedQty"
        FROM cl.purchase_receipt_lines l
        JOIN cl.inventory_items i ON i.id = l.item_id
        LEFT JOIN cl.item_pack_sizes p ON p.id = l.pack_size_id
       WHERE l.receipt_id = $1 ORDER BY l.id`,
     [id],
   );
-  return { ...receipt, lines };
+  const { rows: returns } = await db.query<SupplierReturn>(
+    `SELECT r.id::text, r.receipt_line_id::text AS "lineId", i.name, i.base_uom AS "baseUom",
+            r.qty_base::text AS "qtyBase", r.value::text AS value, r.reason,
+            r.refund_amount::text AS "refundAmount", r.refund_channel AS "refundChannel",
+            r.refund_reference AS "refundReference", u.display_name AS "returnedBy",
+            r.business_date::text AS "businessDate"
+       FROM cl.supplier_returns r
+       JOIN cl.purchase_receipt_lines l ON l.id = r.receipt_line_id
+       JOIN cl.inventory_items i ON i.id = r.item_id
+       JOIN cl.users u ON u.id = r.returned_by
+      WHERE l.receipt_id = $1 ORDER BY r.id`,
+    [id],
+  );
+  return { ...receipt, lines, returns };
+}
+
+export type ReceiptLineDetail = Omit<PostedLine, 'onHandAfter'> & {
+  lotCode: string | null;
+  expiryDate: string | null;
+  /** How much of the line went back to the supplier. */
+  returnedQty: string;
+};
+
+export interface SupplierReturn {
+  id: string;
+  lineId: string;
+  name: string;
+  baseUom: BaseUnit;
+  qtyBase: string;
+  /** Stock value out at the average; null for readers without cost rights. */
+  value: string | null;
+  reason: string;
+  refundAmount: string | null;
+  refundChannel: PaymentChannel | null;
+  refundReference: string | null;
+  returnedBy: string;
+  businessDate: string;
 }
