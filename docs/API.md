@@ -227,9 +227,9 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory items (Phase 4 step 4.1)
+### 5.9 Inventory items, suppliers and receiving (Phase 4 steps 4.1–4.2)
 
-Nothing here moves stock, so no `Idempotency-Key`. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
+Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting and reversing a receipt do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
 | Method & path | Permission | Purpose |
 |---|---|---|
@@ -243,6 +243,12 @@ Nothing here moves stock, so no `Idempotency-Key`. Edits carry `expectedVersion`
 | `PATCH /inventory/pack-sizes/{packId}` | `inventory.items_manage` | `{expectedVersion, name?, isActive?}`. What a pack holds never changes (a new size is a new pack); stopping a pack frees its barcodes |
 | `POST /inventory/items/{itemId}/barcodes` | `inventory.items_manage` | `{code, packSizeId?}` (a pack of this item; without one a scan means one base unit). A code with an active owner is refused with `409 BARCODE_IN_USE`, naming the owner, also when two people link it at once |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
+| `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
+| `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |
+| `POST /purchase-receipts` **[I]** | `inventory.receive` | Posts a receipt in one transaction (RECIPE_INVENTORY.md §7): `{supplierId?, supplierInvoiceRef?, note?, paidNow, paymentChannel?, paymentReference?, startStockControl?: [itemId], lines: [{itemId, packSizeId + packQty \| qty + uom?, lineCost, lotCode?, expiryDate?}]}`. Packs convert to the base unit (`qtyBase`), unit cost = line cost ÷ base quantity to 8 dp, stock and average updated, alerts and availability refreshed, then the gapless `GRN-YYYY-NNNNN` is taken last. An expiry-tracked item needs an expiry date not in the past; lot and expiry only for items that track them. An item without its opening count is refused unless listed in `startStockControl` (its shelf was empty, D-29; needs `inventory.stock_control_activate`). `paidNow` needs `paymentChannel` (`cash`, `card`, `transfer`); a reference that looks like a card number → `422 CARD_NUMBER_NOT_ALLOWED`. The ledger entry for a payment is written in Phase 5 (P4-2). Returns `receiptNo`, `totalCost` and per line `qtyBase`, `unitCost`, `onHandAfter` |
+| `GET /purchase-receipts?date=&supplierId=` | `inventory.read` | Posted and reversed receipts, newest first (100). `totalCost` is `null` unless the caller has `inventory.receive` or `inventory.cost_view` |
+| `GET /purchase-receipts/{receiptId}` | `inventory.read` | One receipt with its lines (pack, packs, base quantity, lot, expiry), payment and reversal; costs as above |
+| `POST /purchase-receipts/{receiptId}/reverse` **[I]** | `inventory.receive` | `{reason}`. The whole receipt, only while each item still has its quantity **available** (on hand − reserved), so accepted orders stay covered; otherwise refused, pointing to waste or a supplier return. Each line leaves as a `reversal` movement: exactly at its own cost when nothing else has moved the item since (quantity, value and last cost return to what they were), else at the current average (flag `at_average`, COST_VALUATION.md §3) |
 
 ## 6. Errors
 
@@ -322,6 +328,8 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `availability.changed` | Stock-driven or manual availability change | `menu` |
 | `print_job.changed` | Failure, uncertain, recovery | `printers` |
 | `inventory.changed` | Inventory item, pack size or barcode added, changed or archived (Phase 4) | `inventory` |
+| `receipt.changed` | Purchase receipt posted or reversed (stock also announces `availability.changed`) | `inventory` |
+| `supplier.changed` | Supplier added or changed | `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 

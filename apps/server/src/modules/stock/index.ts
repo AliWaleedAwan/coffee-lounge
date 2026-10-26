@@ -6,8 +6,10 @@ export {
   postOpeningBalance,
   raiseMismatchAlerts,
   raiseStaleReservationAlerts,
+  receiveStock,
   release,
   reserve,
+  reverseReceiptStock,
   wasteIngredient,
   WASTE_REASONS,
   holdStock,
@@ -17,6 +19,8 @@ export {
   type Shortage,
   type StockContext,
   type StockMismatch,
+  type ReceiptLineReversal,
+  type ReceiptLineStock,
   type Take,
 } from './ledger.ts';
 export {

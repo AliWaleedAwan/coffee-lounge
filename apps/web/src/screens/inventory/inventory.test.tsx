@@ -117,6 +117,9 @@ function serve(me: object, writes: (call: Call) => Response = () => json(201, { 
         const code = decodeURIComponent(url.split('code=')[1] ?? '');
         return Promise.resolve(json(200, { code, match: null }));
       }
+      if (url.includes('/suppliers')) {
+        return Promise.resolve(json(200, { items: [{ id: '3', name: 'Haleeb Foods' }] }));
+      }
       if (url.endsWith('/inventory/items/7')) return Promise.resolve(json(200, milk));
       if (url.endsWith('/inventory/items/8')) return Promise.resolve(json(200, cups));
       if (url.includes('/inventory/items')) {
@@ -262,5 +265,119 @@ describe('inventory screen', () => {
       overstockThreshold: '2000',
       nearExpiryDays: null,
     });
+  });
+});
+
+describe('receive stock', () => {
+  const RECEIVER = [...CLERK, 'inventory.receive', 'inventory.stock_control_activate'];
+
+  it('turns scans into lines with base quantities, unit cost and expiry, then posts (AT-31)', async () => {
+    const posted = {
+      receiptId: '9',
+      receiptNo: 'GRN-2026-00042',
+      totalCost: '550.00',
+      lines: [
+        {
+          lineId: '90',
+          itemId: '7',
+          name: 'Whole milk',
+          baseUom: 'ml',
+          packName: '1 L carton',
+          packQty: '2.000',
+          qtyBase: '2000.0000',
+          lineCost: '550.00',
+          unitCost: '0.27500000',
+          onHandAfter: '4400.0000',
+        },
+      ],
+    };
+    const calls = serve(meWith('inventory_clerk', RECEIVER), () => json(201, posted));
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Receive stock' }));
+    await scan('8960000000017');
+    const line = await screen.findByRole('group', { name: 'Line: Whole milk' });
+    await scan('8960000000017');
+    await waitFor(() => {
+      expect(within(line).getByText('2 × 1 L carton = 2,000 ml')).toBeTruthy();
+    });
+    expect(screen.getAllByRole('group', { name: /^Line:/ })).toHaveLength(1);
+    fireEvent.change(within(line).getByLabelText('Line cost for Whole milk (Rs)'), {
+      target: { value: '550' },
+    });
+    expect(within(line).getByText('Unit cost: Rs 0.2750 / ml')).toBeTruthy();
+    const post = screen.getByRole<HTMLButtonElement>('button', { name: 'Post receipt' });
+    expect(post.disabled).toBe(true); // expiry still missing
+    fireEvent.change(within(line).getByLabelText('Expiry date for Whole milk'), {
+      target: { value: '2099-11-02' },
+    });
+    fireEvent.change(within(line).getByLabelText('Lot for Whole milk (optional)'), {
+      target: { value: 'L7' },
+    });
+    fireEvent.change(screen.getByLabelText('Supplier (optional)'), { target: { value: '3' } });
+    expect(screen.getByText('Receipt total: Rs 550')).toBeTruthy();
+    fireEvent.click(post);
+    expect(await screen.findByRole('heading', { name: 'Posted · GRN-2026-00042' })).toBeTruthy();
+    expect(screen.getByRole('row', { name: /Whole milk 2,000 ml 4,400 ml/ })).toBeTruthy();
+    expect(calls.find((c) => c.method === 'POST')).toMatchObject({
+      url: '/api/staff/v1/purchase-receipts',
+      body: {
+        supplierId: '3',
+        paidNow: false,
+        startStockControl: [],
+        lines: [
+          {
+            itemId: '7',
+            packSizeId: '70',
+            packQty: '2',
+            lineCost: '550',
+            lotCode: 'L7',
+            expiryDate: '2099-11-02',
+          },
+        ],
+      },
+    });
+  });
+
+  it('asks to confirm an empty shelf before receiving an item not yet counted (D-29)', async () => {
+    const calls = serve(meWith('inventory_clerk', RECEIVER), () =>
+      json(201, { receiptId: '1', receiptNo: 'GRN-2026-00043', totalCost: '7000.00', lines: [] }),
+    );
+    renderInventory();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Receive stock' }));
+    await scan('cup');
+    fireEvent.click(await screen.findByRole('button', { name: /Add Cup 12 oz/ }));
+    const line = await screen.findByRole('group', { name: 'Line: Cup 12 oz' });
+    fireEvent.change(within(line).getByLabelText('Quantity of Cup 12 oz'), {
+      target: { value: '200' },
+    });
+    fireEvent.change(within(line).getByLabelText('Line cost for Cup 12 oz (Rs)'), {
+      target: { value: '7000' },
+    });
+    expect(within(line).getByText('Not counted yet: confirm the shelf was empty')).toBeTruthy();
+    const post = screen.getByRole<HTMLButtonElement>('button', { name: 'Post receipt' });
+    expect(post.disabled).toBe(true);
+    fireEvent.click(
+      within(line).getByLabelText(
+        'The shelf had no Cup 12 oz: start counting it from this receipt',
+      ),
+    );
+    fireEvent.click(post);
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({
+        startStockControl: ['8'],
+        lines: [{ itemId: '8', qty: '200', uom: 'pcs', lineCost: '7000' }],
+      });
+    });
+  });
+
+  it('offers no Receive stock tab without inventory.receive', async () => {
+    serve(meWith('manager', ['inventory.read']));
+    renderInventory();
+    await screen.findByRole('row', { name: /Whole milk/ });
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Items',
+      'Receipts',
+      'Suppliers',
+    ]);
   });
 });

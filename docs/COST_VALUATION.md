@@ -26,6 +26,8 @@ movement: qty_delta = +q, unit_cost, value_delta = +line_cost
 
 Opening balance: the clerk enters quantity and **unit cost** (or total value) per item/lot. It's posted as an `opening` movement with the same formulas.
 
+**Reversing a receipt** (added in Phase 4 step 4.2; allowed only while its quantity is still available): when nothing else has moved the item since the receipt, the reversal takes out exactly `q` and `line_cost` and restores `L` to its value before the receipt, so the item is exactly as it was. Otherwise `q` leaves like an issue (§4) at the current average, flagged `at_average`: the receipt's cost stays blended into what remains, and value can never go negative. Either way it is one `reversal` movement per line pointing at the receipt's movement.
+
 ## 4. Issues (consumption, waste, negative count adjustment, supplier return)
 
 ```text

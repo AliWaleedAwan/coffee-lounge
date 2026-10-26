@@ -11,6 +11,7 @@ import { floorRoutes } from './modules/floor/index.ts';
 import { operationsRoutes } from './modules/operations/index.ts';
 import { orderRoutes } from './modules/orders/index.ts';
 import { printingRoutes } from './modules/printing/index.ts';
+import { purchasingRoutes } from './modules/purchasing/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -54,4 +55,5 @@ export async function registerStaffRoutes(
   await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await deliveryRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await stockRoutes(app, { pool: deps.pool });
+  await purchasingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
 }

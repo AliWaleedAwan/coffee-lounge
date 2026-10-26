@@ -6,7 +6,7 @@
  * value, reservations, movements and line costs always change together or not at all.
  * Quantities are base units (g, ml, pcs) as Decimals.
  */
-import { Decimal } from '@cl/shared';
+import { Decimal, unitCostOf } from '@cl/shared';
 import { writeAudit, type AuditContext } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
@@ -76,7 +76,7 @@ async function saveBalance(tx: Tx, b: LockedBalance): Promise<void> {
 
 interface MovementInput {
   itemId: string;
-  type: 'opening' | 'consumption' | 'waste' | 'count_adjustment';
+  type: 'opening' | 'receipt' | 'reversal' | 'consumption' | 'waste' | 'count_adjustment';
   qtyDelta: Decimal;
   unitCost: Decimal | null;
   valueDelta: Decimal;
@@ -86,14 +86,15 @@ interface MovementInput {
   reasonCode?: string;
   flags?: string[];
   note?: string;
+  reversesMovementId?: string;
 }
 
 async function insertMovement(tx: Tx, ctx: StockContext, m: MovementInput): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
     `INSERT INTO cl.stock_movements
        (item_id, movement_type, qty_delta, unit_cost, value_delta, source_type, source_id, source_key,
-        reason_code, flags, actor_user_id, business_date, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id::text`,
+        reason_code, flags, actor_user_id, business_date, note, reverses_movement_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id::text`,
     [
       m.itemId,
       m.type,
@@ -108,6 +109,7 @@ async function insertMovement(tx: Tx, ctx: StockContext, m: MovementInput): Prom
       ctx.actorUserId,
       ctx.businessDate,
       m.note ?? null,
+      m.reversesMovementId ?? null,
     ],
   );
   const id = rows[0]?.id;
@@ -259,6 +261,186 @@ export async function postOpeningBalance(
   });
   await evaluateAlerts(tx, b);
   await announce(tx, [input.itemId]);
+}
+
+// ---------------------------------------------------------------- purchase receipts
+
+export interface ReceiptLineStock {
+  itemId: string;
+  /** Base units, > 0. */
+  qty: Decimal;
+  /** What was paid for the line (PKR, 2 dp), ≥ 0. */
+  lineCost: Decimal;
+  /** The purchase receipt line. */
+  sourceId: string;
+}
+
+/**
+ * Stock in from a purchase receipt (COST_VALUATION.md §3): per line, unit cost = line
+ * cost ÷ quantity to 8 dp, Q + q, V + line cost, L = unit cost; one `receipt` movement
+ * each. Balances are locked once, in ascending item id, before anything is written.
+ * `startStockControl` lists items that had no opening count and start from this receipt
+ * (their shelf was empty, D-29). Returns the movement id per line.
+ */
+export async function receiveStock(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly ReceiptLineStock[],
+  startStockControl: ReadonlySet<string> = new Set(),
+): Promise<Map<string, string>> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const { rows: items } = await tx.query<{
+    id: string;
+    name: string;
+    stock_control_active: boolean;
+    archived: boolean;
+  }>(
+    `SELECT id::text, name, stock_control_active, archived_at IS NOT NULL AS archived
+       FROM cl.inventory_items WHERE id = ANY($1::bigint[]) ORDER BY inventory_items.id FOR UPDATE`,
+    [itemIds],
+  );
+  for (const item of items) {
+    if (item.archived) throw new AppError('VALIDATION_FAILED', `${item.name} is archived`);
+    if (!item.stock_control_active && !startStockControl.has(item.id)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `${item.name} is not counted yet: confirm its shelf was empty to start stock control ` +
+          'from this receipt, or post its opening count first',
+        { itemId: item.id },
+      );
+    }
+  }
+  const movements = new Map<string, string>();
+  for (const line of lines) {
+    const b = balances.get(line.itemId);
+    if (!b) continue;
+    if (line.qty.lessThanOrEqualTo(0) || line.lineCost.isNegative()) {
+      throw new AppError('VALIDATION_FAILED', 'A receipt line needs a quantity and a cost');
+    }
+    const unitCost = unitCostOf(line.lineCost, line.qty);
+    const movementId = await insertMovement(tx, ctx, {
+      itemId: line.itemId,
+      type: 'receipt',
+      qtyDelta: line.qty,
+      unitCost,
+      valueDelta: line.lineCost,
+      sourceType: 'purchase_receipt_line',
+      sourceId: line.sourceId,
+      sourceKey: `receipt:line:${line.sourceId}`,
+    });
+    movements.set(line.sourceId, movementId);
+    b.onHand = b.onHand.plus(line.qty);
+    b.value = b.value.plus(line.lineCost);
+    b.lastUnitCost = unitCost;
+  }
+  const started = items.filter((i) => !i.stock_control_active).map((i) => i.id);
+  if (started.length > 0) {
+    await tx.query(
+      'UPDATE cl.inventory_items SET stock_control_active = true WHERE id = ANY($1::bigint[])',
+      [started],
+    );
+  }
+  for (const b of balances.values()) {
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+  }
+  await announce(tx, itemIds);
+  return movements;
+}
+
+export interface ReceiptLineReversal extends ReceiptLineStock {
+  /** The line's `receipt` movement. */
+  movementId: string;
+}
+
+/**
+ * Takes a whole receipt back out (RECIPE_INVENTORY.md §7 "Corrections"), only while its
+ * stock is still available: what is reserved for accepted orders stays covered. When
+ * nothing else has moved an item since the receipt, the item returns exactly to its
+ * quantity, value and last cost from before the receipt; otherwise the quantity leaves at
+ * the current average like any issue (COST_VALUATION.md §4), so value never goes negative.
+ * One `reversal` movement per line.
+ */
+export async function reverseReceiptStock(
+  tx: Tx,
+  ctx: StockContext,
+  lines: readonly ReceiptLineReversal[],
+): Promise<void> {
+  const itemIds = [...new Set(lines.map((l) => l.itemId))];
+  const balances = await lockBalances(tx, itemIds);
+  const { rows: names } = await tx.query<{ id: string; name: string; base_uom: string }>(
+    'SELECT id::text, name, base_uom FROM cl.inventory_items WHERE id = ANY($1::bigint[])',
+    [itemIds],
+  );
+  const name = new Map(names.map((n) => [n.id, n]));
+  for (const itemId of itemIds) {
+    const b = balances.get(itemId);
+    const q = lines
+      .filter((l) => l.itemId === itemId)
+      .reduce((sum, l) => sum.plus(l.qty), new Decimal(0));
+    if (!b) continue;
+    const available = b.onHand.minus(b.reserved);
+    if (available.lessThan(q)) {
+      const item = name.get(itemId);
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `Only ${available.toString()} ${item?.base_uom ?? ''} of ${item?.name ?? 'an item'} is ` +
+          `still available, and this receipt brought in ${q.toString()}. ` +
+          'Record a waste or a supplier return instead.',
+      );
+    }
+  }
+  for (const itemId of itemIds) {
+    const b = balances.get(itemId);
+    if (!b) continue;
+    const own = lines.filter((l) => l.itemId === itemId);
+    const ownIds = own.map((l) => l.movementId);
+    const { rows } = await tx.query<{ later: boolean; previous_cost: string | null }>(
+      `SELECT EXISTS (SELECT 1 FROM cl.stock_movements
+                       WHERE item_id = $1 AND id > $2 AND NOT (id = ANY($3::bigint[]))) AS later,
+              (SELECT unit_cost::text FROM cl.stock_movements
+                WHERE item_id = $1 AND id < $2 AND unit_cost IS NOT NULL
+                ORDER BY stock_movements.id DESC LIMIT 1) AS previous_cost`,
+      [itemId, minId(ownIds), ownIds],
+    );
+    const exact = rows[0]?.later === false;
+    for (const line of own) {
+      let value: Decimal;
+      let unitCost: Decimal | null;
+      if (exact) {
+        value = line.lineCost;
+        unitCost = unitCostOf(line.lineCost, line.qty);
+        b.onHand = b.onHand.minus(line.qty);
+        b.value = b.value.minus(value);
+      } else {
+        ({ value, unitCost } = issue(b, line.qty));
+      }
+      await insertMovement(tx, ctx, {
+        itemId,
+        type: 'reversal',
+        qtyDelta: line.qty.negated(),
+        unitCost,
+        valueDelta: value.negated(),
+        sourceType: 'purchase_receipt_line',
+        sourceId: line.sourceId,
+        sourceKey: `receipt:reverse:line:${line.sourceId}`,
+        reversesMovementId: line.movementId,
+        ...(exact ? {} : { flags: ['at_average'] }),
+      });
+    }
+    if (exact) {
+      const previous = rows[0]?.previous_cost;
+      b.lastUnitCost = previous ? new Decimal(previous) : null;
+    }
+    await saveBalance(tx, b);
+    await evaluateAlerts(tx, b);
+  }
+  await announce(tx, itemIds);
+}
+
+function minId(ids: readonly string[]): string {
+  return ids.reduce((a, b) => (BigInt(a) <= BigInt(b) ? a : b));
 }
 
 // ---------------------------------------------------------------- reservations
