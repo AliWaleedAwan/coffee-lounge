@@ -141,7 +141,7 @@ describe('recipe explosion (RECIPE_INVENTORY.md §4.4)', () => {
   const plain = (m: Map<string, Decimal>) =>
     Object.fromEntries([...m].map(([k, v]) => [k, v.toFixed(4)]));
 
-  it('matches the worked example: takeaway, oat milk and an extra shot, two cups', () => {
+  it('matches the worked example: takeaway, oat milk and an extra shot, two cups (AT-64)', () => {
     const perUnit = explodeRecipe(cappuccino, rules, 'takeaway', ['oat', 'shot']);
     expect(plain(perUnit)).toEqual({
       beans: '27.0000',

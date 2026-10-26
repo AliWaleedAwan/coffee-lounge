@@ -53,6 +53,7 @@ Recommended: lots + expiry for milk, cream, bakery and other perishables; neithe
 - Active versions are frozen. Editing creates a new draft (copied from the active one). Activating the draft retires the previous version **immediately for future acceptances**.
 - Rounds accepted earlier keep the version they were accepted with (`order_line_components` snapshot). Pending rounds use whichever version is active **at acceptance**.
 - Activation requires `recipes.manage`, is audited, and checks §2's rule (all ingredients stock-controlled).
+- As built (Phase 4 step 4.8): a size has one draft at a time; saving replaces the draft's whole ingredient list; quantities may be entered in any unit of the ingredient's dimension and the waste factor as a percentage. Rules added by a choice must add or replace in counted ingredients, and a replacement keeps the same kind of unit. The editor's preview uses the same explosion as acceptance.
 
 ### 4.2 Components
 Each component: ingredient, quantity in base unit, optional **waste factor**, and which order types it applies to (e.g., cup + lid only for takeaway and delivery).

@@ -78,7 +78,7 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 22; i++) {
+for (let i = 1; i <= 24; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },

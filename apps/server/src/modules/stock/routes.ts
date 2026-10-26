@@ -17,6 +17,8 @@ import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { authOf, consumeStepUp, factsOf } from '../identity/index.ts';
 import * as alerts from './alerts.ts';
 import * as counts from './counts.ts';
+import { ORDER_TYPES } from './math.ts';
+import * as recipes from './recipe-editor.ts';
 import * as inventory from './inventory.ts';
 import { WASTE_REASONS } from './ledger.ts';
 import { listWaste, recordWaste } from './waste.ts';
@@ -447,5 +449,128 @@ export async function stockRoutes(
       request.query,
     );
     return { items: await alerts.movementHistory(pool, idParam(request), query, costs(request)) };
+  });
+
+  // ------------------------------------------------------------ recipes (step 4.8)
+  const recipeRead = { config: { permission: 'recipes.read' } };
+  const recipeManage = { config: { permission: 'recipes.manage' } };
+  const userWho = (request: FastifyRequest) => {
+    const auth = authOf(request);
+    return {
+      ...whoOf(request),
+      actor: { kind: 'user' as const, userId: auth.user.id, deviceId: auth.device.id },
+    };
+  };
+
+  app.get('/recipes', recipeRead, async () => ({ items: await recipes.recipeOverview(pool) }));
+
+  app.get('/recipes/variants/:id', recipeRead, async (request) =>
+    recipes.variantRecipes(pool, idParam(request)),
+  );
+
+  app.post('/recipes/variants/:id/draft', recipeManage, async (request, reply) => {
+    parseInput(z.object({}).strict(), request.body);
+    const draft = await withTransaction(pool, (tx) =>
+      recipes.startDraft(tx, userWho(request), idParam(request)),
+    );
+    return reply.code(201).send(draft);
+  });
+
+  app.put('/recipes/versions/:id', recipeManage, async (request) => {
+    const body = parseInput(
+      z
+        .object({
+          expectedVersion,
+          prepInstructions: z.string().trim().max(1000).nullable().optional(),
+          components: z
+            .array(
+              z
+                .object({
+                  itemId: id,
+                  qty: quantity,
+                  uom: z.enum(UNIT_CODES).optional(),
+                  wastePercent: z
+                    .string()
+                    .regex(/^\d{1,2}(\.\d{1,2})?$/, 'a percentage such as 5')
+                    .optional(),
+                  forDineIn: z.boolean(),
+                  forTakeaway: z.boolean(),
+                  forDelivery: z.boolean(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(40),
+        })
+        .strict(),
+      request.body,
+    );
+    return withTransaction(pool, (tx) =>
+      recipes.saveDraft(tx, userWho(request), idParam(request), body),
+    );
+  });
+
+  app.post('/recipes/versions/:id/activate', recipeManage, async (request) => {
+    parseInput(z.object({}).strict(), request.body);
+    return withTransaction(pool, (tx) =>
+      recipes.activateDraft(tx, userWho(request), idParam(request)),
+    );
+  });
+
+  app.post('/recipes/variants/:id/stock-mode', recipeManage, async (request) => {
+    const body = parseInput(
+      z.object({ mode: z.enum(['untracked', 'recipe']) }).strict(),
+      request.body,
+    );
+    return withTransaction(pool, (tx) =>
+      recipes.changeStockMode(tx, userWho(request), idParam(request), body.mode),
+    );
+  });
+
+  app.post('/recipes/rules', recipeManage, async (request, reply) => {
+    const body = parseInput(
+      z
+        .object({
+          optionId: id,
+          variantId: id.optional(),
+          action: z.enum(['add', 'remove', 'replace', 'scale']),
+          itemId: id,
+          replacementItemId: id.optional(),
+          qty: quantity.optional(),
+          uom: z.enum(UNIT_CODES).optional(),
+          scaleFactor: z
+            .string()
+            .regex(/^\d{1,4}(\.\d{1,4})?$/, 'a factor such as 1.5')
+            .optional(),
+        })
+        .strict(),
+      request.body,
+    );
+    const created = await withTransaction(pool, (tx) =>
+      recipes.addRule(tx, userWho(request), body),
+    );
+    return reply.code(201).send(created);
+  });
+
+  app.post('/recipes/rules/:id/retire', recipeManage, async (request) => {
+    parseInput(z.object({}).strict(), request.body);
+    return withTransaction(pool, (tx) =>
+      recipes.retireRule(tx, userWho(request), idParam(request)),
+    );
+  });
+
+  app.post('/recipes/preview', recipeRead, async (request) => {
+    const body = parseInput(
+      z
+        .object({
+          variantId: id,
+          orderType: z.enum(ORDER_TYPES),
+          optionIds: z.array(id).max(20).default([]),
+          draft: z.boolean().default(false),
+        })
+        .strict(),
+      request.body,
+    );
+    return recipes.previewRecipe(pool, { ...body, at: now() });
   });
 }

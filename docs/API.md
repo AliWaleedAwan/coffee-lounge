@@ -227,7 +227,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory (Phase 4 steps 4.1–4.7): items, suppliers, receiving, waste, counts, cost corrections, alerts
+### 5.9 Inventory and recipes (Phase 4 steps 4.1–4.8): items, suppliers, receiving, waste, counts, cost corrections, alerts, recipes
 
 Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing, returning and correcting a receipt, recording waste, and starting, submitting, approving, sending back or cancelling a count do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
@@ -258,6 +258,14 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /inventory/alerts/{alertId}/acknowledge` | `inventory.read` | Noted as seen; it stays listed until closed |
 | `POST /inventory/alerts/{alertId}/close` | `inventory.read` (+ rules) | `{note}`. Only alerts that never clear by themselves: `balance_mismatch` (the owner only, after investigating; AT-94), `found_stock` and an `expired` lot used in an order (anyone with `inventory.count`). Every other kind closes with the stock (`400`) |
 | `GET /inventory/items/{itemId}/movements?from=&to=&type=` | `inventory.read` | The item's movements, newest first (300): type, change, on hand after, source (GRN, count, order, waste, opening), reason, flags, note, who, lot shares; value and unit cost only with `inventory.cost_view` |
+| `GET /recipes` | `recipes.read` | Step 4.8: every menu item and size with `stockMode` (`untracked`/`recipe`), active and draft version numbers |
+| `GET /recipes/variants/{variantId}` | `recipes.read` | A size's versions (draft, active, retired) with components (ingredient, base quantity, waste factor, order types, whether counted), the modifier rules in force for it, and the item's choices |
+| `POST /recipes/variants/{variantId}/draft` | `recipes.manage` | The size's draft: the existing one, or a new one copied from the active recipe (one draft at a time) |
+| `PUT /recipes/versions/{versionId}` | `recipes.manage` | `{expectedVersion, prepInstructions?, components: [{itemId, qty, uom?, wastePercent?, forDineIn, forTakeaway, forDelivery}]}` replaces a draft's components; each ingredient once, in any unit of its dimension, waste 0–under 100 %, at least one order type |
+| `POST /recipes/versions/{versionId}/activate` | `recipes.manage` | Activates the draft; the active version retires for future acceptances, earlier sales keep theirs (AT-19). Refused, naming them, while an ingredient is not counted (AT-63). Ingredients are locked for share so one cannot be archived meanwhile |
+| `POST /recipes/variants/{variantId}/stock-mode` | `recipes.manage` | `{mode}`: `recipe` needs an active recipe; `untracked` sells with no stock (D-29, AT-61) |
+| `POST /recipes/rules`, `POST /recipes/rules/{ruleId}/retire` | `recipes.manage` | A modifier recipe rule from now on: `{optionId, variantId?, action: add \| remove \| replace \| scale, itemId, replacementItemId?, qty?, uom?, scaleFactor?}` (added or replacing ingredients must be counted; a replacement keeps the same kind of unit); retiring ends it from now, sales already made keep its effect |
+| `POST /recipes/preview` | `recipes.read` | `{variantId, orderType, optionIds, draft?}`: what one unit takes, exploded exactly as acceptance does (AT-64) |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |
