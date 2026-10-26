@@ -440,7 +440,7 @@ export async function resolveFailed(
     if (new Decimal(invoice.paid_total).gt(0)) {
       throw new AppError(
         'VALIDATION_FAILED',
-        'Part of this bill is paid: settle it at the counter first; refunds arrive in a later phase.',
+        'Part of this bill is paid: settle it at the counter first, then cancel the delivery and refund it.',
       );
     }
     if (invoice.status === 'locked') await reopenBill(tx, ctx, auth, invoice.id, {});
@@ -484,6 +484,8 @@ export async function deliveryBoard(db: Queryable) {
     failure_reason: string | null;
     refund_due: string;
     invoice_status: string;
+    invoice_id: string;
+    refunded: string;
     total: string;
     paid_total: string;
     items: number;
@@ -493,7 +495,9 @@ export async function deliveryBoard(db: Queryable) {
     `SELECT d.id::text, s.id::text AS session_id, s.session_no, d.status, d.channel, d.payment_mode,
             s.customer_name, s.customer_phone, d.address, d.landmark, d.rider_id::text, r.display_name AS rider,
             d.attempt, d.dispatched_at, d.delivered_at, d.failure_reason, d.refund_due::text,
-            i.status AS invoice_status, i.total::text, i.paid_total::text,
+            i.status AS invoice_status, i.id::text AS invoice_id, i.total::text, i.paid_total::text,
+            (SELECT coalesce(sum(f.amount), 0)::numeric(14,2)::text FROM cl.refunds f
+              WHERE f.invoice_id = i.id AND f.kind = 'refund') AS refunded,
             (SELECT coalesce(sum(l.qty - l.qty_cancelled_unprepared - l.qty_cancelled_prepared), 0)::int
                FROM cl.order_lines l JOIN cl.order_rounds o ON o.id = l.round_id
               WHERE l.session_id = s.id AND o.status = 'accepted') AS items,
@@ -528,6 +532,8 @@ export async function deliveryBoard(db: Queryable) {
       deliveredAt: d.delivered_at?.toISOString() ?? null,
       failureReason: d.failure_reason,
       refundDue: d.refund_due,
+      refunded: d.refunded,
+      invoiceId: d.invoice_id,
       invoiceStatus: d.invoice_status,
       // An open bill is worked out when the food leaves; until then the board shows items.
       total: d.invoice_status === 'open' ? null : d.total,

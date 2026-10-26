@@ -111,6 +111,7 @@ beforeAll(async () => {
   owner = await fx.loggedIn(OWNER.username, OWNER.password);
   await fx.addUser('dl-cash', ['cashier']);
   await fx.addUser('dl-mgr', ['manager']);
+  await fx.addUser('dl-owner', ['owner'], { pin: '1357' });
   cashier = await fx.loggedIn('dl-cash');
   manager = await fx.loggedIn('dl-mgr');
   const cat = await staff(owner, 'POST', '/menu/categories', { name: 'Delivery tests' });
@@ -416,6 +417,36 @@ describe('a failed delivery (D3–D6)', () => {
       [d.deliveryId],
     );
     expect(open).toEqual([{ kind: 'refund_due' }]);
+
+    // P5-5: the refund to the card it was paid with closes the "refund due".
+    const { rows: paid } = await fx.pool.query<{ id: string }>(
+      'SELECT id::text FROM cl.payments WHERE invoice_id = $1',
+      [d.invoiceId],
+    );
+    const approval = await staff(manager, 'POST', '/auth/step-up', {
+      action: 'refund.approve',
+      entityType: 'invoice',
+      entityId: d.invoiceId,
+      approverUsername: 'dl-owner',
+      approverPin: '1357',
+      reason: 'Delivery cancelled',
+    });
+    expect(approval.status, JSON.stringify(approval.body)).toBe(201);
+    const refund = await staff(manager, 'POST', `/invoices/${d.invoiceId}/refunds`, {
+      kind: 'refund',
+      paymentId: paid[0]?.id,
+      amount: '800',
+      reason: 'Delivery cancelled, customer unreachable',
+      reference: 'RV1',
+      stepUpId: approval.body['stepUpId'],
+    });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    expect(refund.body).toMatchObject({ method: 'card_manual', amount: '800.00' });
+    const { rows: after } = await fx.pool.query(
+      `SELECT kind FROM cl.operational_alerts WHERE entity_type = 'delivery_order' AND entity_id = $1 AND state = 'open'`,
+      [d.deliveryId],
+    );
+    expect(after).toEqual([]);
   });
 
   it('COD cancelled: the unpaid bill is reopened and the visit closed with nothing to pay', async () => {

@@ -1,0 +1,18 @@
+COFFEE LOUNGE
+12 Main Boulevard, Gulberg · 0300 0000000
+------------------------------------------------
+REFUND                             RF-2026-00007
+Invoice: INV-2026-000123               Table: T5
+19 Oct 2026 14:02
+------------------------------------------------
+1  Cappuccino Regular                     650.00
+------------------------------------------------
+REFUNDED                               Rs 650.00
+Paid back by                     Card ref 482910
+Reason: Wrong milk, guest did not drink it
+Asked by                                     Ali
+Approved by                                Owner
+------------------------------------------------
+
+Customer signature: ____________________
+================================================

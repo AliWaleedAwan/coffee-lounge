@@ -219,6 +219,86 @@ export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
   return doc.cut(o.canCut).bytes();
 }
 
+// ---------------------------------------------------------------- refund slip (step 5.2)
+
+export interface RefundSlipData {
+  shop: { name: string; addressLine: string | null; phone: string | null };
+  refundNo: string;
+  kind: 'refund' | 'method_correction';
+  invoiceNo: string;
+  where: string;
+  at: Date;
+  lines: { qty: number; name: string; amount: string }[];
+  amount: string;
+  /** How the money went back (refund), or how it was really taken (correction). */
+  method: string;
+  /** Correction only: what the payment showed before. */
+  previousMethod: string | null;
+  reason: string;
+  requestedBy: string;
+  approvedBy: string;
+}
+
+/**
+ * Printed when a refund or a payment-method correction is recorded (PRINTING_HARDWARE.md
+ * §4): the refund number, the original invoice, lines and amount, method and approver.
+ */
+export function renderRefundSlip(r: RefundSlipData, o: PrintOptions): Buffer {
+  const w = o.width;
+  const doc = new EscPos();
+  reprintBanner(doc, o.copyNo);
+  doc
+    .align('center')
+    .bold(true)
+    .size({ width: true })
+    .line(r.shop.name.toUpperCase())
+    .size({})
+    .bold(false);
+  const contact = [r.shop.addressLine, r.shop.phone]
+    .filter((x): x is string => Boolean(x))
+    .join('  ·  ');
+  for (const text of contact ? wrap(contact, w) : []) doc.line(text);
+  doc.align('left').line(rule(w));
+  doc
+    .bold(true)
+    .line(twoCols(r.kind === 'refund' ? 'REFUND' : 'PAYMENT CORRECTED', r.refundNo, w))
+    .bold(false);
+  doc.line(twoCols(`Invoice: ${r.invoiceNo}`, r.where, w));
+  doc.line(shopTime(r.at, o.timeZone));
+  doc.line(rule(w));
+  if (r.kind === 'refund') {
+    for (const l of r.lines) {
+      const price = amount(l.amount);
+      const names = wrap(l.name, w - price.length - 4);
+      doc.line(twoCols(`${String(l.qty).padEnd(3)}${names[0] ?? ''}`, price, w));
+      for (const more of names.slice(1)) doc.line(`   ${more}`);
+    }
+    if (r.lines.length > 0) doc.line(rule(w));
+    doc
+      .bold(true)
+      .line(twoCols('REFUNDED', `Rs ${amount(r.amount)}`, w))
+      .bold(false);
+    doc.line(twoCols('Paid back by', r.method, w));
+  } else {
+    doc.line(twoCols('Payment', `Rs ${amount(r.amount)}`, w));
+    doc.line(twoCols('Recorded as', r.previousMethod ?? '', w));
+    doc
+      .bold(true)
+      .line(twoCols('Taken by', r.method, w))
+      .bold(false);
+  }
+  for (const text of wrap(`Reason: ${r.reason}`, w)) doc.line(text);
+  doc.line(twoCols('Asked by', r.requestedBy, w));
+  doc.line(twoCols('Approved by', r.approvedBy, w));
+  if (r.kind === 'refund') {
+    doc.line(rule(w));
+    doc.line('');
+    doc.line('Customer signature: ____________________');
+  }
+  doc.line(rule(w, '='));
+  return doc.cut(o.canCut).bytes();
+}
+
 // ---------------------------------------------------------------- cash shift report
 
 export interface ShiftReportData {

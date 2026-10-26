@@ -154,7 +154,10 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` (a comp also `discounts.comp`) | — | Before settlement only, with a reason |
 | `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | `{lockVersion, method, amount, tendered?, provider?, reference?, confirmed?}`: cash (`tendered`, change worked out; needs the open shift) / card (`reference` = approval code, optional) / transfer (`provider`, `reference`, `confirmed: true`; `confirmed_by` = caller). A reference that looks like a card number is refused. The Idempotency-Key is stored as the payment's key. Returns `settled`, `invoiceNo`, `change`, `receiptQueued` |
 | `POST /invoices/{invoiceId}/receipt/reprint` **[I]** | `receipts.reprint` | — | Labelled reprint |
-| `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` | P2 | Full/line refund or method correction (PROVISIONAL D-13) |
+| `GET /refunds/bills?q=&date=` | `payments.refund_request` | — | Settled bills to refund from (step 5.2), newest first (50): by invoice or order number, table or guest name, or business date; with `total` and `refunded` |
+| `GET /invoices/{invoiceId}/refunds` | `payments.refund_request` | — | The bill for refunding: `invoice` (paid, refunded, business date, where), `lines` (qty, net, `refundedQty`, `refundedAmount`), `payments` (as taken and as corrected: `method`, `provider`, `reference`, `refunded`, `refundable`, `inOpenShift`), `refunds` and corrections with requester and approver, `refundDue` of a cancelled prepaid delivery |
+| `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` (D-13) | P2 | Settled bills only (`409 STALE_STATE`); the invoice never changes. **Refund** `{kind: 'refund', paymentId, amount, reason, reference?, lines?: [{invoiceLineId, qty, amount}], stepUpId}` (step-up `refund.approve`): back by that payment's method as it now stands (a transfer needs the transaction ID; a card number → `422 CARD_NUMBER_NOT_ALLOWED`); never more than the payment less its refunds, nor more pieces or money than a line had (`422 REFUND_EXCEEDS_PAID` with `refundable` / `refundableQty`); the lines never add up to more than the amount. Cash is paid from the open shift (`422 NO_OPEN_CASH_SHIFT`) and lowers its expected cash. **Method correction** `{kind: 'method_correction', paymentId, method, provider?, reference?, reason, stepUpId}` (step-up `payment.correct`): the whole payment, only before any refund of it; to or from cash only while the payment's own shift is open. Numbered `RF-YYYY-NNNNN` (gapless per year), audited `payment.refund` / `payment.correct` with reason and approver, a refund slip printed; a refund that covers a cancelled prepaid delivery's refund due closes its alert (P5-5). Returns `{refundId, refundNo, kind, amount, method, provider, businessDate, slipQueued}` (201) |
+| `POST /refunds/{refundId}/slip/reprint` **[I]** | `payments.refund_request` | — | Labelled reprint of the refund slip |
 | `GET /cash-shifts/current` | `cash_shifts.operate` | — | The open shift on the counter till with its figures: float, cash sales, refunds, paid-in/out, expected cash, card and transfer totals, movements |
 | `GET /cash-shifts`, `GET /cash-shifts/{shiftId}` | `cash_shifts.operate` | — | Recent shifts, closed ones waiting for approval first; a cashier sees and opens only their own |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
@@ -279,7 +282,7 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 
 ### 5.10 Ledger (Phase 5 step 5.1)
 
-Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the database in the same transaction as its source: a payment, cash paid in or out of a shift, a receipt paid now (and its reversal), a supplier refund. Entries are never edited (D-31): a manual entry is corrected by reversing it. Numbers `LE-YYYY-NNNNNN` follow the entry id (unique, not gapless).
+Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the database in the same transaction as its source: a payment, cash paid in or out of a shift, a receipt paid now (and its reversal), a supplier refund, a refund to a guest (step 5.2), and for a payment-method correction the reversal of the payment's last entry plus a new one by the right method. Entries are never edited (D-31): a manual entry is corrected by reversing it. Numbers `LE-YYYY-NNNNNN` follow the entry id (unique, not gapless).
 
 | Endpoint | Permission | Notes |
 |---|---|---|
@@ -372,6 +375,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `count.changed` | Stock count started, submitted, posted, sent back or cancelled | `inventory` |
 | `alert.changed` | Inventory alert noted as seen or closed by a person | `alerts`, `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts, ledger mismatches | `alerts` |
+| `refund.recorded` | Refund or payment-method correction | `cashier`, `ledger`, `alerts` |
 | `ledger.changed` | Manual ledger entry or reversal (automatic entries arrive with their source's event) | `ledger` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 

@@ -17,6 +17,7 @@ export interface InboxItem {
     | 'shift_variance'
     | 'failed_delivery'
     | 'refund_due'
+    | 'ledger_mismatch'
     | 'uncollected_item'
     | 'stale_session'
     | 'printer';
@@ -146,8 +147,11 @@ async function inbox(db: Queryable, now: Date, escalation: number): Promise<Inbo
     detail: Record<string, unknown> | null;
     created_at: Date;
     entity_id: string;
+    invoice_id: string | null;
   }>(
-    `SELECT a.id::text, a.kind, a.state, a.detail, a.created_at, a.entity_id::text
+    `SELECT a.id::text, a.kind, a.state, a.detail, a.created_at, a.entity_id::text,
+            (SELECT i.id::text FROM cl.delivery_orders d JOIN cl.invoices i ON i.session_id = d.session_id
+              WHERE a.entity_type = 'delivery_order' AND d.id = a.entity_id) AS invoice_id
        FROM cl.operational_alerts a WHERE a.state <> 'resolved' ORDER BY a.created_at, a.id`,
   );
   for (const a of alerts) {
@@ -157,13 +161,18 @@ async function inbox(db: Queryable, now: Date, escalation: number): Promise<Inbo
       failed_delivery: { title: 'Delivery failed', detail: text('reason'), link: '/deliveries' },
       refund_due: {
         title: `Refund due: Rs ${text('amount')}`,
-        detail: `${text('sessionNo')}: recorded with refunds (a later phase)`,
-        link: '/deliveries',
+        detail: `${text('sessionNo')}: a cancelled prepaid delivery; refund it to the guest`,
+        link: a.invoice_id ? `/counter/refunds?invoice=${a.invoice_id}&full=1` : '/deliveries',
       },
       uncollected_item: {
         title: 'Item waiting for pickup',
         detail: [text('item'), text('where')].filter(Boolean).join(' · '),
         link: '/pickup',
+      },
+      ledger_mismatch: {
+        title: 'Ledger check: an entry does not match',
+        detail: text('problem'),
+        link: '/ledger',
       },
       stale_session: {
         title: `Table open a long time: ${text('sessionNo')}`,

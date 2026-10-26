@@ -80,8 +80,10 @@ export async function readLedger(
               WHEN 'cash_movement' THEN CASE cm.kind WHEN 'paid_in' THEN 'Paid in · ' ELSE 'Paid out · ' END || cm.reason
               WHEN 'purchase_receipt' THEN 'Purchase · ' || COALESCE(pr.receipt_no, 'receipt')
               WHEN 'supplier_return' THEN 'Supplier refund · ' || COALESCE(rr.receipt_no, 'return')
+              WHEN 'refund' THEN CASE rf.kind WHEN 'refund' THEN 'Refund · ' ELSE 'Method corrected · ' END
+                                 || rf.refund_no || ' · ' || COALESCE(ri.invoice_no, 'bill')
               ELSE COALESCE(e.memo, e.source_type) END AS source,
-            CASE WHEN s.id IS NOT NULL THEN '/sessions/' || s.id END AS link,
+            '/counter/refunds?invoice=' || COALESCE(i.id, ri.id) AS link,
             e.memo, orig.entry_no AS "reversesEntryNo", rev.entry_no AS "reversedByEntryNo",
             u.display_name AS "createdBy", e.created_at AS "createdAt",
             e.balance_after::numeric(14,2)::text AS "balanceAfter"
@@ -89,6 +91,8 @@ export async function readLedger(
        LEFT JOIN cl.payments p ON e.source_type = 'payment' AND p.id = e.source_id
        LEFT JOIN cl.invoices i ON i.id = p.invoice_id
        LEFT JOIN cl.dining_sessions s ON s.id = i.session_id
+       LEFT JOIN cl.refunds rf ON e.source_type = 'refund' AND rf.id = e.source_id
+       LEFT JOIN cl.invoices ri ON ri.id = rf.invoice_id
        LEFT JOIN cl.cash_movements cm ON e.source_type = 'cash_movement' AND cm.id = e.source_id
        LEFT JOIN cl.purchase_receipts pr ON e.source_type = 'purchase_receipt' AND pr.id = e.source_id
        LEFT JOIN cl.supplier_returns sr ON e.source_type = 'supplier_return' AND sr.id = e.source_id
@@ -297,12 +301,22 @@ export async function findLedgerMismatches(db: Queryable): Promise<LedgerMismatc
        FROM cl.supplier_returns s LEFT JOIN cl.ledger_entries e ON e.source_key = 'supplier_return:' || s.id
       WHERE s.refund_amount > 0 AND (e.id IS NULL OR e.amount <> s.refund_amount)
      UNION ALL
+     SELECT 'refund', r.id::text,
+            CASE WHEN e.id IS NULL THEN 'no ledger entry' ELSE 'amount ' || e.amount || ' ≠ ' || r.amount END
+       FROM cl.refunds r LEFT JOIN cl.ledger_entries e ON e.source_key = 'refund:' || r.id
+      WHERE e.id IS NULL OR e.amount <> r.amount
+     UNION ALL
+     SELECT 'refund', r.id::text, 'the earlier entry of its payment is not reversed'
+       FROM cl.refunds r LEFT JOIN cl.ledger_entries e ON e.source_key = 'refund:' || r.id || ':reversal'
+      WHERE r.kind = 'method_correction' AND (e.id IS NULL OR e.amount <> r.amount)
+     UNION ALL
      SELECT 'ledger_entry', e.id::text, 'its ' || e.source_type || ' ' || e.source_id || ' does not exist'
        FROM cl.ledger_entries e
       WHERE (e.source_type = 'payment' AND NOT EXISTS (SELECT 1 FROM cl.payments x WHERE x.id = e.source_id))
          OR (e.source_type = 'cash_movement' AND NOT EXISTS (SELECT 1 FROM cl.cash_movements x WHERE x.id = e.source_id))
          OR (e.source_type = 'purchase_receipt' AND NOT EXISTS (SELECT 1 FROM cl.purchase_receipts x WHERE x.id = e.source_id AND x.paid_now))
          OR (e.source_type = 'supplier_return' AND NOT EXISTS (SELECT 1 FROM cl.supplier_returns x WHERE x.id = e.source_id AND x.refund_amount > 0))
+         OR (e.source_type = 'refund' AND NOT EXISTS (SELECT 1 FROM cl.refunds x WHERE x.id = e.source_id))
      ORDER BY 1, 2`,
   );
   return rows;

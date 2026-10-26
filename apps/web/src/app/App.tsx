@@ -13,6 +13,7 @@ import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
 import { LedgerScreen } from '../screens/ledger/LedgerScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
+import { RefundsScreen } from '../screens/counter/RefundsScreen.tsx';
 import { ShiftScreen } from '../screens/counter/ShiftScreen.tsx';
 import { DeliveryScreen } from '../screens/delivery/DeliveryScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
@@ -61,6 +62,8 @@ const FLOOR = AREAS.find((a) => a.id === 'floor');
 const COUNTER = AREAS.find((a) => a.id === 'counter');
 /** Reached from Bills & payments; cashiers, managers and the owner run the till shift. */
 const CASH_SHIFT = COUNTER ? { ...COUNTER, anyOf: ['cash_shifts.operate'] } : null;
+/** Reached from Bills & payments, the delivery board and the inbox (D-13: asking needs payments.refund_request). */
+const REFUNDS = COUNTER ? { ...COUNTER, anyOf: ['payments.refund_request'] } : null;
 /** Reached from the printer banner, not the menu. */
 const PRINT_JOBS = {
   id: 'print-jobs',
@@ -97,6 +100,16 @@ export function AppRoutes() {
             element={
               <AreaPage area={FLOOR}>
                 <SessionScreen />
+              </AreaPage>
+            }
+          />
+        ) : null}
+        {REFUNDS ? (
+          <Route
+            path="/counter/refunds"
+            element={
+              <AreaPage area={REFUNDS}>
+                <RefundsScreen />
               </AreaPage>
             }
           />

@@ -10,11 +10,13 @@ import { describe, expect, it } from 'vitest';
 import {
   renderKitchenTicket,
   renderReceipt,
+  renderRefundSlip,
   renderShiftReport,
   renderTestPage,
   type KitchenTicketData,
   type PrintOptions,
   type ReceiptData,
+  type RefundSlipData,
   type ShiftReportData,
 } from '../../src/modules/printing/documents.ts';
 import { toPrintable, wrap } from '../../src/modules/printing/escpos.ts';
@@ -209,6 +211,52 @@ describe('cash shift report (step 3.8)', () => {
     const text = golden('shift-report', renderShiftReport(shift, options));
     expect(text).toContain('Variance approved by Sara.');
     for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(48);
+  });
+});
+
+const refund: RefundSlipData = {
+  shop: { name: 'Coffee Lounge', addressLine: '12 Main Boulevard, Gulberg', phone: '0300 0000000' },
+  refundNo: 'RF-2026-00007',
+  kind: 'refund',
+  invoiceNo: 'INV-2026-000123',
+  where: 'Table: T5',
+  at: AT,
+  lines: [{ qty: 1, name: 'Cappuccino Regular', amount: '650.00' }],
+  amount: '650.00',
+  method: 'Card ref 482910',
+  previousMethod: null,
+  reason: 'Wrong milk, guest did not drink it',
+  requestedBy: 'Ali',
+  approvedBy: 'Owner',
+};
+
+describe('refund slip (step 5.2)', () => {
+  it('refund number, invoice, lines and amount, method, reason and approver', () => {
+    const text = golden('refund-slip', renderRefundSlip(refund, options));
+    expect(text).toContain('RF-2026-00007');
+    expect(text).toContain('Invoice: INV-2026-000123');
+    for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(48);
+  });
+
+  it('a payment-method correction says what it was and what it is', () => {
+    const text = golden(
+      'refund-slip-correction',
+      renderRefundSlip(
+        {
+          ...refund,
+          refundNo: 'RF-2026-00008',
+          kind: 'method_correction',
+          lines: [],
+          amount: '4995.00',
+          method: 'Card ref 112233',
+          previousMethod: 'Cash',
+          reason: 'Paid by card, recorded as cash by mistake',
+        },
+        options,
+      ),
+    );
+    expect(text).toContain('PAYMENT CORRECTED');
+    expect(text).not.toContain('signature');
   });
 });
 
