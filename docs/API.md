@@ -227,7 +227,7 @@ The OpenAPI file details every endpoint above except the catalog CRUD family, wh
 | `internet` | `online` if a TCP connection to `INTERNET_CHECK_TARGET` (default `1.1.1.1:443`; `off` disables) opens within 2 s. Cached 60 s |
 | `warnings`, `version`, `checkedAt` | Readiness warnings with their text; server version; time of the check |
 
-### 5.9 Inventory and recipes (Phase 4 steps 4.1–4.8): items, suppliers, receiving, waste, counts, cost corrections, alerts, recipes
+### 5.9 Inventory and recipes (Phase 4 steps 4.1–4.9): items, suppliers, receiving, waste, counts, cost corrections, alerts, recipes, import
 
 Item, pack, barcode and supplier edits move no stock, so they need no `Idempotency-Key`; posting, reversing, returning and correcting a receipt, recording waste, and starting, submitting, approving, sending back or cancelling a count do **[I]**. Edits carry `expectedVersion` (`409 STALE_STATE`). Quantities are decimal strings in the item's base unit (`g`, `ml`, `pcs`) with four places. The OpenAPI file covers Phase 3; these endpoints are specified here.
 
@@ -266,6 +266,9 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /recipes/variants/{variantId}/stock-mode` | `recipes.manage` | `{mode}`: `recipe` needs an active recipe; `untracked` sells with no stock (D-29, AT-61) |
 | `POST /recipes/rules`, `POST /recipes/rules/{ruleId}/retire` | `recipes.manage` | A modifier recipe rule from now on: `{optionId, variantId?, action: add \| remove \| replace \| scale, itemId, replacementItemId?, qty?, uom?, scaleFactor?}` (added or replacing ingredients must be counted; a replacement keeps the same kind of unit); retiring ends it from now, sales already made keep its effect |
 | `POST /recipes/preview` | `recipes.read` | `{variantId, orderType, optionIds, draft?}`: what one unit takes, exploded exactly as acceptance does (AT-64) |
+| `GET /imports/templates` | `inventory.read` | Step 4.9: the eight templates in the weekly order (`items`, `packs`, `opening`, `suppliers`, `menu`, `modifiers`, `recipes`, `modifier-rules`) with their exact header, the permission each needs and whether the caller has it |
+| `POST /imports/{template}/preview` | `inventory.read` + the template's permission | `{csv}` (the file's text, ≤ 2,000 rows). Runs the import in a transaction that is always rolled back: `{rows, errors: [{row, column?, message}], changes: [{row, action: create \| update \| unchanged, what}], summary}`. Nothing is saved (AT-82) |
+| `POST /imports/{template}/apply` **[I]** | as preview | Imports the file only if it has no error, else `400` with every `errors` row and nothing saved. Existing rows are matched (SKU; pack name per item; menu item and size by name; choice group and option by name; supplier by name) and updated, not duplicated; prices changed by import are in price history and need `menu.price_change`; opening stock once per item (`inventory.opening_balance`); recipes become new drafts (an existing draft is replaced; the active recipe is untouched); an identical modifier rule is left alone, a different one for the same choice, size, action and ingredient replaces it from now. `EX-` SKUs are refused. Audited as `import.apply` |
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |

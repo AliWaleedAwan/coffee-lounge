@@ -575,6 +575,7 @@ describe('receive stock', () => {
       'Waste',
       'Counts',
       'Suppliers',
+      'Import',
     ]);
   });
 });

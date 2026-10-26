@@ -71,3 +71,5 @@ export {
 } from './inventory.ts';
 export { stockRoutes } from './routes.ts';
 export { listWaste, recordWaste, type WasteInput, type WasteRecord } from './waste.ts';
+export { reevaluateAlerts } from './ledger.ts';
+export { addRule, retireRule, saveDraft, startDraft } from './recipe-editor.ts';

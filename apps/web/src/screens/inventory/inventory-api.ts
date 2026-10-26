@@ -519,3 +519,34 @@ export function useMovements(itemId: string, filter: { type: string; from: strin
     meta: TOPICS,
   });
 }
+
+// ---------------------------------------------------------------- import (step 4.9)
+
+export interface ImportTemplate {
+  key: string;
+  file: string;
+  title: string;
+  columns: string[];
+  permission: string;
+  allowed: boolean;
+}
+
+export interface ImportResult {
+  template: string;
+  file: string;
+  rows: number;
+  errors: { row: number; column?: string; message: string }[];
+  changes: { row: number; action: 'create' | 'update' | 'unchanged'; what: string }[];
+  summary: { create: number; update: number; unchanged: number };
+}
+
+export function useImportTemplates() {
+  return useQuery({
+    queryKey: ['inventory', 'import-templates'],
+    queryFn: ({ signal }) => api<{ items: ImportTemplate[] }>('/imports/templates', { signal }),
+  });
+}
+
+export function previewImport(template: string, csv: string): Promise<ImportResult> {
+  return api<ImportResult>(`/imports/${template}/preview`, { method: 'POST', body: { csv } });
+}

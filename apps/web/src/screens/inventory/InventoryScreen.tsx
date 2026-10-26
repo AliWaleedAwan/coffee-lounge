@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { permissionSet } from '../../auth/session.ts';
 import { useSignedIn } from '../Shell.tsx';
 import { CountsTab } from './CountsTab.tsx';
+import { ImportTab } from './ImportTab.tsx';
 import { ItemsTab } from './ItemsTab.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { ReceiptsTab } from './ReceiptsTab.tsx';
@@ -13,7 +14,8 @@ import { ReceiveTab } from './ReceiveTab.tsx';
 import { SuppliersTab } from './SuppliersTab.tsx';
 import { WasteTab } from './WasteTab.tsx';
 
-type Tab = 'overview' | 'items' | 'receive' | 'receipts' | 'waste' | 'counts' | 'suppliers';
+type Tab =
+  'overview' | 'items' | 'receive' | 'receipts' | 'waste' | 'counts' | 'import' | 'suppliers';
 
 export function InventoryScreen() {
   const permissions = permissionSet(useSignedIn());
@@ -35,6 +37,7 @@ export function InventoryScreen() {
     { id: 'waste', label: 'Waste' },
     { id: 'counts', label: 'Counts' },
     { id: 'suppliers', label: 'Suppliers' },
+    { id: 'import', label: 'Import' },
   ];
   const [tab, setTab] = useState<Tab>('overview');
 
@@ -74,6 +77,7 @@ export function InventoryScreen() {
         ) : null}
         {tab === 'waste' ? <WasteTab canRecord={can.waste} /> : null}
         {tab === 'counts' ? <CountsTab canCount={can.count} canApprove={can.approveCount} /> : null}
+        {tab === 'import' ? <ImportTab /> : null}
         {tab === 'suppliers' ? <SuppliersTab canManage={can.manageSuppliers} /> : null}
       </div>
     </>

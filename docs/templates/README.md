@@ -50,3 +50,5 @@ A recipe can only be activated when **all** its ingredients have had their openi
 4. Opening stock can be imported **once per item**. Later corrections use a stock count.
 5. Every import is recorded in the audit log with who imported which file.
 6. An import needs the same permission as doing the same thing on screen (e.g., `inventory.items_manage` for items, `menu.price_change` for prices, `recipes.manage` for recipes). See RBAC.md.
+
+**As built (Phase 4 step 4.9):** the files are matched by their header row, which must be exactly as shipped. Opening stock takes one line per item (for a lot-tracked item, that line becomes its first lot). The menu and choices files need `menu.manage` (the owner by default). Re-importing recipes replaces a draft not yet activated. Problems are listed with the row number as the spreadsheet shows it (the header is row 1).
