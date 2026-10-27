@@ -190,7 +190,7 @@ export async function deliveryRoutes(
     return listRiders(pool, query.all === 'true');
   });
 
-  app.post('/riders', { config: { permission: 'users.manage' } }, async (request, reply) => {
+  app.post('/riders', { config: { permission: 'riders.manage' } }, async (request, reply) => {
     const body = parseInput(
       z.object({ name: z.string().trim().min(1).max(60), phone: text(20) }).strict(),
       request.body,
@@ -205,7 +205,7 @@ export async function deliveryRoutes(
     );
   });
 
-  app.patch('/riders/:id', { config: { permission: 'users.manage' } }, async (request, reply) => {
+  app.patch('/riders/:id', { config: { permission: 'riders.manage' } }, async (request, reply) => {
     const riderId = idParam(request);
     const body = parseInput(
       z

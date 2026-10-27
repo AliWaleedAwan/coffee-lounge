@@ -21,12 +21,24 @@ const minutes = (max: number) => z.number().int().min(1).max(max);
 
 export const BUSINESS_HOURS = z.object({ opens: time, closes: time }).strict();
 
+/** A short list the owner keeps: one to 30 names, each named once (any case). */
+const nameList = z
+  .array(z.string().trim().min(2, 'at least 2 characters each').max(60))
+  .min(1, 'at least one')
+  .max(30, 'at most 30')
+  .refine(
+    (names) => new Set(names.map((n) => n.toLowerCase())).size === names.length,
+    'each name once',
+  );
+
 export interface SettingRule {
   label: string;
-  group: 'Orders' | 'Tables' | 'Billing' | 'Stock' | 'Privacy' | 'Shop';
+  group: 'Orders' | 'Tables' | 'Billing' | 'Stock' | 'Assets' | 'Privacy' | 'Shop';
   hint: string;
   schema: z.ZodType;
   editable: boolean;
+  /** Money and control parameters: owner-only `settings.financial` (RBAC.md 🔒, RBAC review 5.6). */
+  financial?: true;
 }
 
 export const SETTINGS: Readonly<Record<string, SettingRule>> = {
@@ -99,6 +111,7 @@ export const SETTINGS: Readonly<Record<string, SettingRule>> = {
     hint: 'D-16',
     schema: z.enum(['1.00', '5.00', '10.00']),
     editable: true,
+    financial: true,
   },
   'inventory.count_variance_pct': {
     label: 'Stock count needs approval above (%)',
@@ -106,12 +119,35 @@ export const SETTINGS: Readonly<Record<string, SettingRule>> = {
     hint: 'D-18',
     schema: z.number().min(0).max(100),
     editable: true,
+    financial: true,
   },
   'inventory.count_variance_amount': {
     label: 'Stock count needs approval above (Rs)',
     group: 'Stock',
     hint: 'D-18',
     schema: z.string().regex(/^\d{1,9}\.\d{2}$/, 'an amount like 1000.00'),
+    editable: true,
+    financial: true,
+  },
+  'refunds.reasons': {
+    label: 'Refund reasons offered',
+    group: 'Billing',
+    hint: 'One per line; the person refunding picks one and can add a note (step 5.2)',
+    schema: nameList,
+    editable: true,
+  },
+  'assets.categories': {
+    label: 'Asset categories offered',
+    group: 'Assets',
+    hint: 'One per line; others typed on an asset are kept too',
+    schema: nameList,
+    editable: true,
+  },
+  'assets.locations': {
+    label: 'Places offered for assets',
+    group: 'Assets',
+    hint: 'One per line',
+    schema: nameList,
     editable: true,
   },
   'privacy.delivery_pii_retention_months': {
@@ -143,6 +179,7 @@ export async function listSettings(db: Queryable) {
           group: rule.group,
           hint: rule.hint,
           editable: rule.editable,
+          financial: rule.financial === true,
           updatedAt: r.updated_at.toISOString(),
         },
       ];
@@ -156,9 +193,13 @@ export async function updateSetting(
   who: Who,
   key: string,
   input: { value: unknown; expectedVersion: number },
+  can: (permission: string) => boolean = () => false,
 ): Promise<{ key: string; version: number }> {
   const rule = SETTINGS[key];
   if (!rule?.editable) throw new AppError('NOT_FOUND', 'No such setting can be changed');
+  if (rule.financial && !can('settings.financial')) {
+    throw new AppError('FORBIDDEN', `${rule.label} is the owner’s to change (settings.financial)`);
+  }
   const parsed = rule.schema.safeParse(input.value);
   if (!parsed.success) {
     throw new AppError(

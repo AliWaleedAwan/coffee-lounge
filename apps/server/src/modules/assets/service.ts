@@ -12,12 +12,13 @@
  *  - Edits name the version they saw, so two people cannot overwrite each other.
  */
 import { money } from '@cl/shared';
+import { z } from 'zod';
 import { writeAudit, type AuditContext } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
-import { businessDateOf } from '../../platform/settings.ts';
+import { businessDateOf, readSetting } from '../../platform/settings.ts';
 
 export const CONDITIONS = ['new', 'good', 'fair', 'poor'] as const;
 export const ACTIVE_STATUSES = ['in_use', 'in_repair', 'retired'] as const;
@@ -123,10 +124,22 @@ export async function listAssets(
      UNION SELECT DISTINCT 'location', location FROM cl.assets WHERE location IS NOT NULL
      ORDER BY 1, 2`,
   );
+  // The owner's lists (step 5.6) first, then any other name already on an asset.
+  const merge = (offered: string[], used: string[]) => [
+    ...offered,
+    ...used.filter((u) => !offered.some((o) => o.toLowerCase() === u.toLowerCase())),
+  ];
+  const list = z.array(z.string());
   return {
     items: rows,
-    categories: names.filter((n) => n.kind === 'category').map((n) => n.value),
-    locations: names.filter((n) => n.kind === 'location').map((n) => n.value),
+    categories: merge(
+      await readSetting(db, 'assets.categories', list),
+      names.filter((n) => n.kind === 'category').map((n) => n.value),
+    ),
+    locations: merge(
+      await readSetting(db, 'assets.locations', list),
+      names.filter((n) => n.kind === 'location').map((n) => n.value),
+    ),
   };
 }
 

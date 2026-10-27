@@ -4,6 +4,7 @@
  */
 import { Logger, parseCrontab, run, type Runner, type TaskList } from 'graphile-worker';
 import type pg from 'pg';
+import { redactDeliveryDetails } from '../modules/delivery/index.ts';
 import { scanStaleSessions } from '../modules/floor/index.ts';
 import { raiseLedgerAlerts } from '../modules/ledger/index.ts';
 import {
@@ -104,6 +105,15 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
         helpers.logger.info('stock check: every balance matches its movements');
       }
     },
+    // D-25: delivery customer details go after the retention period; the sales stay.
+    'privacy:redact_delivery': async (_payload, helpers) => {
+      const result = await withTransaction(pool, (tx) => redactDeliveryDetails(tx, new Date()));
+      if (result.redacted > 0) {
+        helpers.logger.info(
+          `redacted ${String(result.redacted)} deliveries before ${result.olderThan}`,
+        );
+      }
+    },
     // FINANCE_REPORTING.md §4: every money source has exactly its entry; report, never correct.
     'ledger:reconcile': async (_payload, helpers) => {
       const mismatches = await withTransaction(pool, (tx) => raiseLedgerAlerts(tx));
@@ -118,7 +128,7 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
 
 /**
  * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the expiry scan (04:05), the stock check
- * (04:10) and the ledger check (04:15) run nightly just after the business-day cutoff (04:00 shop time, D-22).
+ * (04:10), the ledger check (04:15) and the delivery redaction (04:20) run nightly just after the business-day cutoff (04:00 shop time, D-22).
  */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
@@ -133,6 +143,7 @@ export const CRONTAB = [
   '5 4 * * * stock:expiry_scan',
   '10 4 * * * stock:reconcile',
   '15 4 * * * ledger:reconcile',
+  '20 4 * * * privacy:redact_delivery',
 ].join('\n');
 
 export interface WorkerRunOptions {

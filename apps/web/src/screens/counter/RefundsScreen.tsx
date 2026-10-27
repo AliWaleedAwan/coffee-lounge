@@ -71,6 +71,7 @@ interface RefundableBill {
   payments: Payment[];
   refunds: RefundRow[];
   refundDue: string | null;
+  reasons: string[];
 }
 interface FoundBill {
   invoiceId: string;
@@ -473,9 +474,16 @@ function RefundForm({
   const [amountTouched, setAmountTouched] = useState(full);
   const shown = amountTouched ? amount : linesCents > 0 ? fromCents(linesCents) : '';
   const [reference, setReference] = useState('');
-  const [reason, setReason] = useState(
+  // A reason from the owner's list (settings), with details when wanted.
+  const cancelled = bill.reasons.find((r) => /cancel/i.test(r)) ?? '';
+  const [choice, setChoice] = useState(full && bill.refundDue ? cancelled : '');
+  const [details, setDetails] = useState(
     full && bill.refundDue ? 'Delivery cancelled, money back to the guest' : '',
   );
+  const reason =
+    choice && details.trim() ? `${choice}: ${details.trim()}` : choice || details.trim();
+  const reasonOk =
+    choice !== '' && reason.length >= 3 && (choice !== 'Other' || details.trim() !== '');
   const [approval, setApproval] = useState(noApproval);
   const [error, setError] = useState<string | null>(null);
   const refund = useCommand<{ refundNo: string; amount: string; slipQueued: boolean }>(
@@ -498,7 +506,7 @@ function RefundForm({
     amountOk &&
     linesOk &&
     refOk &&
-    reason.trim().length >= 3 &&
+    reasonOk &&
     approvalReady(approval);
 
   return (
@@ -518,7 +526,7 @@ function RefundForm({
               entityId: bill.invoice.id,
               username: approval.username,
               pin: approval.pin,
-              reason: reason.trim(),
+              reason,
             });
             const lines = open
               .filter((l) => (qty[l.id] ?? 0) > 0)
@@ -533,7 +541,7 @@ function RefundForm({
                 kind: 'refund',
                 paymentId: payment.id,
                 amount: shown,
-                reason: reason.trim(),
+                reason,
                 ...(reference.trim() ? { reference: reference.trim() } : {}),
                 ...(lines.length > 0 ? { lines } : {}),
                 stepUpId,
@@ -610,14 +618,25 @@ function RefundForm({
           />
         ) : null}
       </div>
-      <Field
-        label="Reason"
-        maxLength={300}
-        value={reason}
-        onChange={(e) => {
-          setReason(e.target.value);
-        }}
-      />
+      <div className="row">
+        <SelectField
+          label="Reason"
+          value={choice}
+          options={[
+            { value: '', label: 'Choose…' },
+            ...bill.reasons.map((r) => ({ value: r, label: r })),
+          ]}
+          onChange={setChoice}
+        />
+        <Field
+          label={choice === 'Other' ? 'What happened' : 'Details (optional)'}
+          maxLength={200}
+          value={details}
+          onChange={(e) => {
+            setDetails(e.target.value);
+          }}
+        />
+      </div>
       <ApprovalFields legend="Approval on this device" value={approval} onChange={setApproval} />
       {error ? (
         <div role="alert" className="banner banner-danger">

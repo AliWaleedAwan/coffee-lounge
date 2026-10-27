@@ -7,9 +7,12 @@
 import { brandColourProblem, contrastRatio } from '@cl/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
+import { Link } from 'react-router';
 import { api, messageOf } from '../../api/client.ts';
-import { CheckField, Field, SelectField } from '../../components/Field.tsx';
+import { CheckField, Field, SelectField, TextAreaField } from '../../components/Field.tsx';
+import { permissionSet } from '../../auth/session.ts';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
+import { useSignedIn } from '../Shell.tsx';
 import { Loading } from '../../components/Loading.tsx';
 
 interface Setting {
@@ -20,6 +23,8 @@ interface Setting {
   group: string;
   hint: string;
   editable: boolean;
+  /** Owner-only (settings.financial). */
+  financial: boolean;
 }
 
 interface Branding {
@@ -75,7 +80,10 @@ export function OwnerSettings() {
       <BrandingForm branding={settings.data.branding} />
       {hours ? <Hours setting={hours} /> : null}
       <section className="stack" aria-labelledby="thresholds">
-        <h2 id="thresholds">Thresholds</h2>
+        <h2 id="thresholds">Thresholds and lists</h2>
+        <p className="muted">
+          Expense categories are kept on <Link to="/expenses">Expenses</Link> → Categories.
+        </p>
         {groups.map((g) => (
           <fieldset key={g} className="card stack">
             <legend>{g}</legend>
@@ -93,13 +101,18 @@ export function OwnerSettings() {
 
 function SettingRow({ setting }: { setting: Setting }) {
   const writes = useWritesAllowed();
-  const [value, setValue] = useState(String(setting.value));
+  const mayFinancial = permissionSet(useSignedIn()).has('settings.financial');
+  const isList = Array.isArray(setting.value);
+  const [value, setValue] = useState(
+    isList ? (setting.value as string[]).join('\n') : String(setting.value),
+  );
   const [saved, setSaved] = useState(false);
   const save = useSave(() => {
     setSaved(true);
   });
-  const kind =
-    typeof setting.value === 'boolean'
+  const kind = isList
+    ? 'list'
+    : typeof setting.value === 'boolean'
       ? 'boolean'
       : typeof setting.value === 'number'
         ? 'number'
@@ -107,8 +120,17 @@ function SettingRow({ setting }: { setting: Setting }) {
           ? 'rounding'
           : 'text';
   const parsed: unknown =
-    kind === 'boolean' ? value === 'true' : kind === 'number' ? Number(value) : value;
-  const changed = String(parsed) !== String(setting.value);
+    kind === 'list'
+      ? value
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== '')
+      : kind === 'boolean'
+        ? value === 'true'
+        : kind === 'number'
+          ? Number(value)
+          : value;
+  const changed = JSON.stringify(parsed) !== JSON.stringify(setting.value);
   const send = () => {
     setSaved(false);
     save.mutate({
@@ -117,11 +139,15 @@ function SettingRow({ setting }: { setting: Setting }) {
       body: { value: parsed, expectedVersion: setting.version },
     });
   };
-  if (!setting.editable) {
+  const canEdit = setting.editable && (!setting.financial || mayFinancial);
+  if (!canEdit) {
     return (
       <p>
-        <strong>{setting.label}:</strong> {String(setting.value)}{' '}
-        <span className="muted">· {setting.hint}</span>
+        <strong>{setting.label}:</strong>{' '}
+        {Array.isArray(setting.value) ? setting.value.join(', ') : String(setting.value)}{' '}
+        <span className="muted">
+          · {setting.editable ? 'the owner changes this' : setting.hint}
+        </span>
       </p>
     );
   }
@@ -134,7 +160,15 @@ function SettingRow({ setting }: { setting: Setting }) {
         if (writes && changed) send();
       }}
     >
-      {kind === 'boolean' ? (
+      {kind === 'list' ? (
+        <TextAreaField
+          label={setting.label}
+          hint={setting.hint}
+          rows={6}
+          value={value}
+          onChange={setValue}
+        />
+      ) : kind === 'boolean' ? (
         <CheckField
           label={setting.label}
           checked={value === 'true'}

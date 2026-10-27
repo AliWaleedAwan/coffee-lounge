@@ -368,14 +368,41 @@ function ExpenseDetail({ expense: e }: { expense: Expense }) {
         </p>
       ) : null}
       {e.replacesNo ? <p className="muted">Corrects {e.replacesNo}.</p> : null}
-      {e.attachment ? (
-        <a href={`${API_BASE}/expenses/${e.id}/attachment`} target="_blank" rel="noreferrer">
-          View the bill
-        </a>
-      ) : (
-        <p className="muted">No bill attached.</p>
-      )}
+      {e.attachment ? <Bill expense={e} /> : <p className="muted">No bill attached.</p>}
     </>
+  );
+}
+
+/**
+ * The attached bill, inside the page: a photo shows here (the counter app opens no new
+ * windows); a PDF is downloaded and opened by the PC's own viewer. The counter app does
+ * not download files yet (a reviewed download path comes with exports, Phase 6).
+ */
+function Bill({ expense: e }: { expense: Pick<Expense, 'id' | 'expenseNo' | 'attachment'> }) {
+  const [open, setOpen] = useState(false);
+  const url = `${API_BASE}/expenses/${e.id}/attachment`;
+  if (e.attachment?.type === 'application/pdf') {
+    return (
+      <a href={url} download={`${e.expenseNo}.pdf`}>
+        Download<span className="visually-hidden"> the bill of {e.expenseNo}</span> (PDF)
+      </a>
+    );
+  }
+  return (
+    <div className="stack">
+      <button
+        type="button"
+        className="btn btn-ghost"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        {open ? 'Hide' : 'Show'}
+        <span className="visually-hidden"> the bill of {e.expenseNo}</span>
+      </button>
+      {open ? <img src={url} alt={`Bill of ${e.expenseNo}`} className="bill-image" /> : null}
+    </div>
   );
 }
 
@@ -417,9 +444,7 @@ function ExpenseRow({
         <td>{rupees(e.amount)}</td>
         <td>
           {e.attachment ? (
-            <a href={`${API_BASE}/expenses/${e.id}/attachment`} target="_blank" rel="noreferrer">
-              View<span className="visually-hidden"> the bill of {e.expenseNo}</span>
-            </a>
+            <Bill expense={e} />
           ) : canManage && !voided ? (
             <label className="btn btn-ghost">
               Attach<span className="visually-hidden"> a bill to {e.expenseNo}</span>

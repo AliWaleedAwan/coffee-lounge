@@ -63,7 +63,8 @@ test('a cashier refunds one item to the card with the owner approving on the dev
   const form = page.getByRole('form', { name: 'Refund' });
   await form.getByLabel(/Refund latte/).selectOption({ index: 1 });
   await expect(form.getByLabel('Amount to refund (Rs)')).toHaveValue('600.00');
-  await form.getByLabel('Reason').fill('One latte was never served');
+  await form.getByLabel('Reason').selectOption('Other');
+  await form.getByLabel('What happened').fill('One latte was never served');
   await form.getByLabel('Manager username').fill(s.owner.username);
   await form.getByLabel('Manager PIN').fill('1470');
   await expectAccessible(page, 'refund form');

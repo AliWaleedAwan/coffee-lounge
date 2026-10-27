@@ -313,3 +313,97 @@ describe('the inbox completed (step 5.5)', () => {
     );
   });
 });
+
+describe('hardening from the RBAC review (step 5.6)', () => {
+  it('a manager given users.manage resets staff only, never a manager or someone with extra grants', async () => {
+    await call(owner, 'PUT', `/users/${managerId}/permission-overrides/users.manage`, {
+      effect: 'grant',
+      reason: 'Looks after staff accounts',
+    });
+    const waiterId = await fx.addUser('ac-waiter', ['waiter']);
+    const otherManager = await fx.addUser('ac-mgr2', ['manager']);
+    const body = { password: 'a-new-long-password-2' };
+    expect((await call(manager, 'POST', `/users/${waiterId}/credentials`, body)).status).toBe(204);
+    const refused = await call(manager, 'POST', `/users/${otherManager}/credentials`, body);
+    expect(refused.status).toBe(403);
+    await call(owner, 'PUT', `/users/${waiterId}/permission-overrides/payments.collect`, {
+      effect: 'grant',
+      reason: 'Takes payments at the table',
+    });
+    expect((await call(manager, 'POST', `/users/${waiterId}/credentials`, body)).status).toBe(403);
+    expect((await call(owner, 'POST', `/users/${otherManager}/credentials`, body)).status).toBe(
+      204,
+    );
+  });
+
+  it('nobody approves with a PIN someone else set until they chose their own password', async () => {
+    const approver = await fx.addUser('ac-approver', ['manager'], {
+      pin: '1357',
+      mustChange: true,
+    });
+    const stepUp = (pin: string) =>
+      call(owner, 'POST', '/auth/step-up', {
+        action: 'shift.variance',
+        entityType: 'cash_shift',
+        entityId: '1',
+        approverUsername: 'ac-approver',
+        approverPin: pin,
+        reason: 'Count checked',
+      });
+    const refused = await stepUp('1357');
+    expect(refused.status).toBe(403);
+    expect(refused.body['detail']).toBe(
+      'This approver must first log in and choose their own password',
+    );
+    await fx.pool.query('UPDATE cl.users SET must_change_password = false WHERE id = $1', [
+      approver,
+    ]);
+    expect((await stepUp('1357')).status).toBe(201);
+  });
+});
+
+describe('the owner’s lists (step 5.6)', () => {
+  it('keeps refund reasons and asset lists as settings, checked and offered where used', async () => {
+    const settings = (await call(owner, 'GET', '/settings')).body['items'] as Body[];
+    const reasons = settings.find((x) => x['key'] === 'refunds.reasons');
+    expect(reasons).toMatchObject({ group: 'Billing', editable: true });
+    const patch = (value: unknown) =>
+      owner.call({
+        method: 'PATCH',
+        url: '/api/staff/v1/settings/refunds.reasons',
+        payload: { value, expectedVersion: reasons?.['version'] },
+      });
+    expect((await patch(['Wrong order', 'wrong order'])).statusCode).toBe(400);
+    expect((await patch([])).statusCode).toBe(400);
+    expect((await patch(['Wrong order', 'Quality', 'Other'])).statusCode).toBe(200);
+    const assets = (await call(owner, 'GET', '/assets')).body;
+    expect(assets['categories']).toEqual(
+      expect.arrayContaining(['Coffee equipment', 'POS hardware']),
+    );
+    expect(assets['locations']).toEqual(expect.arrayContaining(['Bar', 'Store room']));
+  });
+});
+
+describe('financial settings stay the owner’s (RBAC review, step 5.6)', () => {
+  it('a manager given settings.manage changes operational settings, not money ones', async () => {
+    await call(owner, 'PUT', `/users/${managerId}/permission-overrides/settings.manage`, {
+      effect: 'grant',
+      reason: 'Runs the floor settings',
+    });
+    const items = (await call(manager, 'GET', '/settings')).body['items'] as Body[];
+    const patch = (client: Client, key: string, value: unknown) =>
+      client.call({
+        method: 'PATCH',
+        url: `/api/staff/v1/settings/${key}`,
+        payload: { value, expectedVersion: items.find((x) => x['key'] === key)?.['version'] },
+      });
+    expect(items.find((x) => x['key'] === 'billing.cash_rounding_unit')).toMatchObject({
+      financial: true,
+    });
+    expect((await patch(manager, 'orders.escalation_minutes', 5)).statusCode).toBe(200);
+    const rounding = await patch(manager, 'billing.cash_rounding_unit', '5.00');
+    expect(rounding.statusCode).toBe(403);
+    expect((await patch(manager, 'inventory.count_variance_pct', 10)).statusCode).toBe(403);
+    expect((await patch(owner, 'billing.cash_rounding_unit', '5.00')).statusCode).toBe(200);
+  });
+});

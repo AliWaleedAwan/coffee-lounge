@@ -16,12 +16,13 @@
  *  - Two refunds of one bill queue on the invoice row lock (CT).
  */
 import { Decimal, money } from '@cl/shared';
+import { z } from 'zod';
 import { writeAudit } from '../../platform/audit.ts';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
-import { businessDateOf } from '../../platform/settings.ts';
+import { businessDateOf, readSetting } from '../../platform/settings.ts';
 import { consumeStepUp } from '../identity/index.ts';
 import type { CommandContext, StaffAuth } from '../orders/index.ts';
 import { requestPrint } from '../printing/index.ts';
@@ -133,6 +134,8 @@ export interface RefundableBill {
   refunds: RefundView[];
   /** A cancelled prepaid delivery still owed back (P3-1, P5-5). */
   refundDue: string | null;
+  /** The reasons the owner offers on the refund form (`refunds.reasons`, step 5.6). */
+  reasons: string[];
 }
 
 /** Payments of a bill with their method as it now stands and what may still be refunded. */
@@ -202,7 +205,8 @@ export async function readRefundable(db: Queryable, invoiceId: string): Promise<
       WHERE r.invoice_id = $1 ORDER BY r.id`,
     [invoiceId],
   );
-  return { invoice, lines, payments: await paymentsOf(db, invoiceId), refunds, refundDue };
+  const reasons = await readSetting(db, 'refunds.reasons', z.array(z.string()));
+  return { invoice, lines, payments: await paymentsOf(db, invoiceId), refunds, refundDue, reasons };
 }
 
 /** Settled bills to refund from: by invoice or order number, table or guest, or a day. */

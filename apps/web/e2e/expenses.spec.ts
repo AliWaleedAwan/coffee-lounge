@@ -40,7 +40,9 @@ test('the owner records an expense with its bill, then corrects it', async ({ pa
   await expect(row).toContainText('Utilities');
   await expect(row).toContainText('Transfer · Bank');
   await expect(row).toContainText('Rs 12500');
-  await expect(row.getByRole('link', { name: `View the bill of ${expenseNo}` })).toBeVisible();
+  await expect(
+    row.getByRole('link', { name: `Download the bill of ${expenseNo} (PDF)` }),
+  ).toBeVisible();
   await expect(page.getByText(/Recorded expenses Rs 12500 · Utilities Rs 12500/)).toBeVisible();
   await expectAccessible(page, 'expenses');
 
@@ -60,6 +62,8 @@ test('the owner records an expense with its bill, then corrects it', async ({ pa
   ).toContainText('The bill says 12,000');
   const fresh = table.getByRole('row', { name: new RegExp(`^${newNo} `) });
   await expect(fresh).toContainText('Rs 12000');
-  await expect(fresh.getByRole('link', { name: `View the bill of ${newNo}` })).toBeVisible();
+  await expect(
+    fresh.getByRole('link', { name: `Download the bill of ${newNo} (PDF)` }),
+  ).toBeVisible();
   await expect(page.getByText(/Recorded expenses Rs 12000 · Utilities Rs 12000/)).toBeVisible();
 });

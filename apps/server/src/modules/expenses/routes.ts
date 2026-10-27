@@ -187,9 +187,12 @@ export async function expenseRoutes(
 
   app.get('/expenses/:id/attachment', read, async (request, reply) => {
     const file = await readBillFile(pool, filesDir, idParam(request));
+    // Photos open in the browser inside a sandbox; a PDF is saved and opened by the PC's
+    // own viewer, so a document from outside never runs inside the app (RBAC review, 5.6).
+    const pdf = file.type === 'application/pdf';
     return reply
       .header('content-type', file.type)
-      .header('content-disposition', `inline; filename="${file.name}"`)
+      .header('content-disposition', `${pdf ? 'attachment' : 'inline'}; filename="${file.name}"`)
       .header('x-content-type-options', 'nosniff')
       .header(
         'content-security-policy',

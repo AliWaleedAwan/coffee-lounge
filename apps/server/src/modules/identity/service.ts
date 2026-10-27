@@ -683,6 +683,17 @@ export async function createStepUp(
     }
     const check = await checkSecret(tx, approver, input.approverPin, 'pin', facts);
     if (!check.ok) return check;
+    // A PIN someone else set (a reset, or a new account) approves nothing until its owner
+    // has chosen their own password: no one can approve as another person (RBAC review).
+    if (approver?.must_change_password) {
+      return {
+        ok: false as const,
+        error: new AppError(
+          'FORBIDDEN',
+          'This approver must first log in and choose their own password',
+        ),
+      };
+    }
     const permissions = await loadEffectivePermissions(tx, check.user.id);
     if (!permissions.has(STEP_UP_ACTIONS[input.action])) {
       return {
@@ -1141,6 +1152,24 @@ export async function resetCredentials(
     if (!user) throw new AppError('NOT_FOUND', 'No such user');
     if (user.is_owner && !auth.user.isOwner) {
       throw new AppError('FORBIDDEN', 'Only an owner can reset an owner');
+    }
+    // Someone who may approve or manage must not be reset by anyone but an owner: the new
+    // PIN would let the resetter act as them (RBAC review, step 5.6).
+    if (!auth.user.isOwner) {
+      const { rows: power } = await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM (
+           SELECT 1 FROM cl.user_roles ur JOIN cl.roles r ON r.id = ur.role_id
+            WHERE ur.user_id = $1 AND r.key NOT IN ('waiter', 'cashier', 'inventory_clerk', 'kitchen')
+           UNION ALL
+           SELECT 1 FROM cl.user_permission_overrides o WHERE o.user_id = $1 AND o.effect = 'grant') x`,
+        [input.userId],
+      );
+      if ((power[0]?.n ?? 0) > 0) {
+        throw new AppError(
+          'FORBIDDEN',
+          'Only the owner can reset a manager or someone with extra permissions',
+        );
+      }
     }
     await tx.query(
       `UPDATE cl.users SET password_hash = $2, pin_hash = COALESCE($3, pin_hash), must_change_password = true,
