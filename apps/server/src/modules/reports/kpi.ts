@@ -22,20 +22,33 @@ export interface SalesFilter {
   orderType?: (typeof ORDER_TYPES)[number] | undefined;
   categoryId?: string | undefined;
   itemId?: string | undefined;
+  /** Who settled the bill (for refunds: who asked for them). */
+  staffId?: string | undefined;
 }
 
 /** Waste, variance, expenses and rounding belong to the shop, not to an item or order type. */
-export const shopWide = (f: SalesFilter) => !f.orderType && !f.categoryId && !f.itemId;
+export const shopWide = (f: SalesFilter) =>
+  !f.orderType && !f.categoryId && !f.itemId && !f.staffId;
+
+/** The query parameters every sales query shares ($1…$6). */
+export const salesParams = (f: SalesFilter) => [
+  f.from,
+  f.to,
+  f.orderType ?? null,
+  f.categoryId ?? null,
+  f.itemId ?? null,
+  f.staffId ?? null,
+];
 
 /** COGS coverage below which the operating result is not shown (FINANCE_REPORTING.md §3). */
 export const OPERATING_RESULT_MIN_COVERAGE = 95;
 
-const LINES = `
+export const LINES = `
   inv AS (
     SELECT i.id, i.business_date AS d, i.rounding_adjustment, i.settled_at
       FROM cl.invoices i JOIN cl.dining_sessions s ON s.id = i.session_id
      WHERE i.status = 'settled' AND i.business_date BETWEEN $1::date AND $2::date
-       AND ($3::text IS NULL OR s.order_type = $3)),
+       AND ($3::text IS NULL OR s.order_type = $3) AND ($6::bigint IS NULL OR i.settled_by = $6)),
   ln AS (
     SELECT inv.d, inv.settled_at, inv.id AS invoice_id, mi.id AS item_id, mi.name AS item, mc.name AS category,
            il.billable_qty, il.gross, il.promotion_discount, il.discount_alloc, il.net, il.is_comp,
@@ -69,7 +82,7 @@ const LINES = `
            END AS amount
       FROM cl.refunds r JOIN cl.invoices i ON i.id = r.invoice_id JOIN cl.dining_sessions s ON s.id = i.session_id
      WHERE r.kind = 'refund' AND r.business_date BETWEEN $1::date AND $2::date
-       AND ($3::text IS NULL OR s.order_type = $3))`;
+       AND ($3::text IS NULL OR s.order_type = $3) AND ($6::bigint IS NULL OR r.requested_by = $6))`;
 
 /** One row per business date of the period, every date present (zeros on quiet days). */
 export async function salesByDay(db: Queryable, f: SalesFilter): Promise<Row[]> {
@@ -104,18 +117,18 @@ export async function salesByDay(db: Queryable, f: SalesFilter): Promise<Row[]> 
             COALESCE(s.manual, 0)::text AS manual, COALESCE(s.comps, 0)::text AS comps,
             COALESCE(r.refunds, 0)::text AS refunds,
             COALESCE(s.tracked_net, 0)::text AS tracked_net, COALESCE(s.cogs, 0)::text AS cogs,
-            CASE WHEN $6 THEN COALESCE(rd.rounding, 0)::text END AS rounding,
-            CASE WHEN $5::bigint IS NULL AND $4::bigint IS NULL THEN COALESCE(pay.paid, 0)::text END AS paid,
-            CASE WHEN $6 THEN COALESCE(w.waste, 0)::text END AS waste,
-            CASE WHEN $6 THEN COALESCE(sv.variance, 0)::text END AS variance,
-            CASE WHEN $6 THEN COALESCE(pv.ppv, 0)::text END AS ppv,
-            CASE WHEN $6 THEN COALESCE(ex.expenses, 0)::text END AS expenses
+            CASE WHEN $7 THEN COALESCE(rd.rounding, 0)::text END AS rounding,
+            CASE WHEN $5::bigint IS NULL AND $4::bigint IS NULL AND $6::bigint IS NULL THEN COALESCE(pay.paid, 0)::text END AS paid,
+            CASE WHEN $7 THEN COALESCE(w.waste, 0)::text END AS waste,
+            CASE WHEN $7 THEN COALESCE(sv.variance, 0)::text END AS variance,
+            CASE WHEN $7 THEN COALESCE(pv.ppv, 0)::text END AS ppv,
+            CASE WHEN $7 THEN COALESCE(ex.expenses, 0)::text END AS expenses
        FROM days
        LEFT JOIN s ON s.d = days.d LEFT JOIN r ON r.d = days.d LEFT JOIN rd ON rd.d = days.d
        LEFT JOIN pay ON pay.d = days.d LEFT JOIN w ON w.d = days.d LEFT JOIN sv ON sv.d = days.d
        LEFT JOIN pv ON pv.d = days.d LEFT JOIN ex ON ex.d = days.d
       ORDER BY days.d`,
-    [f.from, f.to, f.orderType ?? null, f.categoryId ?? null, f.itemId ?? null, whole],
+    [...salesParams(f), whole],
   );
   return rows.map((r) => withDerived(r));
 }
@@ -141,13 +154,14 @@ export async function salesByItem(db: Queryable, f: SalesFilter): Promise<Row[]>
               WHERE x.kind = 'refund' AND x.business_date BETWEEN $1::date AND $2::date
                 AND ($3::text IS NULL OR ss.order_type = $3)
                 AND ($4::bigint IS NULL OR mi.category_id = $4) AND ($5::bigint IS NULL OR mi.id = $5)
+                AND ($6::bigint IS NULL OR x.requested_by = $6)
               GROUP BY mi.id)
      SELECT s.item_id::text AS item_id, s.item, s.category, s.orders, s.items,
             s.gross::text, s.promotions::text, s.manual::text, s.comps::text,
             COALESCE(r.refunds, 0)::text AS refunds, s.tracked_net::text AS tracked_net, s.cogs::text AS cogs
        FROM s LEFT JOIN r ON r.item_id = s.item_id
       ORDER BY s.gross - s.promotions - s.manual - s.comps DESC, s.item, s.item_id`,
-    [f.from, f.to, f.orderType ?? null, f.categoryId ?? null, f.itemId ?? null],
+    salesParams(f),
   );
   return rows.map((r) => withDerived(r));
 }
@@ -177,7 +191,7 @@ export async function salesByHour(db: Queryable, f: SalesFilter): Promise<Row[]>
               AS sales
        FROM hours CROSS JOIN cut LEFT JOIN s ON s.h = hours.h
       ORDER BY (hours.h - cut.h + 24) % 24`,
-    [f.from, f.to, f.orderType ?? null, f.categoryId ?? null, f.itemId ?? null],
+    salesParams(f),
   );
   return rows;
 }

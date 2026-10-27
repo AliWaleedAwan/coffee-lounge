@@ -51,8 +51,21 @@ export async function reportRoutes(
         key: r.key,
         title: r.title,
         profitColumns: permissions.has('reports.profit'),
+        // The filters the report takes besides its period, for the screen to offer.
+        filters: Object.keys(
+          (r.filters as unknown as { shape: Record<string, unknown> }).shape,
+        ).filter((k) => k !== 'from' && k !== 'to'),
+        drillOnly: r.key === 'bill-lines',
       })),
     };
+  });
+
+  /** Names for the "settled by" filter (who took the money; no other user details). */
+  app.get('/reports/staff', { config: { permission: 'reports.sales' } }, async () => {
+    const { rows } = await pool.query<{ id: string; name: string }>(
+      'SELECT id::text, display_name AS name FROM cl.users ORDER BY lower(display_name), users.id',
+    );
+    return { items: rows };
   });
 
   // The owner overview (step 6.2): its tiles are the totals of the reports they open.
@@ -91,5 +104,7 @@ export async function reportRoutes(
       },
     );
   };
-  for (const def of REPORTS) register(def);
+  // Each definition parses its own filters; the router only needs the period they share.
+  for (const def of REPORTS)
+    register(def as unknown as ReportDefinition<{ from: string; to: string }>);
 }

@@ -117,7 +117,10 @@ export class TradingShop {
     return this.ok(this.owner, 'GET', path);
   }
 
-  async setUp(): Promise<void> {
+  /** Coffee sold with a recipe (18 g beans at Rs 0.50): its sales carry costs once picked up. */
+  private recipe = false;
+
+  async setUp(options: { recipe?: boolean } = {}): Promise<void> {
     const cat = await this.ok(this.owner, 'POST', '/menu/categories', {
       name: `${this.prefix} menu`,
     });
@@ -148,6 +151,35 @@ export class TradingShop {
       name: string;
     }[];
     for (const c of cats) this.categories[c.name] = c.id;
+    if (options.recipe) {
+      this.recipe = true;
+      const beans = await this.ok(this.owner, 'POST', '/inventory/items', {
+        sku: `${this.prefix}-BEANS`,
+        name: `${this.prefix} beans`,
+        baseUom: 'g',
+      });
+      // Counted at Rs 0.50 a gram through the opening-stock import.
+      await this.ok(this.owner, 'POST', '/imports/opening/apply', {
+        csv: `sku,lot_code,expiry_date,quantity,uom,total_value\n${this.prefix}-BEANS,,,100,kg,50000\n`,
+      });
+      const variant = this.coffee;
+      const draft = String(
+        (await this.ok(this.owner, 'POST', `/recipes/variants/${variant}/draft`, {}))['id'],
+      );
+      const versions = (await this.ok(this.owner, 'GET', `/recipes/variants/${variant}`))[
+        'versions'
+      ] as Body[];
+      await this.ok(this.owner, 'PUT', `/recipes/versions/${draft}`, {
+        expectedVersion: versions.find((v) => v['id'] === draft)?.['version'],
+        components: [
+          { itemId: beans['id'], qty: '18', forDineIn: true, forTakeaway: true, forDelivery: true },
+        ],
+      });
+      await this.ok(this.owner, 'POST', `/recipes/versions/${draft}/activate`, {});
+      await this.ok(this.owner, 'POST', `/recipes/variants/${variant}/stock-mode`, {
+        mode: 'recipe',
+      });
+    }
   }
 
   async openShift(float = 5000): Promise<void> {
@@ -169,7 +201,12 @@ export class TradingShop {
   }
 
   /** A table with `qty` coffees (Rs 450 each), paid in full by `method`. */
-  async sale(qty: number, method: Method, provider: Provider = 'jazzcash'): Promise<Payment> {
+  async sale(
+    qty: number,
+    method: Method,
+    provider: Provider = 'jazzcash',
+    options: { discountPercent?: number } = {},
+  ): Promise<Payment> {
     if (method === 'cash' && !this.shiftId) throw new Error('cash sale needs the shift');
     this.table += 1;
     const t = await this.ok(this.owner, 'POST', '/tables', {
@@ -180,11 +217,27 @@ export class TradingShop {
     await this.ok(this.owner, 'POST', `/sessions/${String(s['id'])}/rounds`, {
       lines: [{ variantId: this.coffee, qty, modifierOptionIds: [] }],
     });
+    if (this.recipe) {
+      const { rows } = await this.fx.pool.query<{ id: string; qty: number }>(
+        'SELECT id::text, qty FROM cl.order_lines WHERE session_id = $1 ORDER BY order_lines.id',
+        [s['id']],
+      );
+      for (const l of rows)
+        await this.ok(this.owner, 'POST', `/lines/${l.id}/pickup`, { qty: l.qty });
+    }
     const bill = (await this.ok(this.owner, 'GET', `/sessions/${String(s['id'])}/bill`)) as {
       invoice: { id: string };
     };
+    if (options.discountPercent) {
+      await this.ok(this.owner, 'POST', `/invoices/${bill.invoice.id}/discounts`, {
+        orderLineId: null,
+        kind: 'percent',
+        value: String(options.discountPercent),
+        reason: 'Regular guest',
+      });
+    }
     const locked = await this.ok(this.owner, 'POST', `/invoices/${bill.invoice.id}/lock`, {});
-    const amount = qty * 450;
+    const amount = Number(locked['total']);
     const paid = await this.ok(this.cashier, 'POST', `/invoices/${bill.invoice.id}/payments`, {
       lockVersion: locked['lockVersion'],
       method,
@@ -197,7 +250,7 @@ export class TradingShop {
     const payment: Payment = {
       id: String(paid['paymentId']),
       invoiceId: bill.invoice.id,
-      amount: amount * 100,
+      amount: Math.round(amount * 100),
       refunded: 0,
       method,
       provider: method === 'transfer' ? provider : null,
@@ -224,7 +277,8 @@ export class TradingShop {
   async refund(p: Payment, fraction: number): Promise<number | null> {
     const left = p.amount - p.refunded;
     if (left <= 0 || (p.method === 'cash' && !this.shiftId)) return null;
-    const paisa = Math.max(100, Math.round((left * fraction) / 100) * 100);
+    // `fraction` per cent of what is left, in whole rupees.
+    const paisa = Math.max(100, Math.round((left * fraction) / 100 / 100) * 100);
     const amount = Math.min(paisa, left);
     const done = await this.tillMay(this.cashier, `/invoices/${p.invoiceId}/refunds`, {
       kind: 'refund',

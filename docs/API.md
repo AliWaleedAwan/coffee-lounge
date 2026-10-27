@@ -351,6 +351,19 @@ Every report is one definition shared by the screen and, from step 6.5, the CSV 
 | `GET /reports/sales-by-item?…` | `reports.sales` | One row per menu item sold, best sellers first: sold, gross, discounts, refunds (as far as refunds name their items), net sales; with `reports.profit` COGS, coverage, gross profit, margin |
 | `GET /reports/sales-by-hour?…` | `reports.sales` | Sales after discounts by the shop's clock hour of settlement, all 24 hours in business-day order from the 04:00 cutoff (refunds stay on their own date, FINANCE_REPORTING.md §1) |
 | `GET /reports/overview?from=&to=` | `reports.sales` | The owner overview (step 6.2; default today): `tiles` (Net sales, Orders, Average order; with `reports.profit` Gross margin % after waste, Waste cost, Recorded operating result) each with `value`, `compare` (the same weekdays a week earlier, P6-8), `change` %, a `note` (margin over recipe items, "Needs recipes") and the `report` it opens, whose total it equals (AT-20); `byDay`, `byHour`, `topItems`, `topByMargin` (with `reports.profit`), open `alerts` counts |
+| `GET /reports/bills?…` | `reports.sales` | The settled bills behind the sales (step 6.3): date, invoice, where, settled by, items, gross, discounts, net of lines, rounding, bill total; COGS with `reports.profit`. Each row's `id` opens its lines |
+| `GET /reports/bill-lines?invoiceId=` | `reports.sales` | One bill's lines: qty, gross, discounts, net, refunded, COGS (with `reports.profit`) and whether the line had a recipe |
+| `GET /reports/sales-by-category?…` | `reports.sales` | As sales by item, one row per menu category |
+| `GET /reports/menu-engineering?…` | `reports.profit` | Per item: sold, share of items, contribution and per item, class Star / Plowhorse / Puzzle / Dog by the 70 % rule; items without a recipe say "No recipe" |
+| `GET /reports/discounts?from=&to=&staffId=&kind=` | `reports.sales` | Every promotion, discount and comp (on the bill's settlement date) and refund (on its own date): invoice, reason, by, approved by, amount; `kind` promotion, discount, comp or refund |
+| `GET /reports/payment-mix?from=&to=` | `reports.sales` | Cash, card, bank, JazzCash, Easypaisa: payments and amount taken (by the method as corrected), refunds and amount paid back, collected |
+| `GET /reports/deliveries?from=&to=&riderId=&status=` | `reports.sales` | Deliveries taken in the period: order, channel, payment, rider, outcome, attempts, bill, paid, refund due (no customer details) |
+| `GET /reports/operating-result?from=&to=` | `reports.profit` | The recorded operating result as signed lines that add up to it: net sales, COGS, waste, stock and price variance, expenses by category; total shown only at 95 % COGS coverage, with the D-19 wording |
+| `GET /reports/ledger?from=&to=&channel=` | `ledger.read` | Ledger entries as a report: in, out and each channel's balance after the entry |
+| `GET /reports/expenses?from=&to=&categoryId=` | `expenses.read` | Recorded expenses of the period, by expense category |
+| `GET /reports/staff` | `reports.sales` | Names for the "settled by" filter |
+
+The sales reports also take `staffId`: bills settled by that person (refunds: asked for by them). `GET /reports` lists each report's other `filters` and marks `drillOnly` reports (bill lines).
 
 Each report answers `{key, title, period, filters, columns: [{key, label, kind, profit?, total?, formula?}], rows (with an `id` where a row opens the next level, e.g. the item), totals, footer: {period, businessDay, filters (with names), formulas, notes, generatedAt}}`. `400` for a reversed or too long period or an unknown filter value.
 

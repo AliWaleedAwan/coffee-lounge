@@ -65,7 +65,19 @@ test('the owner overview, a tile to its report, and a day down to its items', as
 
   await page.getByRole('button', { name: 'Today' }).click();
   await days.getByRole('row').nth(1).getByRole('button').click();
-  await expect(page.getByRole('tab', { name: 'Sales by item', selected: true })).toBeVisible();
+  // A day opens its bills; a bill opens its lines.
+  await expect(page.getByRole('tab', { name: 'Bills', selected: true })).toBeVisible();
+  const bills = page.getByRole('table', { name: 'Bills' });
+  const billRow = bills.getByRole('row', { name: /Report table/ });
+  await expect(billRow).toContainText('Rs 900.00');
+  await billRow.getByRole('button').click();
+  await expect(page.getByRole('button', { name: 'Back to the bills' })).toBeVisible();
+  const lines = page.getByRole('table', { name: 'Bill lines' });
+  await expect(lines.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
+  await expectAccessible(page, 'bill lines');
+  await page.getByRole('button', { name: 'Back to the bills' }).click();
+  await page.getByRole('tab', { name: 'Sales by item' }).click();
+  await page.getByRole('button', { name: 'Today' }).click();
   const items = page.getByRole('table', { name: 'Sales by item' });
   await expect(items.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
   await page.getByText('How these figures are worked out').click();

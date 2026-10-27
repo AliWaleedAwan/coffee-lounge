@@ -486,7 +486,21 @@ describe('who sees what', () => {
     expect((await call(waiter, 'GET', '/reports')).body['items'] as Body[]).toEqual([]);
     expect(
       ((await call(owner, 'GET', '/reports')).body['items'] as Body[]).map((r) => r['key']),
-    ).toEqual(['sales-by-day', 'sales-by-item', 'sales-by-hour']);
+    ).toEqual([
+      'sales-by-day',
+      'bills',
+      'sales-by-item',
+      'sales-by-category',
+      'sales-by-hour',
+      'menu-engineering',
+      'discounts',
+      'payment-mix',
+      'deliveries',
+      'operating-result',
+      'ledger',
+      'expenses',
+      'bill-lines',
+    ]);
     expect((await report(owner, 'sales-by-day', 'from=2026-10-27&to=2026-10-01')).status).toBe(400);
     expect((await report(owner, 'sales-by-day', 'from=2025-01-01&to=2026-10-01')).status).toBe(400);
     expect(

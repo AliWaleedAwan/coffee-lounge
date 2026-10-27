@@ -47,6 +47,12 @@ interface Tile {
   report: string;
   note: string | null;
 }
+interface CatalogEntry {
+  key: string;
+  title: string;
+  filters: string[];
+  drillOnly: boolean;
+}
 interface Overview {
   period: { from: string; to: string };
   compare: { from: string; to: string };
@@ -109,9 +115,9 @@ export function ReportsScreen() {
   const open = params.get('report');
   const catalog = useQuery({
     queryKey: ['reports', 'catalog'],
-    queryFn: ({ signal }) =>
-      api<{ items: { key: string; title: string }[] }>('/reports', { signal }),
+    queryFn: ({ signal }) => api<{ items: CatalogEntry[] }>('/reports', { signal }),
   });
+  const entry = catalog.data?.items.find((r) => r.key === open);
   const goTo = (report: string | null, extra: Record<string, string> = {}) => {
     setParams(report ? { report, ...extra } : {});
   };
@@ -131,33 +137,37 @@ export function ReportsScreen() {
         >
           Overview
         </button>
-        {(catalog.data?.items ?? []).map((r) => (
-          <button
-            key={r.key}
-            type="button"
-            role="tab"
-            id={`reports-tab-${r.key}`}
-            aria-selected={open === r.key}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo(r.key);
-            }}
-          >
-            {r.title}
-          </button>
-        ))}
+        {(catalog.data?.items ?? [])
+          .filter((r) => !r.drillOnly)
+          .map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              role="tab"
+              id={`reports-tab-${r.key}`}
+              aria-selected={open === r.key}
+              aria-controls="reports-panel"
+              onClick={() => {
+                goTo(r.key);
+              }}
+            >
+              {r.title}
+            </button>
+          ))}
       </div>
       <div
         id="reports-panel"
         role="tabpanel"
-        aria-labelledby={`reports-tab-${open ?? 'overview'}`}
+        {...(entry?.drillOnly
+          ? { 'aria-label': entry.title }
+          : { 'aria-labelledby': `reports-tab-${open ?? 'overview'}` })}
         className="stack"
       >
         {open === null ? (
           <OverviewPanel onOpen={goTo} />
-        ) : (
-          <ReportPanel key={open} reportKey={open} onOpen={goTo} />
-        )}
+        ) : entry ? (
+          <ReportPanel key={open} entry={entry} onOpen={goTo} />
+        ) : null}
       </div>
     </>
   );
@@ -445,37 +455,110 @@ const ORDER_TYPES = [
   { value: 'takeaway', label: 'Takeaway' },
   { value: 'delivery', label: 'Delivery' },
 ];
+const KINDS = [
+  { value: '', label: 'Everything' },
+  { value: 'promotion', label: 'Promotions' },
+  { value: 'discount', label: 'Discounts' },
+  { value: 'comp', label: 'Comps' },
+  { value: 'refund', label: 'Refunds' },
+];
+const CHANNELS = [
+  { value: '', label: 'All channels' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'card', label: 'Card' },
+  { value: 'transfer', label: 'Transfer' },
+  { value: 'other', label: 'Other' },
+];
+const STATUSES = [
+  { value: '', label: 'All outcomes' },
+  { value: 'pending_dispatch', label: 'Waiting to go' },
+  { value: 'out_for_delivery', label: 'On the way' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'converted_to_pickup', label: 'Picked up instead' },
+];
+const FILTER_KEYS = [
+  'orderType',
+  'categoryId',
+  'itemId',
+  'staffId',
+  'kind',
+  'channel',
+  'riderId',
+  'status',
+  'invoiceId',
+] as const;
+type Names = { id: string; name: string }[];
+
+/** A list of names for a filter, when the caller may read it (otherwise the filter is not offered). */
+function useNames(key: string, path: string, enabled: boolean, pick: (body: unknown) => Names) {
+  return useQuery({
+    queryKey: ['reports', 'names', key],
+    queryFn: async ({ signal }) => pick(await api<unknown>(path, { signal })),
+    enabled,
+    retry: false,
+  });
+}
 
 function ReportPanel({
-  reportKey,
+  entry,
   onOpen,
 }: {
-  reportKey: string;
-  onOpen: (report: string, extra?: Record<string, string>) => void;
+  entry: CatalogEntry;
+  onOpen: (report: string | null, extra?: Record<string, string>) => void;
 }) {
   const [params] = useSearchParams();
   const initial = preset('month');
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Record<string, string>>(() => ({
     from: params.get('from') ?? initial.from,
     to: params.get('to') ?? initial.to,
-    orderType: params.get('orderType') ?? '',
-    categoryId: params.get('categoryId') ?? '',
-    itemId: params.get('itemId') ?? '',
-  });
+    ...Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) ?? ''])),
+  }));
+  const has = (k: string) => entry.filters.includes(k);
+  const set = (k: string) => (v: string) => {
+    setFilters({ ...filters, [k]: v, ...(k === 'categoryId' ? { itemId: '' } : {}) });
+  };
   const menu = useQuery({
     queryKey: ['reports', 'menu'],
     queryFn: ({ signal }) =>
       api<{ categories: { id: string; name: string; items: { id: string; name: string }[] }[] }>(
         '/menu',
-        { signal },
+        {
+          signal,
+        },
       ),
+    enabled: has('itemId') || (has('categoryId') && entry.key !== 'expenses'),
     retry: false,
   });
-  const query = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== '')).toString();
-  const valid = filters.from !== '' && filters.to !== '' && filters.from <= filters.to;
+  const expenseCategories = useNames(
+    'expense-categories',
+    '/expense-categories',
+    entry.key === 'expenses',
+    (b) => (b as { items: Names }).items,
+  );
+  const staff = useNames(
+    'staff',
+    '/reports/staff',
+    has('staffId'),
+    (b) => (b as { items: Names }).items,
+  );
+  const riders = useNames(
+    'riders',
+    '/riders?all=true',
+    has('riderId'),
+    (b) => (b as { items: Names }).items,
+  );
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([k, v]) => v !== '' && (k === 'from' || k === 'to' || has(k))),
+  ).toString();
+  const valid =
+    filters['from'] !== '' &&
+    filters['to'] !== '' &&
+    (filters['from'] ?? '') <= (filters['to'] ?? '');
   const report = useQuery({
-    queryKey: ['reports', reportKey, query],
-    queryFn: ({ signal }) => api<Report>(`/reports/${reportKey}?${query}`, { signal }),
+    queryKey: ['reports', entry.key, query],
+    queryFn: ({ signal }) => api<Report>(`/reports/${entry.key}?${query}`, { signal }),
     meta: TOPICS,
     enabled: valid,
     placeholderData: (previous) => previous,
@@ -483,66 +566,89 @@ function ReportPanel({
   const r = report.data;
   const categories = menu.data?.categories ?? [];
   const items = categories.flatMap((c) =>
-    filters.categoryId === '' || c.id === filters.categoryId ? c.items : [],
+    (filters['categoryId'] ?? '') === '' || c.id === filters['categoryId'] ? c.items : [],
   );
+  const period = { from: filters['from'] ?? '', to: filters['to'] ?? '' };
   const drill = (row: Record<string, Cell>): (() => void) | null => {
-    if (reportKey === 'sales-by-day' && typeof row['date'] === 'string') {
+    const id = typeof row['id'] === 'string' ? row['id'] : null;
+    if (entry.key === 'sales-by-day' && typeof row['date'] === 'string') {
       const day = row['date'];
       return () => {
-        onOpen('sales-by-item', { from: day, to: day });
+        onOpen('bills', { from: day, to: day });
       };
     }
-    if (reportKey === 'sales-by-item' && typeof row['id'] === 'string') {
-      const itemId = row['id'];
+    if ((entry.key === 'bills' || entry.key === 'discounts') && id) {
       return () => {
-        onOpen('sales-by-day', { from: filters.from, to: filters.to, itemId });
+        onOpen('bill-lines', { ...period, invoiceId: id });
+      };
+    }
+    if ((entry.key === 'sales-by-item' || entry.key === 'menu-engineering') && id) {
+      return () => {
+        onOpen('sales-by-day', { ...period, itemId: id });
       };
     }
     return null;
   };
+  const select = (k: string, label: string, options: { value: string; label: string }[]) => (
+    <SelectField label={label} value={filters[k] ?? ''} options={options} onChange={set(k)} />
+  );
   return (
     <>
-      <PeriodPicker
-        value={filters}
-        onChange={(p) => {
-          setFilters({ ...filters, ...p });
-        }}
-      />
-      <div className="row" role="group" aria-label="Filters">
-        <SelectField
-          label="Order type"
-          value={filters.orderType}
-          options={ORDER_TYPES}
-          onChange={(v) => {
-            setFilters({ ...filters, orderType: v });
+      {entry.drillOnly ? (
+        <div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              onOpen('bills', period);
+            }}
+          >
+            Back to the bills
+          </button>
+        </div>
+      ) : (
+        <PeriodPicker
+          value={period}
+          onChange={(p) => {
+            setFilters({ ...filters, ...p });
           }}
         />
-        {categories.length > 0 ? (
-          <>
-            <SelectField
-              label="Category"
-              value={filters.categoryId}
-              options={[
-                { value: '', label: 'All categories' },
-                ...categories.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-              onChange={(v) => {
-                setFilters({ ...filters, categoryId: v, itemId: '' });
-              }}
-            />
-            <SelectField
-              label="Item"
-              value={filters.itemId}
-              options={[
-                { value: '', label: 'All items' },
-                ...items.map((i) => ({ value: i.id, label: i.name })),
-              ]}
-              onChange={(v) => {
-                setFilters({ ...filters, itemId: v });
-              }}
-            />
-          </>
-        ) : null}
+      )}
+      <div className="row" role="group" aria-label="Filters">
+        {has('orderType') ? select('orderType', 'Order type', ORDER_TYPES) : null}
+        {has('categoryId') && entry.key === 'expenses' && expenseCategories.data
+          ? select('categoryId', 'Category', [
+              { value: '', label: 'All categories' },
+              ...expenseCategories.data.map((c) => ({ value: c.id, label: c.name })),
+            ])
+          : null}
+        {has('categoryId') && entry.key !== 'expenses' && categories.length > 0
+          ? select('categoryId', 'Category', [
+              { value: '', label: 'All categories' },
+              ...categories.map((c) => ({ value: c.id, label: c.name })),
+            ])
+          : null}
+        {has('itemId') && categories.length > 0
+          ? select('itemId', 'Item', [
+              { value: '', label: 'All items' },
+              ...items.map((i) => ({ value: i.id, label: i.name })),
+            ])
+          : null}
+        {has('staffId') && staff.data
+          ? select('staffId', entry.key === 'discounts' ? 'By' : 'Settled by', [
+              { value: '', label: 'Anyone' },
+              ...staff.data.map((p) => ({ value: p.id, label: p.name })),
+            ])
+          : null}
+        {has('kind') ? select('kind', 'What', KINDS) : null}
+        {has('channel') ? select('channel', 'Channel', CHANNELS) : null}
+        {has('riderId') && riders.data
+          ? select('riderId', 'Rider', [
+              { value: '', label: 'Any rider' },
+              ...riders.data.map((p) => ({ value: p.id, label: p.name })),
+            ])
+          : null}
+        {has('status') ? select('status', 'Outcome', STATUSES) : null}
       </div>
       {report.isPending && valid ? <Loading label="Loading the report" /> : null}
       {report.isError ? (
@@ -560,6 +666,7 @@ function ReportPanel({
               {n}
             </p>
           ))}
+          {r.rows.length === 0 ? <p className="muted">Nothing in this period.</p> : null}
           <div className="table-scroll">
             <table className="data" aria-label={r.title}>
               <thead>
@@ -575,7 +682,7 @@ function ReportPanel({
                 {r.rows.map((row, i) => {
                   const open = drill(row);
                   return (
-                    <tr key={String(row['date'] ?? row['id'] ?? row['hour'] ?? i)}>
+                    <tr key={String(row['id'] ?? row['date'] ?? row['hour'] ?? i) + String(i)}>
                       {r.columns.map((c, j) => (
                         <td key={c.key}>
                           {j === 0 && open ? (
