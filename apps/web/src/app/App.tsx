@@ -10,6 +10,7 @@ import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
 import { AssetsScreen } from '../screens/assets/AssetsScreen.tsx';
+import { AuditScreen } from '../screens/audit/AuditScreen.tsx';
 import { ExpensesScreen } from '../screens/expenses/ExpensesScreen.tsx';
 import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
 import { LedgerScreen } from '../screens/ledger/LedgerScreen.tsx';
@@ -28,6 +29,7 @@ import { OperationsScreen } from '../screens/operations/OperationsScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
 import { RegisterScreen } from '../screens/RegisterScreen.tsx';
+import { UsersScreen } from '../screens/users/UsersScreen.tsx';
 import { AreaPage, RequireSession, useSignedIn } from '../screens/Shell.tsx';
 
 export function createQueryClient(): QueryClient {
@@ -48,6 +50,7 @@ export function createQueryClient(): QueryClient {
 const BUILT: Record<string, () => JSX.Element> = {
   approvals: ApprovalsScreen,
   assets: AssetsScreen,
+  audit: AuditScreen,
   counter: CounterScreen,
   deliveries: DeliveryScreen,
   devices: DevicesScreen,
@@ -60,6 +63,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   operations: OperationsScreen,
   pickup: PickupScreen,
   settings: SettingsScreen,
+  users: UsersScreen,
 };
 
 const FLOOR = AREAS.find((a) => a.id === 'floor');

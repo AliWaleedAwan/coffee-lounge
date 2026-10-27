@@ -3,6 +3,7 @@
  * with supplier returns, waste, stock counts and suppliers. Tabs follow the user's permissions; the server checks every request.
  */
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { permissionSet } from '../../auth/session.ts';
 import { useSignedIn } from '../Shell.tsx';
 import { CountsTab } from './CountsTab.tsx';
@@ -39,7 +40,10 @@ export function InventoryScreen() {
     { id: 'suppliers', label: 'Suppliers' },
     { id: 'import', label: 'Import' },
   ];
-  const [tab, setTab] = useState<Tab>('overview');
+  // `?tab=counts` (from the inbox) opens that tab, when the user has it.
+  const [params] = useSearchParams();
+  const asked = tabs.find((t) => t.id === params.get('tab'))?.id;
+  const [tab, setTab] = useState<Tab>(asked ?? 'overview');
 
   return (
     <>

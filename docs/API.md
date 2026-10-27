@@ -91,6 +91,14 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /auth/login`, `POST /auth/pin-switch`, `POST /auth/logout` | — | Sessions |
 | `GET /auth/me` | — | User, effective permissions + scopes, device |
 | `POST /auth/step-up` | approver's permission | One-use approval token |
+| `GET /users`, `POST /users`, `POST /users/{id}/status` | `users.manage` | People with roles, status and whether a PIN is set; add a person (temporary password, optional PIN, roles; only an owner adds an owner); disable or enable (the last active owner stays, AT-39) |
+| `POST /users/{id}/credentials` | `users.manage` | `{password, pin?}`: a forgotten password or PIN (step 5.5). The person must change the password at the next login; their sessions end; not for yourself (use the account page); an owner only by an owner. Audited `user.credentials_reset` (no secrets) |
+| `GET /access/catalog` | `users.manage` | Every permission (module, description, scope kind, 🔒) and every role with its grants and its RBAC.md policies (○ grantable, ✕ forbidden) |
+| `GET /users/{id}/effective-permissions` | `users.manage` | What the person may do and where each permission comes from (`role:<key>`, `override:grant`), with scopes (AT-38) |
+| `GET /users/{id}/permission-overrides` | `users.manage` | The person's overrides with effect, reason and who set them |
+| `PUT /users/{id}/permission-overrides/{key}`, `DELETE …?reason=` | `roles.manage` 🔒 | `{effect: grant \| deny, reason}`; deny wins over any role; protected permissions stay the owner's |
+| `PUT /users/{id}/roles` | `roles.manage` 🔒 | `{roles, reason}`: the person's roles; the owner role is also the owner flag, and the last active owner cannot lose it (AT-39). Audited `user.roles` with before and after |
+| `PUT /roles/{role}/permissions/{key}`, `DELETE …?reason=` | `roles.manage` 🔒 | `{reason}`: give or take a permission from everyone with the role; ✕ and 🔒 are refused by the database (`403`), the owner role is not edited (`400`). Audited `role.grant` / `role.revoke` |
 
 ### 5.3 Floor, tables, sessions
 
@@ -203,7 +211,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
 | `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130) |
 | `PUT /settings/branding` | `settings.manage` | `{expectedVersion, shopName, addressLine, phone, footer, primary}`: the receipt wording and the brand colour together; a colour under 4.5:1 for white button text or on the page is refused (AT-130) |
-| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox (escalated orders, shift variances, failed deliveries, refunds due, uncollected items, long-open tables, printers) with links |
+| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox with links: escalated orders, shift variances, failed deliveries, refunds due (opening the prefilled refund, P5-5), uncollected items, long-open tables, printers, ledger mismatches, and (step 5.5) stock counts waiting for approval and critical stock alerts (out of stock, expired, short for orders taken, not matching movements; one line per kind). Refunds have no waiting requests: they are approved on the spot by step-up (D-13) |
 | `POST /alerts/{alertId}/acknowledge` | `reports.sales` | Note an alert as seen; it stays in the inbox, below the unseen ones, until resolved |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 
@@ -324,6 +332,13 @@ What the shop owns (D-31): the row is the asset as it is now, and every change i
 | `POST /assets/{id}/dispose` **[I]** | `assets.manage` | `{how: sold/scrapped/donated/lost/returned, reason}`. The asset stays with its history and never changes again. Money from a sale is a manual ledger entry (§5.10) |
 
 `POST /imports/assets/preview` and `/apply` take `09_assets.csv` (P5-7) with the step-4.9 rules (§5.9) and need `assets.manage`. The tag is required in the file (it is how a re-import finds the asset); re-importing records the differences as events with the reason "Imported from 09_assets.csv"; a disposed asset is refused.
+
+### 5.13 Audit log (Phase 5 step 5.5)
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /audit?from=&to=&userId=&action=&entityType=&entityId=&before=&limit=` | `audit.read` | Newest first, `limit` up to 200 (default 100), `before` = the `nextBefore` of the previous page. `from`/`to` are the shop's calendar days; `userId` matches the actor or the approver; `action` matches an action (`payment.refund`) or a family (`payment`). Each item: `at`, `actorKind`, `actor`, `device`, `action`, `entityType`, `entityId`, `before`, `after`, `reason`, `approvedBy`, `ip`, `correlationId` (AT-95). Read only |
+| `GET /audit/filters` | `audit.read` | The actions and record types recorded so far, and the people |
 
 ## 6. Errors
 
