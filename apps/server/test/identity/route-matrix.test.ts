@@ -114,6 +114,8 @@ describe('no route forgets its permission', () => {
       'GET /api/staff/v1/events',
       // The shop's name and brand colour for every screen's header (step 3.12): nothing private.
       'GET /api/staff/v1/branding',
+      // The names of the reports the caller's own permissions open (step 6.1): no figures.
+      'GET /api/staff/v1/reports',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

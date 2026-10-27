@@ -340,6 +340,18 @@ What the shop owns (D-31): the row is the asset as it is now, and every change i
 | `GET /audit?from=&to=&userId=&action=&entityType=&entityId=&before=&limit=` | `audit.read` | Newest first, `limit` up to 200 (default 100), `before` = the `nextBefore` of the previous page. `from`/`to` are the shop's calendar days; `userId` matches the actor or the approver; `action` matches an action (`payment.refund`) or a family (`payment`). Each item: `at`, `actorKind`, `actor`, `device`, `action`, `entityType`, `entityId`, `before`, `after`, `reason`, `approvedBy`, `ip`, `correlationId` (AT-95). Read only |
 | `GET /audit/filters` | `audit.read` | The actions and record types recorded so far, and the people |
 
+### 5.14 Reports (Phase 6)
+
+Every report is one definition shared by the screen and, from step 6.5, the CSV and PDF exports (P6-2): its rows, and totals worked out from those rows at full precision (AC-RPT-1). Money and percentages come as decimal strings with 2 decimals, costs at full precision, counts as numbers; `null` means "does not apply" (e.g. a margin without sales). Columns with costs or margins (`profit`) are only returned with `reports.profit`.
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /reports` | session | The reports the caller may open: `key`, `title`, and whether cost columns will show |
+| `GET /reports/sales-by-day?from=&to=&orderType=&categoryId=&itemId=` | `reports.sales` | One row per business date (quiet days included): orders, items, gross, discounts, refunds, net sales, average order, cash rounding, collected; with `reports.profit` also COGS, COGS coverage %, waste, stock variance, price variance, gross profit after waste, gross margin %, recorded expenses, recorded operating result or "Needs recipes" (FINANCE_REPORTING.md §3). Defaults: this business month to today; at most 400 days. Filtering by order type, category or item leaves out the shop-wide figures (waste, variances, expenses, rounding; collected also by category or item) |
+| `GET /reports/sales-by-item?…` | `reports.sales` | One row per menu item sold, best sellers first: sold, gross, discounts, refunds (as far as refunds name their items), net sales; with `reports.profit` COGS, coverage, gross profit, margin |
+
+Each report answers `{key, title, period, filters, columns: [{key, label, kind, profit?, total?, formula?}], rows, totals, footer: {period, businessDay, filters (with names), formulas, notes, generatedAt}}`. `400` for a reversed or too long period or an unknown filter value.
+
 ## 6. Errors
 
 `application/problem+json`:

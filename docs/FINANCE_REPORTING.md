@@ -60,6 +60,8 @@ All amounts in PKR, computed at full precision and rounded to 2 dp for display. 
 
 **Discount allocation (PROVISIONAL D-21):** a bill-level discount is split across the invoice's lines in proportion to each line's net-before-bill-discount. The last line takes the rounding remainder so the shares add up exactly to the discount.
 
+**As built (Phase 6 step 6.1):** a period's figures are the sums of its business days, and ratios are worked out from those sums. *COGS coverage* compares line net sales (after discounts, before refunds) of recipe-tracked lines with all lines; a line is recipe-tracked when its size was sold with stock mode "recipe". *Gross margin %* while coverage is below 100 % is (recipe lines' net − COGS − waste − stock variance − purchase price variance) ÷ recipe lines' net. Refunds by item count only refunds recorded with their items. Waste, stock variance, purchase price variance, expenses and cash rounding belong to the whole shop and are left out when a report is filtered by order type, category or item.
+
 ## 4. Operational ledger posting rules
 
 The ledger records **money movements** with a link to their source. Every row has a unique `source_key`, so a retry can never post twice.

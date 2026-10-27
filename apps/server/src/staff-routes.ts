@@ -17,6 +17,7 @@ import { assetRoutes } from './modules/assets/index.ts';
 import { auditRoutes } from './modules/audit/index.ts';
 import { expenseRoutes } from './modules/expenses/index.ts';
 import { ledgerRoutes } from './modules/ledger/index.ts';
+import { reportRoutes } from './modules/reports/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -66,6 +67,7 @@ export async function registerStaffRoutes(
   await importRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await ledgerRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await auditRoutes(app, { pool: deps.pool });
+  await reportRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await assetRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await expenseRoutes(app, {
     pool: deps.pool,

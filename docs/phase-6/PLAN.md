@@ -1,6 +1,6 @@
 # Phase 6 — Reports & Exports Build Plan
 
-> **Draft for your approval** (no code yet). Builds on the approved design (G1) and on Phases 3–5, whose software is complete and merged into `main` (`docs/phase-3/ACCEPTANCE.md`, `docs/phase-4/ACCEPTANCE.md`, `docs/phase-5/ACCEPTANCE.md`). Where the Phase 0 roadmap and later decisions differ, the decisions win (§3).
+> **Approved 27 Oct 2026** with P6-1…P6-9 as recommended. Builds on the approved design (G1) and on Phases 3–5, whose software is complete and merged into `main` (`docs/phase-3/ACCEPTANCE.md`, `docs/phase-4/ACCEPTANCE.md`, `docs/phase-5/ACCEPTANCE.md`). Where the Phase 0 roadmap and later decisions differ, the decisions win (§3).
 
 | | |
 |---|---|
@@ -44,7 +44,7 @@ Each step is a vertical slice: queries, API, screens and tests together. Every r
 
 | Step | Work | Tests that must pass | Depends on |
 |---|---|---|---|
-| 6.1 | **KPI module and report engine.** The KPIs of FINANCE_REPORTING.md §3 as tested functions over business dates; a report definition = filters + one query returning rows and totals computed from those rows; period helpers (day, week Mon–Sun, month, custom, comparison period, P6-8); COGS coverage and the "costs incomplete" and "Needs recipes" rules; a reconciliation harness that, for any report and filters, checks tile = Σ rows = CSV = PDF text | AT-70, AT-44 (reports side), AC-RPT-1 harness on the first reports, KPI unit tests against hand-worked fixtures | Phase 5 |
+| 6.1 ✅ | **KPI module and report engine.** The KPIs of FINANCE_REPORTING.md §3 as tested functions over business dates; a report definition = filters + one query returning rows and totals computed from those rows; period helpers (day, week Mon–Sun, month, custom, comparison period, P6-8); COGS coverage and the "costs incomplete" and "Needs recipes" rules; a reconciliation harness that, for any report and filters, checks tile = Σ rows = CSV = PDF text | AT-70, AT-44 (reports side), AC-RPT-1 harness on the first reports, KPI unit tests against hand-worked fixtures | Phase 5 |
 | 6.2 | **Owner overview.** Headline tiles with comparison, sales by hour and by day as simple charts with a table beside each (P6-5), top items by sales and by margin, open alerts; every tile opens its report; margin tiles only with `reports.profit`; a manager sees what their permissions allow; live refresh on new sales | AT-20 (dashboard part), J8, UX accessibility checks (AT-86) | 6.1 |
 | 6.3 | **Money and sales reports.** Sales summary; by item and category; by hour and day; menu engineering (popularity × margin); gross profit & margin; discounts, comps & refunds; payment mix & collections; delivery report; recorded operating result; ledger and expenses as reports. Filters (period, order type, category, item, staff, method), drill-down to invoices and lines | AT-20 (each report), AC-RPT-1 for every KPI in them | 6.1 |
 | 6.4 | **Stock, purchases and people reports.** Inventory usage; waste & expiry; stock on hand & valuation (values only with `inventory.cost_view`); counts & variances; purchases; staff activity; audit log as CSV | AT-20, AC-RPT-1 for each | 6.1 |
