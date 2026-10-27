@@ -10,7 +10,9 @@ import { parseInput } from '../../platform/validation.ts';
 import { authOf } from '../identity/index.ts';
 import { REPORTS } from './catalog.ts';
 import { runReport, type ReportDefinition } from './engine.ts';
+import { overview } from './overview.ts';
 import { checkPeriod, monthOf } from './periods.ts';
+import { AppError } from '../../platform/errors.ts';
 
 /** Names for the footer instead of ids (FINANCE_REPORTING.md §6). */
 async function filterLabels(
@@ -51,6 +53,20 @@ export async function reportRoutes(
         profitColumns: permissions.has('reports.profit'),
       })),
     };
+  });
+
+  // The owner overview (step 6.2): its tiles are the totals of the reports they open.
+  app.get('/reports/overview', { config: { permission: 'reports.sales' } }, async (request) => {
+    const today = await businessDateOf(pool, now());
+    const query = request.query as Record<string, unknown>;
+    const from = typeof query['from'] === 'string' ? query['from'] : today;
+    const to = typeof query['to'] === 'string' ? query['to'] : today;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      throw new AppError('VALIDATION_FAILED', 'Dates as YYYY-MM-DD');
+    }
+    const period = checkPeriod({ from, to });
+    const permissions = authOf(request).permissions;
+    return overview(pool, { db: pool, can: (p) => permissions.has(p), today }, period);
   });
 
   const register = <F extends { from: string; to: string }>(def: ReportDefinition<F>) => {

@@ -377,6 +377,74 @@ describe('COGS coverage and the operating result (AT-70)', () => {
   });
 });
 
+describe('the owner overview (AT-20 dashboard part, J8)', () => {
+  it('shows tiles that are the totals of the reports they open, against last week', async () => {
+    const res = await call(owner, 'GET', `/reports/overview?from=${today}&to=${today}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const tiles = res.body['tiles'] as Body[];
+    expect(tiles.map((t) => t['key'])).toEqual([
+      'net_sales',
+      'orders',
+      'aov',
+      'margin',
+      'waste',
+      'operating_result',
+    ]);
+    const day = (await report(owner, 'sales-by-day', `from=${today}&to=${today}`)).body[
+      'totals'
+    ] as Body;
+    for (const t of tiles) {
+      expect(t['value'], String(t['key'])).toEqual(day[String(t['key'])] ?? null);
+      expect(t['report']).toBe('sales-by-day');
+    }
+    expect(tiles[0]).toMatchObject({ value: '1070.00', compare: '0.00', change: null });
+    expect(tiles[3]).toMatchObject({
+      value: '85.89',
+      note: 'Over recipe items only (COGS coverage 76.92 %)',
+    });
+    expect(tiles[5]).toMatchObject({
+      value: null,
+      note: 'Needs recipes: costs are missing for more than 5 % of sales',
+    });
+    // The hours add up to the sales after discounts; the days are the report's rows.
+    const hours = res.body['byHour'] as Body[];
+    expect(hours).toHaveLength(24);
+    expect(hours[0]?.['hour']).toBe('04:00');
+    const byHour = (await report(owner, 'sales-by-hour', `from=${today}&to=${today}`)).body;
+    expectReconciled(byHour as never);
+    expect((byHour['totals'] as Body)['sales']).toBe('1170.00');
+    expect(hours.reduce((s, h) => s + Number(h['sales']), 0)).toBe(1170);
+    expect(res.body['byDay']).toEqual([{ date: today, net_sales: '1070.00', orders: 2 }]);
+    // J8: top items by margin straight on the overview.
+    expect((res.body['topByMargin'] as Body[]).map((r) => [r['item'], r['margin']])).toEqual([
+      ['KPI latte', '96.63'],
+    ]);
+    expect((res.body['topItems'] as Body[]).map((r) => r['item'])).toEqual([
+      'KPI latte',
+      'KPI cake',
+    ]);
+    expect(Object.keys(res.body['alerts'] as Body).sort()).toEqual([
+      'ledger',
+      'operational',
+      'stock',
+    ]);
+  });
+
+  it('a manager sees the sales tiles only; a waiter none', async () => {
+    const res = await call(manager, 'GET', `/reports/overview?from=${today}&to=${today}`);
+    expect((res.body['tiles'] as Body[]).map((t) => t['key'])).toEqual([
+      'net_sales',
+      'orders',
+      'aov',
+    ]);
+    expect(res.body['topByMargin']).toBeNull();
+    expect((res.body['topItems'] as Body[])[0]).not.toHaveProperty('margin');
+    expect(res.body['coverage']).toBeNull();
+    expect((await call(waiter, 'GET', '/reports/overview')).status).toBe(403);
+    expect((await call(owner, 'GET', '/reports/overview?from=yesterday')).status).toBe(400);
+  });
+});
+
 describe('business dates (AT-44, reports side)', () => {
   it('a sale settled at 00:30 counts on the business day before', async () => {
     const [y, m, dd] = today.split('-').map(Number) as [number, number, number];
@@ -418,7 +486,7 @@ describe('who sees what', () => {
     expect((await call(waiter, 'GET', '/reports')).body['items'] as Body[]).toEqual([]);
     expect(
       ((await call(owner, 'GET', '/reports')).body['items'] as Body[]).map((r) => r['key']),
-    ).toEqual(['sales-by-day', 'sales-by-item']);
+    ).toEqual(['sales-by-day', 'sales-by-item', 'sales-by-hour']);
     expect((await report(owner, 'sales-by-day', 'from=2026-10-27&to=2026-10-01')).status).toBe(400);
     expect((await report(owner, 'sales-by-day', 'from=2025-01-01&to=2026-10-01')).status).toBe(400);
     expect(

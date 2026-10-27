@@ -43,6 +43,8 @@ export interface ReportDefinition<F extends { from: string; to: string }> {
   permission: string;
   filters: z.ZodType<F>;
   columns: readonly Column[];
+  /** A row field passed through as `id`, for drilling down (e.g. the item's id). */
+  rowId?: string;
   /** Row fields summed for `derive` without being shown (e.g. promotions, recipe sales). */
   sumAlso?: readonly string[];
   /** The rows, in display order. */
@@ -74,7 +76,7 @@ export interface Report {
 const NUMERIC: readonly ColumnKind[] = ['int', 'money', 'cost', 'pct'];
 
 /** One shape per kind: money and percentages with 2 decimals, costs at full precision. */
-function shape(kind: ColumnKind, v: Cell | undefined): Cell {
+export function shape(kind: ColumnKind, v: Cell | undefined): Cell {
   if (v === null || v === undefined || v === '') return null;
   if (kind === 'money' || kind === 'pct') return new Decimal(v).toFixed(2);
   if (kind === 'cost') return new Decimal(v).toString();
@@ -101,9 +103,10 @@ export async function runReport<F extends { from: string; to: string }>(
 ): Promise<Report> {
   const visible = def.columns.filter((c) => !c.profit || ctx.can('reports.profit'));
   const raw = await def.rows(ctx, filters);
-  const rows = raw.map((r) =>
-    Object.fromEntries(visible.map((c) => [c.key, shape(c.kind, r[c.key])])),
-  );
+  const rows = raw.map((r) => ({
+    ...(def.rowId ? { id: r[def.rowId] ?? null } : {}),
+    ...Object.fromEntries(visible.map((c) => [c.key, shape(c.kind, r[c.key])])),
+  }));
   const sums: Record<string, Decimal | null> = {};
   for (const c of def.columns) {
     if (NUMERIC.includes(c.kind) && (c.total ?? 'sum') === 'sum')

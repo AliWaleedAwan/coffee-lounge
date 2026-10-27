@@ -29,6 +29,7 @@ import { OperationsScreen } from '../screens/operations/OperationsScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
 import { RegisterScreen } from '../screens/RegisterScreen.tsx';
+import { ReportsScreen } from '../screens/reports/ReportsScreen.tsx';
 import { UsersScreen } from '../screens/users/UsersScreen.tsx';
 import { AreaPage, RequireSession, useSignedIn } from '../screens/Shell.tsx';
 
@@ -62,6 +63,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   menu: MenuScreen,
   operations: OperationsScreen,
   pickup: PickupScreen,
+  reports: ReportsScreen,
   settings: SettingsScreen,
   users: UsersScreen,
 };

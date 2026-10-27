@@ -32,12 +32,12 @@ export const OPERATING_RESULT_MIN_COVERAGE = 95;
 
 const LINES = `
   inv AS (
-    SELECT i.id, i.business_date AS d, i.rounding_adjustment
+    SELECT i.id, i.business_date AS d, i.rounding_adjustment, i.settled_at
       FROM cl.invoices i JOIN cl.dining_sessions s ON s.id = i.session_id
      WHERE i.status = 'settled' AND i.business_date BETWEEN $1::date AND $2::date
        AND ($3::text IS NULL OR s.order_type = $3)),
   ln AS (
-    SELECT inv.d, inv.id AS invoice_id, mi.id AS item_id, mi.name AS item, mc.name AS category,
+    SELECT inv.d, inv.settled_at, inv.id AS invoice_id, mi.id AS item_id, mi.name AS item, mc.name AS category,
            il.billable_qty, il.gross, il.promotion_discount, il.discount_alloc, il.net, il.is_comp,
            CASE WHEN il.is_comp THEN 0 ELSE il.manual_discount END AS manual,
            CASE WHEN il.is_comp THEN il.manual_discount ELSE 0 END AS comp,
@@ -150,6 +150,36 @@ export async function salesByItem(db: Queryable, f: SalesFilter): Promise<Row[]>
     [f.from, f.to, f.orderType ?? null, f.categoryId ?? null, f.itemId ?? null],
   );
   return rows.map((r) => withDerived(r));
+}
+
+/**
+ * Sales by the shop's clock hour of settlement, over the period's business dates (FINANCE_REPORTING
+ * §1: hourly charts use local clock hours), in business-day order from the 04:00 cutoff. Lines
+ * after discounts; refunds belong to their own date, not to an hour, so they are not here.
+ */
+export async function salesByHour(db: Queryable, f: SalesFilter): Promise<Row[]> {
+  const { rows } = await db.query<Record<string, string | number | null>>(
+    `WITH ${LINES},
+       tz AS (SELECT value #>> '{}' AS zone FROM cl.system_settings WHERE key = 'shop.timezone'),
+       cut AS (SELECT extract(hour FROM (value #>> '{}')::time)::int AS h FROM cl.system_settings
+                WHERE key = 'shop.business_day_cutoff'),
+       hours AS (SELECT g AS h FROM generate_series(0, 23) g),
+       s AS (SELECT extract(hour FROM ln.settled_at AT TIME ZONE tz.zone)::int AS h,
+                    count(DISTINCT invoice_id)::int AS orders, sum(billable_qty)::int AS items,
+                    sum(gross) AS gross, sum(promotion_discount) AS promotions,
+                    sum(manual + discount_alloc) AS manual, sum(comp) AS comps
+               FROM ln CROSS JOIN tz GROUP BY 1)
+     SELECT lpad(hours.h::text, 2, '0') || ':00' AS hour,
+            COALESCE(s.orders, 0) AS orders, COALESCE(s.items, 0) AS items,
+            COALESCE(s.gross, 0)::text AS gross,
+            (COALESCE(s.promotions, 0) + COALESCE(s.manual, 0) + COALESCE(s.comps, 0))::text AS discounts,
+            (COALESCE(s.gross, 0) - COALESCE(s.promotions, 0) - COALESCE(s.manual, 0) - COALESCE(s.comps, 0))::text
+              AS sales
+       FROM hours CROSS JOIN cut LEFT JOIN s ON s.h = hours.h
+      ORDER BY (hours.h - cut.h + 24) % 24`,
+    [f.from, f.to, f.orderType ?? null, f.categoryId ?? null, f.itemId ?? null],
+  );
+  return rows;
 }
 
 const dec = (v: Cell | undefined): Decimal | null =>

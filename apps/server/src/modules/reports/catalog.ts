@@ -3,7 +3,15 @@
  * two reports; steps 6.3 and 6.4 add the rest of the catalogue on the same engine.
  */
 import { z } from 'zod';
-import { derive, ORDER_TYPES, salesByDay, salesByItem, shopWide, type SalesFilter } from './kpi.ts';
+import {
+  derive,
+  ORDER_TYPES,
+  salesByDay,
+  salesByHour,
+  salesByItem,
+  shopWide,
+  type SalesFilter,
+} from './kpi.ts';
 import type { Column, ReportDefinition } from './engine.ts';
 import type { Decimal } from '@cl/shared';
 
@@ -134,6 +142,7 @@ export const salesByItemReport: ReportDefinition<z.infer<typeof salesFilter>> = 
   title: 'Sales by item',
   permission: 'reports.sales',
   filters: salesFilter,
+  rowId: 'item_id',
   sumAlso: SALES_SUMS,
   columns: [
     { key: 'item', label: 'Item', kind: 'text', total: 'none' },
@@ -176,4 +185,29 @@ export const salesByItemReport: ReportDefinition<z.infer<typeof salesFilter>> = 
   ],
 };
 
-export const REPORTS = [salesByDayReport, salesByItemReport] as const;
+export const salesByHourReport: ReportDefinition<z.infer<typeof salesFilter>> = {
+  key: 'sales-by-hour',
+  title: 'Sales by hour',
+  permission: 'reports.sales',
+  filters: salesFilter,
+  columns: [
+    { key: 'hour', label: 'Hour (shop clock)', kind: 'text', total: 'none' },
+    {
+      key: 'orders',
+      label: 'Orders',
+      kind: 'int',
+      formula: 'settled bills, by the hour they were settled',
+    },
+    { key: 'items', label: 'Items sold', kind: 'int' },
+    money('gross', 'Gross sales', F.gross),
+    money('discounts', 'Discounts', F.discounts),
+    money(
+      'sales',
+      'Sales after discounts',
+      'gross − discounts (refunds are counted on their own date, not by hour)',
+    ),
+  ],
+  rows: (ctx, f) => salesByHour(ctx.db, f),
+};
+
+export const REPORTS = [salesByDayReport, salesByItemReport, salesByHourReport] as const;
