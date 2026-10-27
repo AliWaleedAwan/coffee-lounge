@@ -18,7 +18,7 @@ import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
 import { businessDateOf } from '../../platform/settings.ts';
-import { lockOpenShift } from '../billing/index.ts';
+import { assertCashInTill, lockOpenShift } from '../billing/index.ts';
 import type { CommandContext, StaffAuth } from '../orders/index.ts';
 
 export const PAID_VIA = ['cash', 'card', 'transfer', 'other'] as const;
@@ -307,6 +307,7 @@ async function insertExpense(
       );
     }
   }
+  if (shiftId !== null) await assertCashInTill(tx, shiftId, amount, 'paying more from it');
   const year = businessDate.slice(0, 4);
   const expenseNo = `EXP-${year}-${(await tx.nextNumber('expense', year)).padStart(5, '0')}`;
   const attachment = carried.attachment ?? null;

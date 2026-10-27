@@ -654,6 +654,29 @@ describe('the shift', () => {
       stepUpId: await approved(cashier, card.invoiceId, 'payment.correct'),
     });
     expect(toCash.status).toBe(400);
+    // Never more cash out than the till should hold.
+    const shiftNow = String(
+      ((await staff(cashier, 'GET', '/cash-shifts/current')).body['shift'] as Body)['id'],
+    );
+    await staff(cashier, 'POST', `/cash-shifts/${shiftNow}/movements`, {
+      kind: 'paid_out',
+      amount: '2950',
+      reason: 'To the bank',
+    });
+    const short = await staff(cashier, 'POST', `/invoices/${old.invoiceId}/refunds`, {
+      kind: 'refund',
+      paymentId: old.paymentId,
+      amount: '100',
+      reason: 'Till too low',
+      stepUpId: await approved(cashier, old.invoiceId),
+    });
+    expect(short.status).toBe(400);
+    expect(String(short.body['detail'])).toContain('Only Rs 50.00 should be in the till');
+    await staff(cashier, 'POST', `/cash-shifts/${shiftNow}/movements`, {
+      kind: 'paid_in',
+      amount: '2950',
+      reason: 'Back from the bank',
+    });
     // A cash refund of yesterday's sale is paid from today's drawer.
     const refund = await staff(cashier, 'POST', `/invoices/${old.invoiceId}/refunds`, {
       kind: 'refund',

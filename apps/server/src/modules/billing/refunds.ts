@@ -29,7 +29,7 @@ import { requestPrint } from '../printing/index.ts';
 import { looksLikeCardNumber } from './compute.ts';
 import { whoOf } from './invoices.ts';
 import { PAYMENT_METHODS, TRANSFER_PROVIDERS } from './payments.ts';
-import { counterTill, lockOpenShift } from './shifts.ts';
+import { assertCashInTill, counterTill, lockOpenShift } from './shifts.ts';
 
 type Method = (typeof PAYMENT_METHODS)[number];
 type Provider = (typeof TRANSFER_PROVIDERS)[number];
@@ -346,6 +346,9 @@ export async function recordRefund(
           ? 'No cash shift is open. Open the shift first: a cash refund is paid from the till.'
           : 'No cash shift is open. A correction to or from cash is made while its shift is open.',
       );
+    }
+    if (input.kind === 'refund') {
+      await assertCashInTill(tx, shiftId, amount, 'a larger cash refund');
     }
     if (input.kind === 'method_correction' && !payment.inOpenShift) {
       throw new AppError(

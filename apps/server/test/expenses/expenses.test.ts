@@ -286,6 +286,13 @@ describe('cash from the till (P5-6)', () => {
     expect((await record({ paidVia: 'card', provider: undefined, fromTill: true })).status).toBe(
       400,
     );
+    const tooMuch = await record({
+      amount: '5000.01',
+      paidVia: 'cash',
+      provider: undefined,
+      fromTill: true,
+    });
+    expect(String(tooMuch.body['detail'])).toContain('Only Rs 5000.00 should be in the till');
     expect(
       (
         await record({

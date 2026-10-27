@@ -229,7 +229,8 @@ async function lockShift(tx: Tx, auth: StaffAuth, shiftId: string): Promise<Lock
   return shift;
 }
 
-async function expectedCash(tx: Tx, shiftId: string): Promise<Decimal> {
+/** What the till of a shift should hold now (the `cl.cash_shift_figures` formula). */
+export async function expectedCash(tx: Tx, shiftId: string): Promise<Decimal> {
   const { rows } = await tx.query<{ expected: string }>(
     'SELECT expected_cash::text AS expected FROM cl.cash_shift_figures WHERE shift_id = $1',
     [shiftId],
@@ -265,6 +266,22 @@ export async function openShift(
   });
   await shiftChanged(tx, shiftId);
   return { shiftId };
+}
+
+/** Cash cannot leave a till that should not hold it (paid-outs, cash refunds, till expenses). */
+export async function assertCashInTill(
+  tx: Tx,
+  shiftId: string,
+  amount: Decimal,
+  what: string,
+): Promise<void> {
+  const expected = await expectedCash(tx, shiftId);
+  if (amount.gt(expected)) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `Only Rs ${money.format(expected)} should be in the till; ${what} is not possible.`,
+    );
+  }
 }
 
 /** Paid-in (e.g. change brought from the bank) or paid-out (e.g. milk top-up), with a reason. */
