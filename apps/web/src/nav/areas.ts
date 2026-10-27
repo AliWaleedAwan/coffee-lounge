@@ -68,6 +68,13 @@ export const AREAS: readonly Area[] = [
   },
   { id: 'ledger', label: 'Ledger', path: '/ledger', anyOf: ['ledger.read'], ready: true },
   {
+    id: 'expenses',
+    label: 'Expenses',
+    path: '/expenses',
+    anyOf: ['expenses.read', 'expenses.manage'],
+    ready: true,
+  },
+  {
     id: 'reports',
     label: 'Reports',
     path: '/reports',

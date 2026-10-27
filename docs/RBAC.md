@@ -80,8 +80,10 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | **Finance & assets** | | | | | | | |
 | `ledger.read` | View ledger | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `ledger.manage` | Manual entries and reversals (never edits, D-31) | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
-| `expenses.read` / `expenses.manage` | Expenses | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
-| `assets.read` / `assets.manage` | Asset register | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
+| `expenses.read` | Expenses | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
+| `expenses.manage` | Expenses | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
+| `assets.read` | Asset register | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
+| `assets.manage` | Asset register | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
 | **Reports** | | | | | | | |
 | `reports.sales` | Sales reports | ✔ | ✔ | ✕ | ○ (own shift) | ✕ | ✕ |
 | `reports.profit` | COGS, margins, operating result | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |

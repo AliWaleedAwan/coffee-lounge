@@ -25,3 +25,5 @@ export const SERVER_ROOT = findServerRoot();
 export const MIGRATIONS_DIR = join(SERVER_ROOT, 'migrations');
 /** The built staff web app in a development checkout (installed: WEB_DIST_DIR). */
 export const DEV_WEB_DIST = join(SERVER_ROOT, '..', 'web', 'dist');
+/** Attached files in a development checkout (installed: FILES_DIR). */
+export const DEV_FILES_DIR = join(SERVER_ROOT, '..', '..', '.local', 'files');

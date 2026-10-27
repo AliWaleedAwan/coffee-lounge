@@ -228,6 +228,7 @@ WEB_DIST_DIR=$InstallDir\web
 DISK_CHECK_PATH=$env:SystemDrive\
 BACKUP_DRIVE_PATH=B:\
 LOG_DIR=$DataDir\logs
+FILES_DIR=$DataDir\files
 LOG_LEVEL=info
 "@
 

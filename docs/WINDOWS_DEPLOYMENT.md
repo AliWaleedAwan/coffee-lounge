@@ -15,7 +15,7 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 | Helpers: `cl-rawprint.exe` (RAW printing), `age.exe` (backup encryption), `cl-admin.exe` (recovery/maintenance CLI) | `C:\Program Files\CoffeeLounge\tools` | Called by services / owner |
 | Config & secrets | `C:\ProgramData\CoffeeLounge\config` (ACL: service account + Administrators only) | — |
 | Logs | `C:\ProgramData\CoffeeLounge\logs` (rotated daily, 30 days, size-capped) | — |
-| Attachments (expense receipts, logo) | `C:\ProgramData\CoffeeLounge\files` | — |
+| Attachments (expense receipts, logo) | `C:\ProgramData\CoffeeLounge\files` (`FILES_DIR` in the server config) | — |
 
 Program files are read-only for the service account. The service account can write only to `pgdata`, `logs`, `files` and the backup drive folder.
 

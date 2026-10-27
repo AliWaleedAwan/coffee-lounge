@@ -7,8 +7,9 @@
  *   node --env-file=../../.env scripts/e2e-server.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runMigrations as runJobQueueMigrations } from 'graphile-worker';
 import pg from 'pg';
@@ -78,7 +79,7 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 26; i++) {
+for (let i = 1; i <= 27; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },
@@ -137,6 +138,7 @@ const apps = buildApps(
         hub,
         health,
         guestBaseUrl: `http://127.0.0.1:${String(CUSTOMER_PORT)}`,
+        filesDir: mkdtempSync(join(tmpdir(), 'cl-e2e-files-')),
       }),
   },
 );

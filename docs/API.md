@@ -282,7 +282,7 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 
 ### 5.10 Ledger (Phase 5 step 5.1)
 
-Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the database in the same transaction as its source: a payment, cash paid in or out of a shift, a receipt paid now (and its reversal), a supplier refund, a refund to a guest (step 5.2), and for a payment-method correction the reversal of the payment's last entry plus a new one by the right method. Entries are never edited (D-31): a manual entry is corrected by reversing it. Numbers `LE-YYYY-NNNNNN` follow the entry id (unique, not gapless).
+Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the database in the same transaction as its source: a payment, cash paid in or out of a shift, a receipt paid now (and its reversal), a supplier refund, a refund to a guest (step 5.2), an expense and its void (step 5.3; cash from the till is the shift's paid-out without an entry of its own), and for a payment-method correction the reversal of the payment's last entry plus a new one by the right method. Entries are never edited (D-31): a manual entry is corrected by reversing it. Numbers `LE-YYYY-NNNNNN` follow the entry id (unique, not gapless).
 
 | Endpoint | Permission | Notes |
 |---|---|---|
@@ -291,6 +291,23 @@ Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the dat
 | `POST /ledger/entries/{entryId}/reverse` **[I]** | `ledger.manage` | `{reason}`. Manual entries only (others follow their source: a refund, a voided expense, a reversed receipt → `400`); once (`409 STALE_STATE` after). Posts a `reversal` of the same amount the other way, today, audited `ledger.reverse`. Returns `{id, entryNo}` (201) |
 
 The nightly `ledger:reconcile` (04:15) checks that every payment, cash movement, receipt paid now (and the reversal of a reversed one) and supplier refund has exactly its entry with its amount, and that every automatic entry has its source; each problem opens one `ledger_mismatch` operational alert. It never corrects anything.
+
+### 5.11 Expenses (Phase 5 step 5.3)
+
+What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are received as stock). An expense is never edited (D-31): it is voided, or corrected by voiding and recording again in one step. Numbers `EXP-YYYY-NNNNN`, gapless per year.
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /expense-categories` | `expenses.read` | All categories with `isActive` and how many expenses use them (a starter list is seeded, I-12) |
+| `POST /expense-categories` **[I]** | `expenses.manage` | `{name}` (2–60, unique ignoring case and spaces) |
+| `PATCH /expense-categories/{id}` | `expenses.manage` | `{name?, isActive?}`; a category is switched off, never deleted. Audited |
+| `GET /expenses?from=&to=&categoryId=&status=` | `expenses.read` | Defaults: this business month to today. Newest first (1000), each with category, payee, reference, note, business date, `paidVia` (`cash`, `card`, `transfer` + `provider`, `other`), `fromTill`, `status`, `attachment` (type, size) or null, who recorded or voided it and why, `replacesNo` / `replacedByNo`; `totals` per category and `total` of what is recorded (voided excluded) |
+| `GET /expenses/{id}` | `expenses.read` | One expense as above |
+| `POST /expenses` **[I]** | `expenses.manage` | `{categoryId, amount, paidVia, provider? (transfer only, required for it), payee?, reference?, note?, businessDate? (today or up to 31 days back), fromTill?}`. `fromTill` (cash only, today only) takes it from the open shift's till: also that shift's paid-out, so expected cash follows (`422 NO_OPEN_CASH_SHIFT` without one, P5-6). One ledger entry `expense` out by its channel and category. Audited. Returns `{id, expenseNo, businessDate, paidOutOfShift}` (201) |
+| `POST /expenses/{id}/void` **[I]** | `expenses.manage` | `{reason}`. Once (`409` after). The expense stays as it was, marked voided; the ledger gets a `reversal` in (AT-107). A till expense whose shift is still open is paid back in (`backInTill`) |
+| `POST /expenses/{id}/correct` **[I]** | `expenses.manage` | `{reason, …the fields of POST /expenses}`: voids it and records the new one in one transaction, the new one naming the one it replaces; the attached bill carries over (AT-23). Returns `{voidedNo, id, expenseNo, businessDate}` (201) |
+| `PUT /expenses/{id}/attachment` | `expenses.manage` | The bill itself as the body, `Content-Type` `image/jpeg`, `image/png` or `application/pdf`, at most 5 MB; its real type is read from its first bytes (`400` otherwise). Kept under `FILES_DIR` (P5-3), the database holds path, type, size and SHA-256; a replaced file stays on disk and both are in the audit. Only while recorded (`409` once voided) |
+| `GET /expenses/{id}/attachment` | `expenses.read` | The file with its type, `X-Content-Type-Options: nosniff`, a sandboxing CSP and `no-store`; `404` when none, missing on disk or not matching its SHA-256 |
 
 ## 6. Errors
 
@@ -376,6 +393,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `alert.changed` | Inventory alert noted as seen or closed by a person | `alerts`, `inventory` |
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts, ledger mismatches | `alerts` |
 | `refund.recorded` | Refund or payment-method correction | `cashier`, `ledger`, `alerts` |
+| `expense.changed` | Expense recorded, voided, corrected or its bill attached; category changed | `expenses`, `ledger` (and `cashier` when the till is involved) |
 | `ledger.changed` | Manual ledger entry or reversal (automatic entries arrive with their source's event) | `ledger` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 

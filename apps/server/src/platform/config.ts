@@ -33,6 +33,8 @@ const schema = z
     WEB_DIST_DIR: z.string().min(1).optional(),
     /** Volume whose free space the health page watches (H-14). Default: the install drive. */
     DISK_CHECK_PATH: z.string().min(1).optional(),
+    /** Attached bills of expenses (P5-3; installed: `C:\ProgramData\CoffeeLounge\files`). Unset: `.local/files`. */
+    FILES_DIR: z.string().min(1).optional(),
     /** USB backup drive root (H-17: `B:\`). Unset: reported as not present. */
     BACKUP_DRIVE_PATH: z.string().min(1).optional(),
     /** `host:port` reached over TCP to report internet online/offline, or `off`. */

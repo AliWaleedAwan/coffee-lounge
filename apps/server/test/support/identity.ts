@@ -3,6 +3,9 @@
  * devices and logged-in users per role, and an inject wrapper that carries cookies and
  * the CSRF header the way a real staff client does.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
 import {
   createOwner,
@@ -56,6 +59,8 @@ export interface IdentityFixture extends PlatformFixture {
   routes: CollectedRoute[];
   ownerId: string;
   recoveryCode: string;
+  /** This fixture's FILES_DIR (attached bills), removed on close. */
+  filesDir: string;
   /** Registers a new device through the API and returns a client holding its cookie. */
   newDevice(kind?: DeviceKind, name?: string): Promise<Client>;
   /** Creates a user with the given roles (and optional PIN) directly in the database. */
@@ -94,6 +99,7 @@ function clientFor(app: FastifyInstance, initial: Record<string, string> = {}): 
 
 export async function identityFixture(options: FixtureOptions = {}): Promise<IdentityFixture> {
   const base = await platformFixture(20, options.sessionRole);
+  const filesDir = mkdtempSync(join(tmpdir(), 'cl-files-'));
   const routes: CollectedRoute[] = [];
   const hub =
     options.makeHub?.(base.pool) ??
@@ -136,6 +142,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
           secureCookies: false,
           hub,
           health,
+          filesDir,
           ...(options.live ? { live: options.live } : {}),
           ...(options.now ? { now: options.now } : {}),
         });
@@ -174,6 +181,11 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
 
   return {
     ...base,
+    async close() {
+      await base.close();
+      rmSync(filesDir, { recursive: true, force: true });
+    },
+    filesDir,
     staff,
     customer,
     readiness,
