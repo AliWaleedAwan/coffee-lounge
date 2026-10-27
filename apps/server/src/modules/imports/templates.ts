@@ -1,5 +1,5 @@
 /**
- * The eight data-entry templates (docs/templates, README "How the import behaves"; AT-82).
+ * The nine data-entry templates (docs/templates, README "How the import behaves"; AT-82).
  * Each runner first checks every row and collects every problem with its row number;
  * only when there is none does it apply the rows, inside the caller's transaction, so a
  * file is imported completely or not at all. Re-importing updates what exists (matched
@@ -20,6 +20,7 @@ import {
 import type { AuditContext } from '../../platform/audit.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
+import { changeAsset, registerAsset, type By } from '../assets/index.ts';
 import {
   addRule,
   postOpeningBalance,
@@ -1258,6 +1259,156 @@ const suppliers: Template = {
   },
 };
 
+// ------------------------------------------------------------------ 09 assets (P5-7)
+
+const CONDITION_VALUES = ['new', 'good', 'fair', 'poor'] as const;
+
+const assets: Template = {
+  key: 'assets',
+  file: '09_assets.csv',
+  title: 'Assets',
+  columns: [
+    'asset_tag',
+    'name',
+    'category',
+    'quantity',
+    'purchase_date',
+    'purchase_price',
+    'supplier',
+    'location',
+    'condition',
+    'responsible',
+    'notes',
+  ],
+  permission: 'assets.manage',
+  async run(r) {
+    const { rows: supplierRows } = await r.tx.query<{ id: string; name: string }>(
+      'SELECT id::text, name FROM cl.suppliers WHERE is_active ORDER BY suppliers.id',
+    );
+    const supplierByName = new Map(supplierRows.map((x) => [key(x.name), x.id]));
+    const { rows: people } = await r.tx.query<{ id: string; username: string }>(
+      `SELECT id::text, username FROM cl.users WHERE status = 'active' ORDER BY users.id`,
+    );
+    const personByUsername = new Map(people.map((x) => [key(x.username), x.id]));
+    const { rows: existing } = await r.tx.query<{
+      id: string;
+      tag: string;
+      status: string;
+      version: number;
+    }>(
+      'SELECT id::text, upper(asset_tag) AS tag, status, version FROM cl.assets ORDER BY assets.id',
+    );
+    const byTag = new Map(existing.map((x) => [x.tag, x]));
+    const plan: {
+      row: Row;
+      tag: string;
+      fields: {
+        name: string;
+        category: string;
+        quantity: number;
+        purchaseDate: string | null;
+        purchasePrice: string | null;
+        supplierId: string | null;
+        location: string | null;
+        condition: (typeof CONDITION_VALUES)[number] | null;
+        responsibleUserId: string | null;
+        notes: string | null;
+      };
+    }[] = [];
+    const seen = new Map<string, number>();
+    for (const row of r.rows) {
+      const c = check(r, row);
+      // The tag is how a re-import finds the asset again, so the file always names it.
+      const tag = c.sku('asset_tag');
+      const name = c.text('name', 80);
+      const category = c.text('category', 40);
+      const quantity = row.get('quantity') ? c.int('quantity', 1, 9999) : 1;
+      const purchaseDate = c.date('purchase_date');
+      const price = row.get('purchase_price') ? c.money('purchase_price') : '';
+      const supplierName = c.text('supplier', 80, false);
+      const location = c.text('location', 60, false);
+      const conditionText = row.get('condition').toLowerCase();
+      const responsible = c.text('responsible', 40, false);
+      const notes = c.text('notes', 500, false);
+      let condition: (typeof CONDITION_VALUES)[number] | null = null;
+      if (conditionText) {
+        const found = CONDITION_VALUES.find((x) => x === conditionText);
+        if (found) condition = found;
+        else c.fail('condition', 'new, good, fair or poor');
+      }
+      if (purchaseDate && purchaseDate > r.businessDate)
+        c.fail('purchase_date', 'Not in the future');
+      let supplierId: string | null = null;
+      if (supplierName) {
+        supplierId = supplierByName.get(key(supplierName)) ?? null;
+        if (!supplierId)
+          c.fail('supplier', `No supplier ${supplierName}: import it in 08_suppliers first`);
+      }
+      let responsibleUserId: string | null = null;
+      if (responsible) {
+        responsibleUserId = personByUsername.get(key(responsible)) ?? null;
+        if (!responsibleUserId)
+          c.fail('responsible', `No active user ${responsible} (use their username)`);
+      }
+      if (!tag) continue;
+      const first = seen.get(tag);
+      if (first !== undefined) c.fail('asset_tag', `Also on row ${String(first)}`);
+      seen.set(tag, row.line);
+      if (byTag.get(tag)?.status === 'disposed')
+        c.fail('asset_tag', `${tag} is disposed and no longer changes`);
+      if (
+        name &&
+        category &&
+        quantity !== null &&
+        purchaseDate !== null &&
+        price !== null &&
+        location !== null &&
+        notes !== null
+      ) {
+        plan.push({
+          row,
+          tag,
+          fields: {
+            name,
+            category,
+            quantity,
+            purchaseDate: purchaseDate || null,
+            purchasePrice: price || null,
+            supplierId,
+            location: location || null,
+            condition,
+            responsibleUserId,
+            notes: notes || null,
+          },
+        });
+      }
+    }
+    if (r.errors.length > 0) return;
+    const by: By = { who: r.who, now: new Date() };
+    for (const p of plan) {
+      const found = byTag.get(p.tag);
+      if (!found) {
+        await registerAsset(r.tx, by, { assetTag: p.tag, ...p.fields });
+        r.changes.push({
+          row: p.row.line,
+          action: 'create',
+          what: `Asset ${p.tag} ${p.fields.name}`,
+        });
+        continue;
+      }
+      const result = await changeAsset(r.tx, by, found.id, p.fields, {
+        version: found.version,
+        reason: 'Imported from 09_assets.csv',
+      });
+      r.changes.push({
+        row: p.row.line,
+        action: result.events.length > 0 ? 'update' : 'unchanged',
+        what: `Asset ${p.tag} ${p.fields.name}`,
+      });
+    }
+  },
+};
+
 /** In the weekly order of docs/templates/README.md. */
 export const TEMPLATES: readonly Template[] = [
   items,
@@ -1268,6 +1419,7 @@ export const TEMPLATES: readonly Template[] = [
   modifiers,
   recipes,
   rules,
+  assets,
 ];
 
 export function templateOf(templateKey: string): Template {

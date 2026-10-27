@@ -1,0 +1,3 @@
+asset_tag,name,category,quantity,purchase_date,purchase_price,supplier,location,condition,responsible,notes
+EX-ESP-01,Espresso machine (2 group),Coffee equipment,1,2025-03-15,850000.00,,Bar,good,,Serviced every 3 months
+EX-FRG-01,Under-counter fridge,Refrigeration,1,2024-11-02,145000.00,,Kitchen,fair,,

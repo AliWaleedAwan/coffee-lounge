@@ -16,6 +16,7 @@ const OWNER_AREAS = [
   'Menu & recipes',
   'Ledger',
   'Expenses',
+  'Assets',
   'Reports',
   'Users & roles',
   'Devices',

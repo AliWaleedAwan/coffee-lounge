@@ -75,6 +75,13 @@ export const AREAS: readonly Area[] = [
     ready: true,
   },
   {
+    id: 'assets',
+    label: 'Assets',
+    path: '/assets',
+    anyOf: ['assets.read', 'assets.manage'],
+    ready: true,
+  },
+  {
     id: 'reports',
     label: 'Reports',
     path: '/reports',

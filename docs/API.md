@@ -309,6 +309,22 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 | `PUT /expenses/{id}/attachment` | `expenses.manage` | The bill itself as the body, `Content-Type` `image/jpeg`, `image/png` or `application/pdf`, at most 5 MB; its real type is read from its first bytes (`400` otherwise). Kept under `FILES_DIR` (P5-3), the database holds path, type, size and SHA-256; a replaced file stays on disk and both are in the audit. Only while recorded (`409` once voided) |
 | `GET /expenses/{id}/attachment` | `expenses.read` | The file with its type, `X-Content-Type-Options: nosniff`, a sandboxing CSP and `no-store`; `404` when none, missing on disk or not matching its SHA-256 |
 
+### 5.12 Asset register (Phase 5 step 5.4)
+
+What the shop owns (D-31): the row is the asset as it is now, and every change is an event in its history (AT-106, AT-23). Disposal is a status, never a delete. No depreciation (D-19).
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /assets?q=&status=&category=` | `assets.read` | `status` `active` (not disposed), `in_use`, `in_repair`, `retired` or `disposed`; `q` searches tag, name and place. Each asset with supplier, who looks after it, `version`, `lastMaintenance`, `nextDue`; plus the `categories` and `locations` in use |
+| `GET /assets/choices` | `assets.manage` | Active people and suppliers for the form |
+| `GET /assets/{id}` | `assets.read` | `asset`, its `history` (`acquired`, `moved`, `condition_changed`, `value_corrected`, `status_changed`, `details_changed` with before/after, `maintenance`, `disposed`; who, when, why) and `maintenance` records |
+| `POST /assets` **[I]** | `assets.manage` | `{assetTag?, name, category, quantity?, purchaseDate?, purchasePrice?, supplierId?, location?, condition? new/good/fair/poor, responsibleUserId?, notes?}`. An empty tag takes the next `AST-NNNN` (P5-4); tags are unique ignoring case. History starts with `acquired`. Returns `{id, assetTag}` (201) |
+| `POST /assets/{id}/changes` **[I]** | `assets.manage` | `{version, reason?, changes: {…the fields above, status? in_use/in_repair/retired}}`. Refused if someone changed it first (`409`, with the current `version`) or it is disposed (`409`). Each difference is an event; a changed price is `value_corrected` and needs the reason. Nothing different, nothing recorded. Returns `{id, version, events}` |
+| `POST /assets/{id}/maintenance` **[I]** | `assets.manage` | `{performedOn (not in the future), description, vendor?, cost?, nextDue? (after performedOn), expenseNo?}`: the expense that paid for it (step 5.3), recorded and not linked to another maintenance. Records are never edited. Returns `{id}` (201) |
+| `POST /assets/{id}/dispose` **[I]** | `assets.manage` | `{how: sold/scrapped/donated/lost/returned, reason}`. The asset stays with its history and never changes again. Money from a sale is a manual ledger entry (§5.10) |
+
+`POST /imports/assets/preview` and `/apply` take `09_assets.csv` (P5-7) with the step-4.9 rules (§5.9) and need `assets.manage`. The tag is required in the file (it is how a re-import finds the asset); re-importing records the differences as events with the reason "Imported from 09_assets.csv"; a disposed asset is refused.
+
 ## 6. Errors
 
 `application/problem+json`:
@@ -394,6 +410,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `alert.raised` | Uncollected item, stale session/reservation, stock alerts, ledger mismatches | `alerts` |
 | `refund.recorded` | Refund or payment-method correction | `cashier`, `ledger`, `alerts` |
 | `expense.changed` | Expense recorded, voided, corrected or its bill attached; category changed | `expenses`, `ledger` (and `cashier` when the till is involved) |
+| `asset.changed` | Asset registered, changed, serviced or disposed | `assets` |
 | `ledger.changed` | Manual ledger entry or reversal (automatic entries arrive with their source's event) | `ledger` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 

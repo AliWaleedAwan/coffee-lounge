@@ -21,6 +21,7 @@
 | 6 | `05_modifiers.csv` | Options such as oat milk or extra shot, and their extra price |
 | 7 | `06_recipes.csv` | Ingredients per drink size. Imported as **drafts**; activate them on screen after checking. |
 | 8 | `07_modifier_recipe_rules.csv` | How options change ingredients (replace milk, add beans) |
+| Any time | `09_assets.csv` | The shop's equipment and furniture for the asset register (Phase 5, P5-7). Needs `assets.manage` (the owner by default) |
 
 A recipe can only be activated when **all** its ingredients have had their opening stock entered (step 3). Start with your best-selling drinks.
 
@@ -41,6 +42,8 @@ A recipe can only be activated when **all** its ingredients have had their openi
 **07_modifier_recipe_rules.csv:** `modifier_option` · `item` · `variant` (empty = all sizes) · `action` `add`/`remove`/`replace`/`scale` · `ingredient_sku` · `replacement_sku` (for replace) · `quantity` + `uom` (for add) · `scale_factor` (for scale, e.g., `1.5`).
 
 **08_suppliers.csv:** `name` · `phone` · `email` · `address` · `notes`.
+
+**09_assets.csv:** `asset_tag` the label on the asset, unique (e.g., `ESP-01`; required here so a re-import finds the asset again; example tags start with `EX-`) · `name` · `category` (e.g., Coffee equipment, Refrigeration, Furniture, POS hardware) · `quantity` (default 1) · `purchase_date` · `purchase_price` · `supplier` (a name from `08_suppliers.csv`) · `location` · `condition` `new`/`good`/`fair`/`poor` · `responsible` (the person's username) · `notes`. Re-importing changes the asset and records each change in its history (moved, condition, value corrected with the reason "Imported from 09_assets.csv"); a disposed asset is refused.
 
 ## How the import behaves
 

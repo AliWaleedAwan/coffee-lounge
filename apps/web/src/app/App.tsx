@@ -9,6 +9,7 @@ import { AREAS, homePath } from '../nav/areas.ts';
 import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
+import { AssetsScreen } from '../screens/assets/AssetsScreen.tsx';
 import { ExpensesScreen } from '../screens/expenses/ExpensesScreen.tsx';
 import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
 import { LedgerScreen } from '../screens/ledger/LedgerScreen.tsx';
@@ -46,6 +47,7 @@ export function createQueryClient(): QueryClient {
 
 const BUILT: Record<string, () => JSX.Element> = {
   approvals: ApprovalsScreen,
+  assets: AssetsScreen,
   counter: CounterScreen,
   deliveries: DeliveryScreen,
   devices: DevicesScreen,
