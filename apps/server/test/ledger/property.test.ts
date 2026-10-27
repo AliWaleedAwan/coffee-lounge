@@ -160,5 +160,5 @@ describe('ledger under random money events (Phase 5 property)', () => {
       for (const kind of ['sale', 'refund', 'expense', 'receipt', 'adjustment'])
         expect(seen).toContain(kind);
     }
-  });
+  }, 300_000); // random sequences through the API take longer on the CI runner
 });

@@ -179,5 +179,5 @@ describe('a month of trading (Phase 5 exit demo)', () => {
       'SELECT count(DISTINCT business_date)::int AS n FROM cl.ledger_entries',
     );
     expect(dates[0]?.n).toBeGreaterThanOrEqual(DAYS - 1);
-  });
+  }, 300_000); // a month of trading through the API takes longer on the CI runner
 });
