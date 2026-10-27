@@ -20,6 +20,7 @@ import {
   takePayment,
   TRANSFER_PROVIDERS,
 } from './payments.ts';
+import { findSettledBills, readRefundable, recordRefund, reprintRefundSlip } from './refunds.ts';
 import { acceptAndPay, takeawayQueue } from './takeaway.ts';
 import { openBills } from './views.ts';
 import {
@@ -419,4 +420,91 @@ export async function billingRoutes(
       );
     },
   );
+
+  // ---------------------------------------------------------------- refunds (step 5.2, P2)
+
+  const refundRequest = { config: { permission: 'payments.refund_request' } };
+  const refundReason = z.string().trim().min(3).max(300);
+  const reference = z.string().trim().min(1).max(32).optional();
+
+  app.get('/refunds/bills', refundRequest, async (request) => {
+    const query = parseInput(
+      z
+        .object({
+          q: z.string().max(60).optional(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+            .optional(),
+        })
+        .strict(),
+      request.query,
+    );
+    return findSettledBills(pool, query);
+  });
+
+  app.get('/invoices/:id/refunds', refundRequest, async (request) =>
+    readRefundable(pool, idParam(request)),
+  );
+
+  app.post('/invoices/:id/refunds', refundRequest, async (request, reply) => {
+    const invoiceId = idParam(request);
+    const body = parseInput(
+      z.discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('refund'),
+            paymentId: id,
+            amount,
+            reason: refundReason,
+            reference,
+            lines: z
+              .array(
+                z
+                  .object({ invoiceLineId: id, qty: z.number().int().min(1).max(999), amount })
+                  .strict(),
+              )
+              .max(100)
+              .optional(),
+            stepUpId: id,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('method_correction'),
+            paymentId: id,
+            method: z.enum(PAYMENT_METHODS),
+            provider: z.enum(TRANSFER_PROVIDERS).optional(),
+            reference,
+            reason: refundReason,
+            stepUpId: id,
+          })
+          .strict(),
+      ]),
+      request.body,
+    );
+    const auth = authOf(request);
+    const ctx = commandContext(request, now());
+    return handleCommand(
+      pool,
+      request,
+      reply,
+      { scope: `invoice.refund:${invoiceId}`, actorRef: `user:${auth.user.id}`, payload: body },
+      async (tx) => ({ status: 201, body: await recordRefund(tx, ctx, auth, invoiceId, body) }),
+    );
+  });
+
+  app.post('/refunds/:id/slip/reprint', refundRequest, async (request, reply) => {
+    const refundId = idParam(request);
+    parseInput(z.object({}).strict(), request.body ?? {});
+    const auth = authOf(request);
+    const ctx = commandContext(request, now());
+    return handleCommand(
+      pool,
+      request,
+      reply,
+      { scope: 'refund.slip_reprint', actorRef: `user:${auth.user.id}`, payload: { refundId } },
+      async (tx) => ({ status: 201, body: await reprintRefundSlip(tx, ctx, auth, refundId) }),
+    );
+  });
 }

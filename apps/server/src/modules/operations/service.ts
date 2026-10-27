@@ -17,6 +17,9 @@ export interface InboxItem {
     | 'shift_variance'
     | 'failed_delivery'
     | 'refund_due'
+    | 'ledger_mismatch'
+    | 'count_waiting'
+    | 'stock_alert'
     | 'uncollected_item'
     | 'stale_session'
     | 'printer';
@@ -146,8 +149,11 @@ async function inbox(db: Queryable, now: Date, escalation: number): Promise<Inbo
     detail: Record<string, unknown> | null;
     created_at: Date;
     entity_id: string;
+    invoice_id: string | null;
   }>(
-    `SELECT a.id::text, a.kind, a.state, a.detail, a.created_at, a.entity_id::text
+    `SELECT a.id::text, a.kind, a.state, a.detail, a.created_at, a.entity_id::text,
+            (SELECT i.id::text FROM cl.delivery_orders d JOIN cl.invoices i ON i.session_id = d.session_id
+              WHERE a.entity_type = 'delivery_order' AND d.id = a.entity_id) AS invoice_id
        FROM cl.operational_alerts a WHERE a.state <> 'resolved' ORDER BY a.created_at, a.id`,
   );
   for (const a of alerts) {
@@ -157,13 +163,18 @@ async function inbox(db: Queryable, now: Date, escalation: number): Promise<Inbo
       failed_delivery: { title: 'Delivery failed', detail: text('reason'), link: '/deliveries' },
       refund_due: {
         title: `Refund due: Rs ${text('amount')}`,
-        detail: `${text('sessionNo')}: recorded with refunds (a later phase)`,
-        link: '/deliveries',
+        detail: `${text('sessionNo')}: a cancelled prepaid delivery; refund it to the guest`,
+        link: a.invoice_id ? `/counter/refunds?invoice=${a.invoice_id}&full=1` : '/deliveries',
       },
       uncollected_item: {
         title: 'Item waiting for pickup',
         detail: [text('item'), text('where')].filter(Boolean).join(' · '),
         link: '/pickup',
+      },
+      ledger_mismatch: {
+        title: 'Ledger check: an entry does not match',
+        detail: text('problem'),
+        link: '/ledger',
       },
       stale_session: {
         title: `Table open a long time: ${text('sessionNo')}`,
@@ -179,6 +190,54 @@ async function inbox(db: Queryable, now: Date, escalation: number): Promise<Inbo
       acknowledged: a.state === 'acknowledged',
       ...known,
       at: a.created_at.toISOString(),
+    });
+  }
+  // Stock counts waiting for someone other than the counter to approve them (D-18).
+  const { rows: counts } = await db.query<{
+    count_no: string;
+    scope: string;
+    by: string;
+    submitted_at: Date;
+  }>(
+    `SELECT c.count_no, CASE c.scope_kind WHEN 'all' THEN 'all items' WHEN 'category' THEN c.scope_category
+                           ELSE cardinality(c.scope_item_ids) || ' items' END AS scope,
+            u.display_name AS by, c.submitted_at
+       FROM cl.stock_counts c JOIN cl.users u ON u.id = c.submitted_by
+      WHERE c.status = 'submitted' ORDER BY c.submitted_at`,
+  );
+  for (const c of counts) {
+    items.push({
+      kind: 'count_waiting',
+      alertId: null,
+      acknowledged: false,
+      title: `Stock count ${c.count_no} waits for approval`,
+      detail: `${c.scope}, counted by ${c.by}`,
+      at: c.submitted_at.toISOString(),
+      link: '/inventory?tab=counts',
+    });
+  }
+  // Critical stock alerts, one line per kind (the inventory overview lists each item).
+  const { rows: stock } = await db.query<{ kind: string; n: number; names: string[]; at: Date }>(
+    `SELECT a.kind, count(*)::int AS n, (array_agg(i.name ORDER BY i.name))[1:5] AS names, min(a.created_at) AS at
+       FROM cl.inventory_alerts a JOIN cl.inventory_items i ON i.id = a.item_id
+      WHERE a.state = 'open' AND a.kind IN ('zero', 'expired', 'reservation_shortfall', 'balance_mismatch')
+      GROUP BY a.kind ORDER BY a.kind`,
+  );
+  const STOCK: Record<string, string> = {
+    zero: 'out of stock',
+    expired: 'with expired stock',
+    reservation_shortfall: 'short for orders already taken',
+    balance_mismatch: 'whose stock does not match its movements',
+  };
+  for (const a of stock) {
+    items.push({
+      kind: 'stock_alert',
+      alertId: null,
+      acknowledged: false,
+      title: `${String(a.n)} item${a.n === 1 ? '' : 's'} ${STOCK[a.kind] ?? a.kind}`,
+      detail: `${a.names.join(', ')}${a.n > a.names.length ? ', …' : ''}`,
+      at: a.at.toISOString(),
+      link: '/inventory',
     });
   }
   const { rows: printers } = await db.query<{ name: string; n: number; at: Date }>(

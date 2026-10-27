@@ -356,7 +356,7 @@ async function writeSnapshot(
   if (new Decimal(bill.total).lt(invoice.paid_total)) {
     throw new AppError(
       'VALIDATION_FAILED',
-      `Rs ${invoice.paid_total} is already paid, more than the new total of Rs ${bill.total}. Refunds arrive in a later phase.`,
+      `Rs ${invoice.paid_total} is already paid, more than the new total of Rs ${bill.total}. Settle the bill as it was, then refund the difference.`,
     );
   }
   await tx.query('DELETE FROM cl.invoice_lines WHERE invoice_id = $1', [invoice.id]);

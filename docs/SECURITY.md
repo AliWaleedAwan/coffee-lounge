@@ -53,7 +53,7 @@ Out of scope: nation-state attackers, internet-facing exposure (the system is ne
 
 ### 2.6 Data protection & privacy
 - Delivery customer fields optional (D-05) and masked in lists (`03xx-xxx-1234`).
-- Delivery PII redacted after 12 months (PROVISIONAL D-25); transactional records kept.
+- Delivery PII redacted after `privacy.delivery_pii_retention_months` (12, D-25) by the nightly worker (04:20, step 5.6); transactional records kept (AT-105).
 - Logs contain IDs and correlation IDs, never passwords, PINs, tokens or customer phone numbers.
 - Exports are permission-checked and audited.
 

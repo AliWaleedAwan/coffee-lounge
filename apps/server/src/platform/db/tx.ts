@@ -19,6 +19,7 @@ export const LOCK_ORDER = [
   'inventory_lots',
   'stock_reservations',
   'invoices',
+  'expenses',
   'cash_shifts',
   'document_counters',
 ] as const;
@@ -37,6 +38,7 @@ const KEY_COLUMN: Record<Exclude<LockableTable, 'document_counters'>, string> = 
   inventory_lots: 'id',
   stock_reservations: 'id',
   invoices: 'id',
+  expenses: 'id',
   cash_shifts: 'id',
 };
 

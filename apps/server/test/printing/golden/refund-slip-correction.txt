@@ -1,0 +1,15 @@
+COFFEE LOUNGE
+12 Main Boulevard, Gulberg · 0300 0000000
+------------------------------------------------
+PAYMENT CORRECTED                  RF-2026-00008
+Invoice: INV-2026-000123               Table: T5
+19 Oct 2026 14:02
+------------------------------------------------
+Payment                              Rs 4,995.00
+Recorded as                                 Cash
+Taken by                         Card ref 112233
+Reason: Paid by card, recorded as cash by
+mistake
+Asked by                                     Ali
+Approved by                                Owner
+================================================

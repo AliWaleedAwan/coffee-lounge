@@ -17,6 +17,7 @@ import {
   postOpeningBalance,
   setStockMode,
 } from '../../src/modules/stock/index.ts';
+import { redactDeliveryDetails } from '../../src/modules/delivery/index.ts';
 import { withTransaction } from '../../src/platform/db/tx.ts';
 import { urlFor } from '../support/db.ts';
 import { decodeEscPos } from '../support/escpos/decoder.ts';
@@ -111,6 +112,7 @@ beforeAll(async () => {
   owner = await fx.loggedIn(OWNER.username, OWNER.password);
   await fx.addUser('dl-cash', ['cashier']);
   await fx.addUser('dl-mgr', ['manager']);
+  await fx.addUser('dl-owner', ['owner'], { pin: '1357' });
   cashier = await fx.loggedIn('dl-cash');
   manager = await fx.loggedIn('dl-mgr');
   const cat = await staff(owner, 'POST', '/menu/categories', { name: 'Delivery tests' });
@@ -192,9 +194,11 @@ describe('the order (D0)', () => {
 
   it('riders are kept by the owner; names are unique', async () => {
     expect((await staff(cashier, 'POST', '/riders', { name: 'Zia' })).status).toBe(403);
+    // riders.manage (RBAC.md): a manager adds riders by default (RBAC review, step 5.6).
+    expect((await staff(manager, 'POST', '/riders', { name: 'Zia' })).status).toBe(201);
     expect((await staff(owner, 'POST', '/riders', { name: 'bilal' })).status).toBe(400);
     const list = (await staff(cashier, 'GET', '/riders')).body['items'] as Body[];
-    expect(list.map((r) => r['name'])).toEqual(['Bilal', 'Kamran']);
+    expect(list.map((r) => r['name'])).toEqual(['Bilal', 'Kamran', 'Zia']);
   });
 });
 
@@ -416,6 +420,36 @@ describe('a failed delivery (D3–D6)', () => {
       [d.deliveryId],
     );
     expect(open).toEqual([{ kind: 'refund_due' }]);
+
+    // P5-5: the refund to the card it was paid with closes the "refund due".
+    const { rows: paid } = await fx.pool.query<{ id: string }>(
+      'SELECT id::text FROM cl.payments WHERE invoice_id = $1',
+      [d.invoiceId],
+    );
+    const approval = await staff(manager, 'POST', '/auth/step-up', {
+      action: 'refund.approve',
+      entityType: 'invoice',
+      entityId: d.invoiceId,
+      approverUsername: 'dl-owner',
+      approverPin: '1357',
+      reason: 'Delivery cancelled',
+    });
+    expect(approval.status, JSON.stringify(approval.body)).toBe(201);
+    const refund = await staff(manager, 'POST', `/invoices/${d.invoiceId}/refunds`, {
+      kind: 'refund',
+      paymentId: paid[0]?.id,
+      amount: '800',
+      reason: 'Delivery cancelled, customer unreachable',
+      reference: 'RV1',
+      stepUpId: approval.body['stepUpId'],
+    });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    expect(refund.body).toMatchObject({ method: 'card_manual', amount: '800.00' });
+    const { rows: after } = await fx.pool.query(
+      `SELECT kind FROM cl.operational_alerts WHERE entity_type = 'delivery_order' AND entity_id = $1 AND state = 'open'`,
+      [d.deliveryId],
+    );
+    expect(after).toEqual([]);
   });
 
   it('COD cancelled: the unpaid bill is reopened and the visit closed with nothing to pay', async () => {
@@ -483,5 +517,83 @@ describe('a failed delivery (D3–D6)', () => {
     } finally {
       await admin.end();
     }
+  });
+});
+
+describe('delivery customer details after the retention period (AT-105, D-25)', () => {
+  it('removes names, phones and addresses of finished deliveries; the sales stay as they were', async () => {
+    const open = await newDelivery('cod_cash', {
+      customerName: 'Still cooking',
+      address: 'Block C',
+    });
+    const money = async () =>
+      (
+        await fx.pool.query(
+          `SELECT (SELECT json_agg(i ORDER BY i.id) FROM cl.invoices i) AS invoices,
+                  (SELECT json_agg(p ORDER BY p.id) FROM cl.payments p) AS payments,
+                  (SELECT json_agg(e ORDER BY e.id) FROM cl.ledger_entries e) AS ledger,
+                  (SELECT json_agg(m ORDER BY m.id) FROM cl.stock_movements m) AS stock`,
+        )
+      ).rows[0] as unknown;
+    const before = await money();
+    const { rows: finished } = await fx.pool.query<{ id: string }>(
+      `SELECT d.id::text FROM cl.delivery_orders d JOIN cl.dining_sessions s ON s.id = d.session_id
+        WHERE d.status IN ('delivered', 'cancelled', 'converted_to_pickup') AND s.status IN ('settled', 'cancelled')`,
+    );
+    expect(finished.length).toBeGreaterThan(0);
+
+    // Not yet: everything was ordered today.
+    expect(
+      (await withTransaction(fx.pool, (tx) => redactDeliveryDetails(tx, new Date()))).redacted,
+    ).toBe(0);
+    // Thirteen months on.
+    const later = new Date(Date.now() + 400 * 24 * 3600 * 1000);
+    const first = await withTransaction(fx.pool, (tx) => redactDeliveryDetails(tx, later));
+    expect(first.redacted).toBe(finished.length);
+    const { rows } = await fx.pool.query<{
+      id: string;
+      redacted: boolean;
+      name: string | null;
+      phone: string | null;
+      email: string | null;
+      address: string | null;
+      landmark: string | null;
+      notes: string | null;
+    }>(
+      `SELECT d.id::text, d.redacted_at IS NOT NULL AS redacted, s.customer_name AS name, s.customer_phone AS phone,
+              s.customer_email AS email, d.address, d.landmark, d.notes
+         FROM cl.delivery_orders d JOIN cl.dining_sessions s ON s.id = d.session_id ORDER BY d.id`,
+    );
+    for (const r of rows) {
+      if (finished.some((f) => f.id === r.id)) {
+        expect(r).toMatchObject({
+          redacted: true,
+          name: null,
+          phone: null,
+          email: null,
+          address: null,
+          landmark: null,
+          notes: null,
+        });
+      } else {
+        expect(r.redacted).toBe(false);
+      }
+    }
+    expect(rows.find((r) => r.id === open.deliveryId)).toMatchObject({
+      redacted: false,
+      name: 'Still cooking',
+      address: 'Block C',
+    });
+    // Transactions intact; a second run has nothing to do; the audit says how many, not who.
+    expect(await money()).toEqual(before);
+    expect(
+      (await withTransaction(fx.pool, (tx) => redactDeliveryDetails(tx, later))).redacted,
+    ).toBe(0);
+    const { rows: audit } = await fx.pool.query<{ after: Record<string, unknown> }>(
+      `SELECT after FROM cl.audit_events WHERE action = 'privacy.redact'`,
+    );
+    expect(audit).toEqual([
+      { after: { redacted: finished.length, olderThan: first.olderThan, months: 12 } },
+    ]);
   });
 });

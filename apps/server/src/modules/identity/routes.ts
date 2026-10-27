@@ -302,6 +302,101 @@ export async function identityRoutes(
     },
   );
 
+  // ------------------------------------------------------------ users & roles screen (step 5.5)
+  app.get('/access/catalog', { config: { permission: 'users.manage' } }, async () =>
+    identity.accessCatalog(pool),
+  );
+
+  app.get(
+    '/users/:userId/permission-overrides',
+    { config: { permission: 'users.manage' } },
+    async (request) => {
+      const params = parseInput(z.object({ userId: id }), request.params);
+      return { items: await identity.listOverrides(pool, params.userId) };
+    },
+  );
+
+  app.put(
+    '/users/:userId/roles',
+    { config: { permission: 'roles.manage' } },
+    async (request, reply) => {
+      const params = parseInput(z.object({ userId: id }), request.params);
+      const body = parseInput(
+        z
+          .object({
+            roles: z
+              .array(z.string().regex(/^[a-z_]+$/))
+              .min(1)
+              .max(6),
+            reason,
+          })
+          .strict(),
+        request.body,
+      );
+      await identity.setUserRoles(
+        pool,
+        authOf(request),
+        { userId: params.userId, ...body },
+        factsOf(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  const roleGrant = z.object({
+    roleKey: z.string().regex(/^[a-z_]+$/),
+    permissionKey: z.string().regex(/^[a-z_]+(\.[a-z_]+)+$/),
+  });
+  app.put(
+    '/roles/:roleKey/permissions/:permissionKey',
+    { config: { permission: 'roles.manage' } },
+    async (request, reply) => {
+      const params = parseInput(roleGrant, request.params);
+      const body = parseInput(z.object({ reason }).strict(), request.body);
+      await identity.setRoleGrant(
+        pool,
+        authOf(request),
+        { ...params, granted: true, reason: body.reason },
+        factsOf(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+  app.delete(
+    '/roles/:roleKey/permissions/:permissionKey',
+    { config: { permission: 'roles.manage' } },
+    async (request, reply) => {
+      const params = parseInput(roleGrant, request.params);
+      const query = parseInput(z.object({ reason }), request.query);
+      await identity.setRoleGrant(
+        pool,
+        authOf(request),
+        { ...params, granted: false, reason: query.reason },
+        factsOf(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/users/:userId/credentials',
+    { config: { permission: 'users.manage' } },
+    async (request, reply) => {
+      const params = parseInput(z.object({ userId: id }), request.params);
+      const body = parseInput(
+        z.object({ password: z.string().max(128), pin: z.string().optional() }).strict(),
+        request.body,
+      );
+      await identity.resetCredentials(
+        pool,
+        authOf(request),
+        { userId: params.userId, ...body },
+        factsOf(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+
   app.delete(
     '/users/:userId/permission-overrides/:permissionKey',
     { config: { permission: 'roles.manage' } },

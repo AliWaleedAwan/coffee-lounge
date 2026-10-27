@@ -91,6 +91,14 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /auth/login`, `POST /auth/pin-switch`, `POST /auth/logout` | — | Sessions |
 | `GET /auth/me` | — | User, effective permissions + scopes, device |
 | `POST /auth/step-up` | approver's permission | One-use approval token |
+| `GET /users`, `POST /users`, `POST /users/{id}/status` | `users.manage` | People with roles, status and whether a PIN is set; add a person (temporary password, optional PIN, roles; only an owner adds an owner); disable or enable (the last active owner stays, AT-39) |
+| `POST /users/{id}/credentials` | `users.manage` | `{password, pin?}`: a forgotten password or PIN (step 5.5). The person must change the password at the next login; their sessions end; not for yourself (use the account page); an owner only by an owner. Audited `user.credentials_reset` (no secrets) |
+| `GET /access/catalog` | `users.manage` | Every permission (module, description, scope kind, 🔒) and every role with its grants and its RBAC.md policies (○ grantable, ✕ forbidden) |
+| `GET /users/{id}/effective-permissions` | `users.manage` | What the person may do and where each permission comes from (`role:<key>`, `override:grant`), with scopes (AT-38) |
+| `GET /users/{id}/permission-overrides` | `users.manage` | The person's overrides with effect, reason and who set them |
+| `PUT /users/{id}/permission-overrides/{key}`, `DELETE …?reason=` | `roles.manage` 🔒 | `{effect: grant \| deny, reason}`; deny wins over any role; protected permissions stay the owner's |
+| `PUT /users/{id}/roles` | `roles.manage` 🔒 | `{roles, reason}`: the person's roles; the owner role is also the owner flag, and the last active owner cannot lose it (AT-39). Audited `user.roles` with before and after |
+| `PUT /roles/{role}/permissions/{key}`, `DELETE …?reason=` | `roles.manage` 🔒 | `{reason}`: give or take a permission from everyone with the role; ✕ and 🔒 are refused by the database (`403`), the owner role is not edited (`400`). Audited `role.grant` / `role.revoke` |
 
 ### 5.3 Floor, tables, sessions
 
@@ -154,7 +162,10 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /discounts/{discountId}/void` **[I]** | `discounts.apply` (a comp also `discounts.comp`) | — | Before settlement only, with a reason |
 | `POST /invoices/{invoiceId}/payments` **[I]** | `payments.collect` | P1 (+I4) | `{lockVersion, method, amount, tendered?, provider?, reference?, confirmed?}`: cash (`tendered`, change worked out; needs the open shift) / card (`reference` = approval code, optional) / transfer (`provider`, `reference`, `confirmed: true`; `confirmed_by` = caller). A reference that looks like a card number is refused. The Idempotency-Key is stored as the payment's key. Returns `settled`, `invoiceNo`, `change`, `receiptQueued` |
 | `POST /invoices/{invoiceId}/receipt/reprint` **[I]** | `receipts.reprint` | — | Labelled reprint |
-| `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` | P2 | Full/line refund or method correction (PROVISIONAL D-13) |
+| `GET /refunds/bills?q=&date=` | `payments.refund_request` | — | Settled bills to refund from (step 5.2), newest first (50): by invoice or order number, table or guest name, or business date; with `total` and `refunded` |
+| `GET /invoices/{invoiceId}/refunds` | `payments.refund_request` | — | The bill for refunding: `invoice` (paid, refunded, business date, where), `lines` (qty, net, `refundedQty`, `refundedAmount`), `payments` (as taken and as corrected: `method`, `provider`, `reference`, `refunded`, `refundable`, `inOpenShift`), `refunds` and corrections with requester and approver, `refundDue` of a cancelled prepaid delivery; `reasons` the owner offers (`refunds.reasons`, step 5.6) |
+| `POST /invoices/{invoiceId}/refunds` **[I]** | `payments.refund_request` + approver's `payments.refund` via `stepUpId` (D-13) | P2 | Settled bills only (`409 STALE_STATE`); the invoice never changes. **Refund** `{kind: 'refund', paymentId, amount, reason, reference?, lines?: [{invoiceLineId, qty, amount}], stepUpId}` (step-up `refund.approve`): back by that payment's method as it now stands (a transfer needs the transaction ID; a card number → `422 CARD_NUMBER_NOT_ALLOWED`); never more than the payment less its refunds, nor more pieces or money than a line had (`422 REFUND_EXCEEDS_PAID` with `refundable` / `refundableQty`); the lines never add up to more than the amount. Cash is paid from the open shift (`422 NO_OPEN_CASH_SHIFT`), never more than the till should hold (`400`, step 5.7), and lowers its expected cash. **Method correction** `{kind: 'method_correction', paymentId, method, provider?, reference?, reason, stepUpId}` (step-up `payment.correct`): the whole payment, only before any refund of it; to or from cash only while the payment's own shift is open. Numbered `RF-YYYY-NNNNN` (gapless per year), audited `payment.refund` / `payment.correct` with reason and approver, a refund slip printed; a refund that covers a cancelled prepaid delivery's refund due closes its alert (P5-5). Returns `{refundId, refundNo, kind, amount, method, provider, businessDate, slipQueued}` (201) |
+| `POST /refunds/{refundId}/slip/reprint` **[I]** | `payments.refund_request` | — | Labelled reprint of the refund slip |
 | `GET /cash-shifts/current` | `cash_shifts.operate` | — | The open shift on the counter till with its figures: float, cash sales, refunds, paid-in/out, expected cash, card and transfer totals, movements |
 | `GET /cash-shifts`, `GET /cash-shifts/{shiftId}` | `cash_shifts.operate` | — | Recent shifts, closed ones waiting for approval first; a cashier sees and opens only their own |
 | `POST /cash-shifts` **[I]** | `cash_shifts.operate` | — | Open shift with float |
@@ -173,7 +184,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /deliveries/{deliveryId}/return` **[I]** | `delivery.record_return` | D2/D3 | `{outcome: 'delivered', method?, reference?, deliveredAt?}`: an unpaid bill is paid in full with `collected_by_rider_id`, cash into the open shift (AT-54, AT-60); or `{outcome: 'failed', reason}`, raising a `failed_delivery` alert |
 | `POST /deliveries/{deliveryId}/resolve` **[I]** | `delivery.resolve_failed` | D4–D6 | `{action: 'reattempt', riderId?}` (new slip) / `{action: 'convert_to_pickup'}` (paid at the counter) / `{action: 'cancel', reason}`: food written off as waste `failed_delivery`, no stock credit; prepaid → `refundDue` (P3-1); an unpaid bill is reopened and the visit closed |
 | `GET /riders` | `delivery.dispatch` | — | Active rider profiles (`?all=true` with inactive ones) |
-| `POST /riders`, `PATCH /riders/{riderId}` **[I]** | `users.manage` | — | Add a rider `{name, phone?}`; rename, change phone, switch off (`expectedVersion`) |
+| `POST /riders`, `PATCH /riders/{riderId}` **[I]** | `riders.manage` (step 5.6; was `users.manage`) | — | Add a rider `{name, phone?}`; rename, change phone, switch off (`expectedVersion`) |
 
 ### 5.7 Menu, printing, system (Phase 3 subset)
 
@@ -198,9 +209,9 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
 | `GET /branding` | any signed-in staff | `{shopName, primary}` for every screen's header and buttons (step 3.12) |
 | `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
-| `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130) |
+| `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130). Money and control settings (cash rounding, stock-count approval thresholds; `financial: true` in the list) also need the owner-only `settings.financial` (`403`, RBAC review F-4). List settings (`refunds.reasons`, `assets.categories`, `assets.locations`, step 5.6) take 1–30 names, each once |
 | `PUT /settings/branding` | `settings.manage` | `{expectedVersion, shopName, addressLine, phone, footer, primary}`: the receipt wording and the brand colour together; a colour under 4.5:1 for white button text or on the page is refused (AT-130) |
-| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox (escalated orders, shift variances, failed deliveries, refunds due, uncollected items, long-open tables, printers) with links |
+| `GET /operations` | `reports.sales` | Live operations for managers: tables, waiting and escalated orders, open tickets and bills, today's sales, takeaway waiting to pay, deliveries, the cash shift, and the inbox with links: escalated orders, shift variances, failed deliveries, refunds due (opening the prefilled refund, P5-5), uncollected items, long-open tables, printers, ledger mismatches, and (step 5.5) stock counts waiting for approval and critical stock alerts (out of stock, expired, short for orders taken, not matching movements; one line per kind). Refunds have no waiting requests: they are approved on the spot by step-up (D-13) |
 | `POST /alerts/{alertId}/acknowledge` | `reports.sales` | Note an alert as seen; it stays in the inbox, below the unseen ones, until resolved |
 | `GET /events` | any authenticated staff | SSE stream (§7) |
 
@@ -242,7 +253,7 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /inventory/items/{itemId}/pack-sizes` | `inventory.items_manage` | `{name, qty, uom}` with `uom` any unit of the item's dimension (`l` for an item in `ml`, `kg` for `g`); stored as `qtyBase` (`1 l` → `1000.0000`, AT-31). Another dimension is refused (AT-32). Names are unique among an item's active packs |
 | `PATCH /inventory/pack-sizes/{packId}` | `inventory.items_manage` | `{expectedVersion, name?, isActive?}`. What a pack holds never changes (a new size is a new pack); stopping a pack frees its barcodes |
 | `POST /inventory/items/{itemId}/barcodes` | `inventory.items_manage` | `{code, packSizeId?}` (a pack of this item; without one a scan means one base unit). A code with an active owner is refused with `409 BARCODE_IN_USE`, naming the owner, also when two people link it at once |
-| `POST /purchase-receipts/{receiptId}/returns` **[I]** | `inventory.receive` | `{lineId, qty, uom?, reason, refundAmount?, refundChannel?, refundReference?}` (step 4.4, AT-110): stock back to the supplier against that line, never more than the line brought in less what already went back; for a lot-tracked item out of the line's own lot, otherwise from what is available. A `supplier_return` movement at the current average; the refund is recorded for Phase 5's ledger (P4-2). Returns `qtyBase`, `value`, `returnedSoFar`. A receipt with returns can no longer be reversed. `GET /purchase-receipts/{id}` shows `returnedQty` per line and the `returns` (value and refund only with cost rights) |
+| `POST /purchase-receipts/{receiptId}/returns` **[I]** | `inventory.receive` | `{lineId, qty, uom?, reason, refundAmount?, refundChannel?, refundReference?}` (step 4.4, AT-110): stock back to the supplier against that line, never more than the line brought in less what already went back; for a lot-tracked item out of the line's own lot, otherwise from what is available. A `supplier_return` movement at the current average; a refund posts its cash-in ledger entry in the same transaction (step 5.1). Returns `qtyBase`, `value`, `returnedSoFar`. A receipt with returns can no longer be reversed. `GET /purchase-receipts/{id}` shows `returnedQty` per line and the `returns` (value and refund only with cost rights) |
 | `POST /purchase-receipts/{receiptId}/cost-corrections` **[I]** | `inventory.cost_adjust` (owner) | `{lineId, correctLineCost, reason}` (step 4.6, AT-68): what the line really cost. Δ against the cost on record (line cost plus earlier corrections) is split per COST_VALUATION.md §6: Δ × min(1, on hand ÷ received) into stock value (never below zero; nothing when nothing is on hand), the rest purchase price variance today. Returns `delta`, `toInventory`, `toVariance`, `lineCostNow`. Earlier movements and line costs never change (AT-19). A corrected receipt can no longer be reversed. Receipt lines show `lineCostNow` to those with cost rights |
 | `POST /inventory/waste` **[I]** | `inventory.waste` | `{itemId, qty, uom?, reasonCode, note?, lotId?}` (step 4.4, AT-109): ingredient waste at the current average; reasons `spilled`, `remade`, `expired`, `damaged`, `quality`, `other` (needs a note); for a lot-tracked item from the named lot or earliest expiry first; not more than the book quantity (a count instead). Waste only from expired lots is recorded as `expired_lot`. `value` is `null` without `inventory.cost_view` |
 | `GET /inventory/waste?date=` | `inventory.read` | A business day's waste (default today), newest first: ingredients, expired lots, prepared items and failed deliveries, with lot, reason, who; `value` only with `inventory.cost_view` |
@@ -272,10 +283,62 @@ Item, pack, barcode and supplier edits move no stock, so they need no `Idempoten
 | `POST /inventory/barcodes/{barcodeId}/deactivate` | `inventory.items_manage` | `{expectedVersion}`. The code is free to link again; the row stays for history |
 | `GET /suppliers?includeInactive=` | `inventory.read` | Active suppliers by name (inactive ones too on request) |
 | `POST /suppliers`, `PATCH /suppliers/{supplierId}` | `suppliers.manage` | `{name, phone?, email?, address?, notes?}`; edits with `expectedVersion`, `isActive: false` instead of deleting. Names are unique among active suppliers |
-| `POST /purchase-receipts` **[I]** | `inventory.receive` | Posts a receipt in one transaction (RECIPE_INVENTORY.md §7): `{supplierId?, supplierInvoiceRef?, note?, paidNow, paymentChannel?, paymentReference?, startStockControl?: [itemId], lines: [{itemId, packSizeId + packQty \| qty + uom?, lineCost, lotCode?, expiryDate?}]}`. Packs convert to the base unit (`qtyBase`), unit cost = line cost ÷ base quantity to 8 dp, stock and average updated, alerts and availability refreshed, then the gapless `GRN-YYYY-NNNNN` is taken last. An expiry-tracked item needs an expiry date not in the past; lot and expiry only for items that track them. An item without its opening count is refused unless listed in `startStockControl` (its shelf was empty, D-29; needs `inventory.stock_control_activate`). `paidNow` needs `paymentChannel` (`cash`, `card`, `transfer`); a reference that looks like a card number → `422 CARD_NUMBER_NOT_ALLOWED`. The ledger entry for a payment is written in Phase 5 (P4-2). Returns `receiptNo`, `totalCost` and per line `qtyBase`, `unitCost`, `onHandAfter` |
+| `POST /purchase-receipts` **[I]** | `inventory.receive` | Posts a receipt in one transaction (RECIPE_INVENTORY.md §7): `{supplierId?, supplierInvoiceRef?, note?, paidNow, paymentChannel?, paymentReference?, startStockControl?: [itemId], lines: [{itemId, packSizeId + packQty \| qty + uom?, lineCost, lotCode?, expiryDate?}]}`. Packs convert to the base unit (`qtyBase`), unit cost = line cost ÷ base quantity to 8 dp, stock and average updated, alerts and availability refreshed, then the gapless `GRN-YYYY-NNNNN` is taken last. An expiry-tracked item needs an expiry date not in the past; lot and expiry only for items that track them. An item without its opening count is refused unless listed in `startStockControl` (its shelf was empty, D-29; needs `inventory.stock_control_activate`). `paidNow` needs `paymentChannel` (`cash`, `card`, `transfer`); a reference that looks like a card number → `422 CARD_NUMBER_NOT_ALLOWED`. A receipt paid now posts its ledger entry in the same transaction; reversing it posts the reversal of that payment (step 5.1). Returns `receiptNo`, `totalCost` and per line `qtyBase`, `unitCost`, `onHandAfter` |
 | `GET /purchase-receipts?date=&supplierId=` | `inventory.read` | Posted and reversed receipts, newest first (100). `totalCost` is `null` unless the caller has `inventory.receive` or `inventory.cost_view` |
 | `GET /purchase-receipts/{receiptId}` | `inventory.read` | One receipt with its lines (pack, packs, base quantity, lot, expiry), payment and reversal; costs as above |
 | `POST /purchase-receipts/{receiptId}/reverse` **[I]** | `inventory.receive` | `{reason}`. The whole receipt, only while each item still has its quantity **available** (on hand − reserved), so accepted orders stay covered; otherwise refused, pointing to waste or a supplier return. Each line leaves as a `reversal` movement: exactly at its own cost when nothing else has moved the item since (quantity, value and last cost return to what they were), else at the current average (flag `at_average`, COST_VALUATION.md §3) |
+
+### 5.10 Ledger (Phase 5 step 5.1)
+
+Every money movement has one entry (FINANCE_REPORTING.md §4), posted by the database in the same transaction as its source: a payment, cash paid in or out of a shift, a receipt paid now (and its reversal), a supplier refund, a refund to a guest (step 5.2), an expense and its void (step 5.3; cash from the till is the shift's paid-out without an entry of its own), and for a payment-method correction the reversal of the payment's last entry plus a new one by the right method. Entries are never edited (D-31): a manual entry is corrected by reversing it. Numbers `LE-YYYY-NNNNNN` follow the entry id (unique, not gapless).
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /ledger?from=&to=&channel=` | `ledger.read` | Defaults: `to` = today's business date, `from` = the first of its month; `from` after `to` → `400`. Returns `balances` per channel (transfers per provider: `opening` before `from`, `in`, `out`, `closing` at the end of `to`) and the range's `entries` in posting order (`entryNo`, `entryType`, `direction`, `amount`, `channel`, `provider`, `businessDate`, `sourceType`, `sourceId`, `source` as people name it, `link` to its page when it has one, `memo`, `reversesEntryNo`, `reversedByEntryNo`, `createdBy`, `balanceAfter` of the entry's channel), at most 3000 (`truncated`). Balance per channel = Σ of its entries for any range (AT-121) |
+| `POST /ledger/entries` **[I]** | `ledger.manage` | `{direction: in\|out, amount, channel: cash\|card\|transfer\|other, provider? (transfer only, required for it), memo (3–300)}`. Posted on today's business date as `adjustment`, audited `ledger.adjustment` with the reason; e.g. the starting balance of a channel (P5-8). Returns `{id, entryNo}` (201) |
+| `POST /ledger/entries/{entryId}/reverse` **[I]** | `ledger.manage` | `{reason}`. Manual entries only (others follow their source: a refund, a voided expense, a reversed receipt → `400`); once (`409 STALE_STATE` after). Posts a `reversal` of the same amount the other way, today, audited `ledger.reverse`. Returns `{id, entryNo}` (201) |
+
+The nightly `ledger:reconcile` (04:15) checks that every payment, cash movement, receipt paid now (and the reversal of a reversed one) and supplier refund has exactly its entry with its amount, and that every automatic entry has its source; each problem opens one `ledger_mismatch` operational alert. It never corrects anything.
+
+### 5.11 Expenses (Phase 5 step 5.3)
+
+What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are received as stock). An expense is never edited (D-31): it is voided, or corrected by voiding and recording again in one step. Numbers `EXP-YYYY-NNNNN`, gapless per year.
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /expense-categories` | `expenses.read` | All categories with `isActive` and how many expenses use them (a starter list is seeded, I-12) |
+| `POST /expense-categories` **[I]** | `expenses.manage` | `{name}` (2–60, unique ignoring case and spaces) |
+| `PATCH /expense-categories/{id}` | `expenses.manage` | `{name?, isActive?}`; a category is switched off, never deleted. Audited |
+| `GET /expenses?from=&to=&categoryId=&status=` | `expenses.read` | Defaults: this business month to today. Newest first (1000), each with category, payee, reference, note, business date, `paidVia` (`cash`, `card`, `transfer` + `provider`, `other`), `fromTill`, `status`, `attachment` (type, size) or null, who recorded or voided it and why, `replacesNo` / `replacedByNo`; `totals` per category and `total` of what is recorded (voided excluded) |
+| `GET /expenses/{id}` | `expenses.read` | One expense as above |
+| `POST /expenses` **[I]** | `expenses.manage` | `{categoryId, amount, paidVia, provider? (transfer only, required for it), payee?, reference?, note?, businessDate? (today or up to 31 days back), fromTill?}`. `fromTill` (cash only, today only) takes it from the open shift's till: also that shift's paid-out, so expected cash follows (`422 NO_OPEN_CASH_SHIFT` without one, P5-6; never more than the till should hold, `400`, step 5.7). One ledger entry `expense` out by its channel and category. Audited. Returns `{id, expenseNo, businessDate, paidOutOfShift}` (201) |
+| `POST /expenses/{id}/void` **[I]** | `expenses.manage` | `{reason}`. Once (`409` after). The expense stays as it was, marked voided; the ledger gets a `reversal` in (AT-107). A till expense whose shift is still open is paid back in (`backInTill`) |
+| `POST /expenses/{id}/correct` **[I]** | `expenses.manage` | `{reason, …the fields of POST /expenses}`: voids it and records the new one in one transaction, the new one naming the one it replaces; the attached bill carries over (AT-23). Returns `{voidedNo, id, expenseNo, businessDate}` (201) |
+| `PUT /expenses/{id}/attachment` | `expenses.manage` | The bill itself as the body, `Content-Type` `image/jpeg`, `image/png` or `application/pdf`, at most 5 MB; its real type is read from its first bytes (`400` otherwise). Kept under `FILES_DIR` (P5-3), the database holds path, type, size and SHA-256; a replaced file stays on disk and both are in the audit. Only while recorded (`409` once voided) |
+| `GET /expenses/{id}/attachment` | `expenses.read` | The file with its type, `X-Content-Type-Options: nosniff`, a sandboxing CSP and `no-store`; `404` when none, missing on disk or not matching its SHA-256 |
+
+### 5.12 Asset register (Phase 5 step 5.4)
+
+What the shop owns (D-31): the row is the asset as it is now, and every change is an event in its history (AT-106, AT-23). Disposal is a status, never a delete. No depreciation (D-19).
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /assets?q=&status=&category=` | `assets.read` | `status` `active` (not disposed), `in_use`, `in_repair`, `retired` or `disposed`; `q` searches tag, name and place. Each asset with supplier, who looks after it, `version`, `lastMaintenance`, `nextDue`; plus the `categories` and `locations` in use |
+| `GET /assets/choices` | `assets.manage` | Active people and suppliers for the form |
+| `GET /assets/{id}` | `assets.read` | `asset`, its `history` (`acquired`, `moved`, `condition_changed`, `value_corrected`, `status_changed`, `details_changed` with before/after, `maintenance`, `disposed`; who, when, why) and `maintenance` records |
+| `POST /assets` **[I]** | `assets.manage` | `{assetTag?, name, category, quantity?, purchaseDate?, purchasePrice?, supplierId?, location?, condition? new/good/fair/poor, responsibleUserId?, notes?}`. An empty tag takes the next `AST-NNNN` (P5-4); tags are unique ignoring case. History starts with `acquired`. Returns `{id, assetTag}` (201) |
+| `POST /assets/{id}/changes` **[I]** | `assets.manage` | `{version, reason?, changes: {…the fields above, status? in_use/in_repair/retired}}`. Refused if someone changed it first (`409`, with the current `version`) or it is disposed (`409`). Each difference is an event; a changed price is `value_corrected` and needs the reason. Nothing different, nothing recorded. Returns `{id, version, events}` |
+| `POST /assets/{id}/maintenance` **[I]** | `assets.manage` | `{performedOn (not in the future), description, vendor?, cost?, nextDue? (after performedOn), expenseNo?}`: the expense that paid for it (step 5.3), recorded and not linked to another maintenance. Records are never edited. Returns `{id}` (201) |
+| `POST /assets/{id}/dispose` **[I]** | `assets.manage` | `{how: sold/scrapped/donated/lost/returned, reason}`. The asset stays with its history and never changes again. Money from a sale is a manual ledger entry (§5.10) |
+
+`POST /imports/assets/preview` and `/apply` take `09_assets.csv` (P5-7) with the step-4.9 rules (§5.9) and need `assets.manage`. The tag is required in the file (it is how a re-import finds the asset); re-importing records the differences as events with the reason "Imported from 09_assets.csv"; a disposed asset is refused.
+
+### 5.13 Audit log (Phase 5 step 5.5)
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /audit?from=&to=&userId=&action=&entityType=&entityId=&before=&limit=` | `audit.read` | Newest first, `limit` up to 200 (default 100), `before` = the `nextBefore` of the previous page. `from`/`to` are the shop's calendar days; `userId` matches the actor or the approver; `action` matches an action (`payment.refund`) or a family (`payment`). Each item: `at`, `actorKind`, `actor`, `device`, `action`, `entityType`, `entityId`, `before`, `after`, `reason`, `approvedBy`, `ip`, `correlationId` (AT-95). Read only |
+| `GET /audit/filters` | `audit.read` | The actions and record types recorded so far, and the people |
 
 ## 6. Errors
 
@@ -359,7 +422,11 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | `supplier.changed` | Supplier added or changed | `inventory` |
 | `count.changed` | Stock count started, submitted, posted, sent back or cancelled | `inventory` |
 | `alert.changed` | Inventory alert noted as seen or closed by a person | `alerts`, `inventory` |
-| `alert.raised` | Uncollected item, stale session/reservation, stock alerts | `alerts` |
+| `alert.raised` | Uncollected item, stale session/reservation, stock alerts, ledger mismatches | `alerts` |
+| `refund.recorded` | Refund or payment-method correction | `cashier`, `ledger`, `alerts` |
+| `expense.changed` | Expense recorded, voided, corrected or its bill attached; category changed | `expenses`, `ledger` (and `cashier` when the till is involved) |
+| `asset.changed` | Asset registered, changed, serviced or disposed | `assets` |
+| `ledger.changed` | Manual ledger entry or reversal (automatic entries arrive with their source's event) | `ledger` |
 | `resync` | Client's `Last-Event-ID` older than retention (24 h) | (direct) |
 
 **Who receives what** (filtered on the server by permission; the API still enforces scope on every fetch):
@@ -370,7 +437,7 @@ data: {"entity":{"type":"round","id":"812","version":3},"topics":["approvals","s
 | Waiter | `floor`, `approvals` (rounds in scope + escalated), `kitchen`, `session:*` for assigned tables, `menu`, `alerts` (uncollected on own tables) |
 | Cashier | `floor`, `approvals` (cashier scope), `kitchen`, `cashier`, `deliveries`, `printers`, `menu`, `alerts` |
 | Inventory clerk | `inventory`, `menu`, `alerts` |
-| Manager / Owner | All topics |
+| Manager / Owner | All topics (`ledger` only with `ledger.read`) |
 
 **Reliability rules:** heartbeat comment every 15 s · browser reconnects automatically with `Last-Event-ID` · replay from the outbox if within 24 h, else `resync` · after 2 missed heartbeats the UI shows "Reconnecting…" and disables Accept, Pick up, Lock and Pay until it has refetched · nothing is ever decided from an event alone.
 

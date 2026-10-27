@@ -66,6 +66,21 @@ export const AREAS: readonly Area[] = [
     ],
     ready: true,
   },
+  { id: 'ledger', label: 'Ledger', path: '/ledger', anyOf: ['ledger.read'], ready: true },
+  {
+    id: 'expenses',
+    label: 'Expenses',
+    path: '/expenses',
+    anyOf: ['expenses.read', 'expenses.manage'],
+    ready: true,
+  },
+  {
+    id: 'assets',
+    label: 'Assets',
+    path: '/assets',
+    anyOf: ['assets.read', 'assets.manage'],
+    ready: true,
+  },
   {
     id: 'reports',
     label: 'Reports',
@@ -73,7 +88,7 @@ export const AREAS: readonly Area[] = [
     anyOf: ['reports.sales', 'reports.profit', 'reports.inventory', 'reports.staff'],
     ready: false,
   },
-  { id: 'users', label: 'Users & roles', path: '/users', anyOf: ['users.manage'], ready: false },
+  { id: 'users', label: 'Users & roles', path: '/users', anyOf: ['users.manage'], ready: true },
   { id: 'devices', label: 'Devices', path: '/devices', anyOf: ['devices.manage'], ready: true },
   {
     id: 'settings',
@@ -82,7 +97,7 @@ export const AREAS: readonly Area[] = [
     anyOf: ['settings.manage', 'printers.manage'],
     ready: true,
   },
-  { id: 'audit', label: 'Audit log', path: '/audit', anyOf: ['audit.read'], ready: false },
+  { id: 'audit', label: 'Audit log', path: '/audit', anyOf: ['audit.read'], ready: true },
   {
     id: 'health',
     label: 'System health',

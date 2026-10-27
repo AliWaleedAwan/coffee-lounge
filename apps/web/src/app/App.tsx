@@ -9,9 +9,14 @@ import { AREAS, homePath } from '../nav/areas.ts';
 import { AccountScreen } from '../screens/AccountScreen.tsx';
 import { DevicesScreen } from '../screens/DevicesScreen.tsx';
 import { HealthScreen } from '../screens/HealthScreen.tsx';
+import { AssetsScreen } from '../screens/assets/AssetsScreen.tsx';
+import { AuditScreen } from '../screens/audit/AuditScreen.tsx';
+import { ExpensesScreen } from '../screens/expenses/ExpensesScreen.tsx';
 import { InventoryScreen } from '../screens/inventory/InventoryScreen.tsx';
+import { LedgerScreen } from '../screens/ledger/LedgerScreen.tsx';
 import { ApprovalsScreen } from '../screens/approvals/ApprovalsScreen.tsx';
 import { CounterScreen } from '../screens/counter/CounterScreen.tsx';
+import { RefundsScreen } from '../screens/counter/RefundsScreen.tsx';
 import { ShiftScreen } from '../screens/counter/ShiftScreen.tsx';
 import { DeliveryScreen } from '../screens/delivery/DeliveryScreen.tsx';
 import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
@@ -24,6 +29,7 @@ import { OperationsScreen } from '../screens/operations/OperationsScreen.tsx';
 import { LoginScreen } from '../screens/LoginScreen.tsx';
 import { PinScreen } from '../screens/PinScreen.tsx';
 import { RegisterScreen } from '../screens/RegisterScreen.tsx';
+import { UsersScreen } from '../screens/users/UsersScreen.tsx';
 import { AreaPage, RequireSession, useSignedIn } from '../screens/Shell.tsx';
 
 export function createQueryClient(): QueryClient {
@@ -43,22 +49,29 @@ export function createQueryClient(): QueryClient {
 
 const BUILT: Record<string, () => JSX.Element> = {
   approvals: ApprovalsScreen,
+  assets: AssetsScreen,
+  audit: AuditScreen,
   counter: CounterScreen,
   deliveries: DeliveryScreen,
   devices: DevicesScreen,
+  expenses: ExpensesScreen,
   floor: FloorScreen,
   health: HealthScreen,
   inventory: InventoryScreen,
+  ledger: LedgerScreen,
   menu: MenuScreen,
   operations: OperationsScreen,
   pickup: PickupScreen,
   settings: SettingsScreen,
+  users: UsersScreen,
 };
 
 const FLOOR = AREAS.find((a) => a.id === 'floor');
 const COUNTER = AREAS.find((a) => a.id === 'counter');
 /** Reached from Bills & payments; cashiers, managers and the owner run the till shift. */
 const CASH_SHIFT = COUNTER ? { ...COUNTER, anyOf: ['cash_shifts.operate'] } : null;
+/** Reached from Bills & payments, the delivery board and the inbox (D-13: asking needs payments.refund_request). */
+const REFUNDS = COUNTER ? { ...COUNTER, anyOf: ['payments.refund_request'] } : null;
 /** Reached from the printer banner, not the menu. */
 const PRINT_JOBS = {
   id: 'print-jobs',
@@ -95,6 +108,16 @@ export function AppRoutes() {
             element={
               <AreaPage area={FLOOR}>
                 <SessionScreen />
+              </AreaPage>
+            }
+          />
+        ) : null}
+        {REFUNDS ? (
+          <Route
+            path="/counter/refunds"
+            element={
+              <AreaPage area={REFUNDS}>
+                <RefundsScreen />
               </AreaPage>
             }
           />

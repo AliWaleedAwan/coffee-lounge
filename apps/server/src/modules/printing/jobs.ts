@@ -21,11 +21,13 @@ import { readSetting } from '../../platform/settings.ts';
 import {
   renderKitchenTicket,
   renderReceipt,
+  renderRefundSlip,
   renderShiftReport,
   renderTestPage,
   type KitchenTicketData,
 } from './documents.ts';
 import { receiptData } from './receipt-data.ts';
+import { refundSlipData } from './refund-slip-data.ts';
 import { shiftReportData } from './shift-report-data.ts';
 import type { PrinterTarget, Transport } from './transports.ts';
 
@@ -194,8 +196,12 @@ export async function renderJob(db: Queryable, job: JobRow, printer: PrinterRow)
       return renderReceipt(await receiptData(db, job.document_id), options);
     case 'shift_report':
       return renderShiftReport(await shiftReportData(db, job.document_id), options);
-    default:
-      throw new Error(`printing ${job.document_type} arrives in a later step`);
+    case 'refund_slip':
+      return renderRefundSlip(await refundSlipData(db, job.document_id), options);
+    default: {
+      const unknown: never = job.document_type;
+      throw new Error(`unknown document type ${JSON.stringify(unknown)}`);
+    }
   }
 }
 

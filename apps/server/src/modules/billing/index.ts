@@ -17,5 +17,5 @@ export {
   type InvoiceRow,
 } from './invoices.ts';
 export { recordPayments, settle, type PaymentInput } from './payments.ts';
-export { counterTill } from './shifts.ts';
+export { assertCashInTill, counterTill, lockOpenShift } from './shifts.ts';
 export { billingRoutes, type BillingRouteOptions } from './routes.ts';

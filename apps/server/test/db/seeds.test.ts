@@ -117,6 +117,15 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
     );
     expect(new Set(rows.map((r) => r.key))).toEqual(documented);
     expect(Object.fromEntries(rows.map((r) => [r.key, r.value]))).toEqual({
+      'assets.categories': [
+        'Coffee equipment',
+        'Refrigeration',
+        'Kitchen equipment',
+        'Furniture',
+        'POS hardware',
+        'Other',
+      ],
+      'assets.locations': ['Bar', 'Kitchen', 'Dining area', 'Store room', 'Office'],
       'billing.cash_rounding_unit': '1.00',
       'brand.primary': '#6B4435',
       'inventory.count_variance_amount': '1000.00',
@@ -127,6 +136,14 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
       'orders.takeaway_unpaid_expiry_minutes': 30,
       'orders.uncollected_alert_minutes': 30,
       'privacy.delivery_pii_retention_months': 12,
+      'refunds.reasons': [
+        'Wrong order',
+        'Quality',
+        'Cold or late',
+        'Order cancelled',
+        'Charged twice',
+        'Other',
+      ],
       'sessions.stale_alert_hours': 3,
       'shop.business_day_cutoff': '04:00',
       'shop.business_hours': { opens: '00:00', closes: '00:00' },

@@ -39,6 +39,8 @@ interface DeliveryItem {
   attempt: number;
   failureReason: string | null;
   refundDue: string;
+  refunded: string;
+  invoiceId: string;
   invoiceStatus: string;
   total: string | null;
   due: string | null;
@@ -186,9 +188,15 @@ function DeliveryCard({ d, riders }: { d: DeliveryItem; riders: Rider[] }) {
         <p className="banner banner-warning">Failed: {d.failureReason}</p>
       ) : null}
       {d.status === 'cancelled' && d.refundDue !== '0.00' ? (
-        <p className="banner banner-warning">
-          Refund due {rupees(d.refundDue)} (recorded with refunds, a later phase).
-        </p>
+        Number(d.refunded) >= Number(d.refundDue) ? (
+          <p className="muted">Refunded {rupees(d.refunded)}.</p>
+        ) : (
+          <p className="banner banner-warning">
+            Refund due {rupees(d.refundDue)}
+            {Number(d.refunded) > 0 ? ` (${rupees(d.refunded)} refunded so far)` : ''} ·{' '}
+            <Link to={`/counter/refunds?invoice=${d.invoiceId}&full=1`}>Refund it</Link>
+          </p>
+        )
       ) : null}
       <div className="row">
         <Link to={`/sessions/${d.sessionId}`}>Items</Link>

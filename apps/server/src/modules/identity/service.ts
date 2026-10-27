@@ -683,6 +683,17 @@ export async function createStepUp(
     }
     const check = await checkSecret(tx, approver, input.approverPin, 'pin', facts);
     if (!check.ok) return check;
+    // A PIN someone else set (a reset, or a new account) approves nothing until its owner
+    // has chosen their own password: no one can approve as another person (RBAC review).
+    if (approver?.must_change_password) {
+      return {
+        ok: false as const,
+        error: new AppError(
+          'FORBIDDEN',
+          'This approver must first log in and choose their own password',
+        ),
+      };
+    }
     const permissions = await loadEffectivePermissions(tx, check.user.id);
     if (!permissions.has(STEP_UP_ACTIONS[input.action])) {
       return {
@@ -942,5 +953,240 @@ export async function auditAccessDenied(
     action: 'access.denied',
     entityType: 'route',
     after: detail,
+  });
+}
+
+// ---------------------------------------------------------------- roles, grants and the catalogue (step 5.5)
+
+export interface AccessCatalog {
+  permissions: {
+    key: string;
+    module: string;
+    description: string;
+    scopeKind: string;
+    isProtected: boolean;
+  }[];
+  roles: {
+    key: string;
+    name: string;
+    grants: { key: string; scope: Record<string, string> | null }[];
+    /** RBAC.md ○ / ✕ per permission the role does not have by default. */
+    policies: Record<string, 'grantable' | 'forbidden'>;
+  }[];
+}
+
+/** The permission catalogue and every role's grants and grant policies (RBAC.md §2). */
+export async function accessCatalog(db: Queryable): Promise<AccessCatalog> {
+  const { rows: permissions } = await db.query<AccessCatalog['permissions'][number]>(
+    `SELECT key, module, description, scope_kind AS "scopeKind", is_protected AS "isProtected"
+       FROM cl.permissions ORDER BY module, key`,
+  );
+  const { rows: roles } = await db.query<{ id: string; key: string; name: string }>(
+    'SELECT id::text, key, name FROM cl.roles ORDER BY roles.id',
+  );
+  const { rows: grants } = await db.query<{
+    role_id: string;
+    key: string;
+    scope: Record<string, string> | null;
+  }>(
+    'SELECT role_id::text, permission_key AS key, scope FROM cl.role_permissions ORDER BY permission_key',
+  );
+  const { rows: policies } = await db.query<{
+    role_id: string;
+    key: string;
+    policy: 'grantable' | 'forbidden';
+  }>('SELECT role_id::text, permission_key AS key, policy FROM cl.role_permission_policy');
+  return {
+    permissions,
+    roles: roles.map((r) => ({
+      key: r.key,
+      name: r.name,
+      grants: grants.filter((g) => g.role_id === r.id).map((g) => ({ key: g.key, scope: g.scope })),
+      policies: Object.fromEntries(
+        policies.filter((p) => p.role_id === r.id).map((p) => [p.key, p.policy]),
+      ),
+    })),
+  };
+}
+
+export async function listOverrides(
+  db: Queryable,
+  userId: string,
+): Promise<
+  { key: string; effect: 'grant' | 'deny'; reason: string; grantedBy: string; at: string }[]
+> {
+  const { rows } = await db.query<{
+    key: string;
+    effect: 'grant' | 'deny';
+    reason: string;
+    grantedBy: string;
+    at: string;
+  }>(
+    `SELECT o.permission_key AS key, o.effect, o.reason, u.display_name AS "grantedBy", o.updated_at AS at
+       FROM cl.user_permission_overrides o JOIN cl.users u ON u.id = o.granted_by
+      WHERE o.user_id = $1 ORDER BY o.permission_key`,
+    [userId],
+  );
+  return rows;
+}
+
+/** A user's roles (roles.manage, owner-only). The owner role is the owner flag too (AT-39). */
+export async function setUserRoles(
+  pool: pg.Pool,
+  auth: AuthContext,
+  input: { userId: string; roles: string[]; reason: string },
+  facts: RequestFacts,
+): Promise<void> {
+  const roles = [...new Set(input.roles)].sort();
+  try {
+    await withTransaction(pool, async (tx) => {
+      const { rows: users } = await tx.query<{ is_owner: boolean }>(
+        'SELECT is_owner FROM cl.users WHERE id = $1 FOR UPDATE',
+        [input.userId],
+      );
+      const user = users[0];
+      if (!user) throw new AppError('NOT_FOUND', 'No such user');
+      const { rows: before } = await tx.query<{ key: string }>(
+        `SELECT r.key FROM cl.user_roles ur JOIN cl.roles r ON r.id = ur.role_id
+          WHERE ur.user_id = $1 ORDER BY r.key`,
+        [input.userId],
+      );
+      await tx.query('DELETE FROM cl.user_roles WHERE user_id = $1', [input.userId]);
+      const assigned = await tx.query(
+        'INSERT INTO cl.user_roles (user_id, role_id) SELECT $1, id FROM cl.roles WHERE key = ANY($2::text[])',
+        [input.userId, roles],
+      );
+      if (assigned.rowCount !== roles.length)
+        throw new AppError('VALIDATION_FAILED', 'Unknown role');
+      const owner = roles.includes('owner');
+      if (owner !== user.is_owner) {
+        await tx.query('UPDATE cl.users SET is_owner = $2, updated_at = now() WHERE id = $1', [
+          input.userId,
+          owner,
+        ]);
+      }
+      await audit(tx, userActor(auth), facts, {
+        action: 'user.roles',
+        entityType: 'user',
+        entityId: input.userId,
+        before: { roles: before.map((r) => r.key) },
+        after: { roles },
+        reason: input.reason,
+      });
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    translateDbError(error);
+  }
+}
+
+/** Adds or removes a permission of a role; RBAC.md ✕ and owner-only (🔒) are refused by the database. */
+export async function setRoleGrant(
+  pool: pg.Pool,
+  auth: AuthContext,
+  input: { roleKey: string; permissionKey: string; granted: boolean; reason: string },
+  facts: RequestFacts,
+): Promise<void> {
+  if (input.roleKey === 'owner') {
+    throw new AppError('VALIDATION_FAILED', 'The owner role always has every permission');
+  }
+  try {
+    await withTransaction(pool, async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        'SELECT id::text FROM cl.roles WHERE key = $1',
+        [input.roleKey],
+      );
+      const role = rows[0];
+      if (!role) throw new AppError('NOT_FOUND', 'No such role');
+      const changed = input.granted
+        ? await tx.query(
+            `INSERT INTO cl.role_permissions (role_id, permission_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [role.id, input.permissionKey],
+          )
+        : await tx.query(
+            'DELETE FROM cl.role_permissions WHERE role_id = $1 AND permission_key = $2',
+            [role.id, input.permissionKey],
+          );
+      if (changed.rowCount === 0) return;
+      await audit(tx, userActor(auth), facts, {
+        action: input.granted ? 'role.grant' : 'role.revoke',
+        entityType: 'role',
+        entityId: role.id,
+        after: { role: input.roleKey, permission: input.permissionKey, granted: input.granted },
+        reason: input.reason,
+      });
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (pgCode(error) === '23503') throw new AppError('NOT_FOUND', 'Unknown permission');
+    translateDbError(error);
+  }
+}
+
+/** A forgotten password or PIN (users.manage): new ones, changed at the next login; sessions end. */
+export async function resetCredentials(
+  pool: pg.Pool,
+  auth: AuthContext,
+  input: { userId: string; password: string; pin?: string | undefined },
+  facts: RequestFacts,
+): Promise<void> {
+  const problem =
+    passwordProblem(input.password) ?? (input.pin === undefined ? null : pinProblem(input.pin));
+  if (problem) throw new AppError('VALIDATION_FAILED', problem);
+  if (input.userId === auth.user.id) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      'Change your own password and PIN on your account page',
+    );
+  }
+  const [passwordHash, pinHash] = await Promise.all([
+    hashSecret(input.password),
+    input.pin === undefined ? Promise.resolve(null) : hashSecret(input.pin),
+  ]);
+  await withTransaction(pool, async (tx) => {
+    const { rows } = await tx.query<{ is_owner: boolean }>(
+      'SELECT is_owner FROM cl.users WHERE id = $1 FOR UPDATE',
+      [input.userId],
+    );
+    const user = rows[0];
+    if (!user) throw new AppError('NOT_FOUND', 'No such user');
+    if (user.is_owner && !auth.user.isOwner) {
+      throw new AppError('FORBIDDEN', 'Only an owner can reset an owner');
+    }
+    // Someone who may approve or manage must not be reset by anyone but an owner: the new
+    // PIN would let the resetter act as them (RBAC review, step 5.6).
+    if (!auth.user.isOwner) {
+      const { rows: power } = await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM (
+           SELECT 1 FROM cl.user_roles ur JOIN cl.roles r ON r.id = ur.role_id
+            WHERE ur.user_id = $1 AND r.key NOT IN ('waiter', 'cashier', 'inventory_clerk', 'kitchen')
+           UNION ALL
+           SELECT 1 FROM cl.user_permission_overrides o WHERE o.user_id = $1 AND o.effect = 'grant') x`,
+        [input.userId],
+      );
+      if ((power[0]?.n ?? 0) > 0) {
+        throw new AppError(
+          'FORBIDDEN',
+          'Only the owner can reset a manager or someone with extra permissions',
+        );
+      }
+    }
+    await tx.query(
+      `UPDATE cl.users SET password_hash = $2, pin_hash = COALESCE($3, pin_hash), must_change_password = true,
+              failed_attempts = 0, locked_until = NULL, updated_at = now()
+        WHERE id = $1`,
+      [input.userId, passwordHash, pinHash],
+    );
+    await tx.query(
+      `UPDATE cl.auth_sessions SET revoked_at = now(), revoke_reason = 'credentials_reset'
+        WHERE user_id = $1 AND revoked_at IS NULL`,
+      [input.userId],
+    );
+    await audit(tx, userActor(auth), facts, {
+      action: 'user.credentials_reset',
+      entityType: 'user',
+      entityId: input.userId,
+      after: { password: 'reset', pin: input.pin === undefined ? 'unchanged' : 'reset' },
+    });
   });
 }

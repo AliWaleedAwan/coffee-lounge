@@ -55,7 +55,10 @@ export async function settingsRoutes(
       z.object({ value: z.unknown(), expectedVersion }).strict(),
       request.body,
     );
-    return withTransaction(pool, (tx) => updateSetting(tx, whoOf(request), key, body));
+    const permissions = authOf(request).permissions;
+    return withTransaction(pool, (tx) =>
+      updateSetting(tx, whoOf(request), key, body, (p) => permissions.has(p)),
+    );
   });
 
   app.put('/settings/branding', { config: { permission: 'settings.manage' } }, async (request) => {

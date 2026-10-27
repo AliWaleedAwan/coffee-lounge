@@ -265,6 +265,13 @@ function NewTakeaway() {
 
 function ShiftBar({ shift, loaded }: { shift: Shift | null; loaded: boolean }) {
   const writes = useWritesAllowed();
+  const canRefund = permissionSet(useSignedIn()).has('payments.refund_request');
+  const refunds = canRefund ? (
+    <>
+      {' · '}
+      <Link to="/counter/refunds">Refunds &amp; corrections</Link>
+    </>
+  ) : null;
   const [float, setFloat] = useState('');
   const openShift = useCommand();
   if (!loaded) return null;
@@ -273,6 +280,7 @@ function ShiftBar({ shift, loaded }: { shift: Shift | null; loaded: boolean }) {
       <p className="muted">
         Cash shift open · {shift.cashier} · cash in the till {rupees(shift.expectedCash)} ·{' '}
         <Link to="/counter/shift">Cash shift</Link>
+        {refunds}
       </p>
     );
   }
@@ -287,7 +295,10 @@ function ShiftBar({ shift, loaded }: { shift: Shift | null; loaded: boolean }) {
           openShift.mutate({ path: '/cash-shifts', body: { openingFloat: float.trim() } });
       }}
     >
-      <span>No cash shift is open. Count the float to take cash.</span>
+      <span>
+        No cash shift is open. Count the float to take cash.
+        {refunds}
+      </span>
       <Field
         label="Opening float (Rs)"
         inputMode="decimal"
