@@ -8,11 +8,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  renderDayEnd,
   renderKitchenTicket,
   renderReceipt,
   renderRefundSlip,
   renderShiftReport,
   renderTestPage,
+  type DayEndPrintData,
   type KitchenTicketData,
   type PrintOptions,
   type ReceiptData,
@@ -257,6 +259,49 @@ describe('refund slip (step 5.2)', () => {
     );
     expect(text).toContain('PAYMENT CORRECTED');
     expect(text).not.toContain('signature');
+  });
+});
+
+const dayEnd: DayEndPrintData = {
+  date: '2026-10-19',
+  generatedAt: new Date('2026-10-19T23:25:00Z'), // 04:25 next morning in Karachi
+  sales: {
+    orders: 42,
+    gross: '31500.00',
+    discounts: '1250.00',
+    refunds: '650.00',
+    net_sales: '29600.00',
+    rounding: '-3.00',
+    aov: '720.24',
+  },
+  byOrderType: [
+    { label: 'Dine-in', orders: 30, net_sales: '22000.00' },
+    { label: 'Takeaway', orders: 9, net_sales: '5100.00' },
+    { label: 'Delivery', orders: 3, net_sales: '2500.00' },
+  ],
+  payments: [
+    { method: 'Cash', collected: '14850.00' },
+    { method: 'Card', collected: '9100.00' },
+    { method: 'JazzCash', collected: '5000.00' },
+  ],
+  openBills: { count: 2, value: '1700.00' },
+  cod: [{ rider: 'Bilal', amount: '1250.00' }],
+  shifts: [{ till: 'Counter', cashier: 'Sara', status: 'approved', variance: '-20.00' }],
+  voids: { events: 3, value: '1100.00' },
+  waste: { records: 2 },
+  topItems: [
+    { item: 'Cappuccino Regular', items: 18 },
+    { item: 'Chicken club sandwich', items: 7 },
+  ],
+  alerts: [{ label: 'Stock low', open: 2 }],
+};
+
+describe('day-end summary (step 6.5)', () => {
+  it('sales, payments, what stood open, shifts, voids and alerts; no costs on paper', () => {
+    const text = golden('day-end', renderDayEnd(dayEnd, options));
+    expect(text).toContain('Costs and margins are on the day-end PDF.');
+    expect(text).not.toMatch(/COGS|margin %/i);
+    for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(48);
   });
 });
 

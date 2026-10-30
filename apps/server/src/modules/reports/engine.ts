@@ -53,6 +53,8 @@ export interface ReportDefinition<F extends { from: string; to: string }> {
   rows: (ctx: ReportContext, filters: F) => Promise<Row[]>;
   /** Derived totals (ratios, results) from the summed ones. */
   derive?: (totals: Record<string, Decimal | null>, ctx: ReportContext) => Record<string, Cell>;
+  /** The files it can be exported as (FINANCE_REPORTING.md §6); both unless said. */
+  formats?: readonly ('csv' | 'pdf')[];
   /** Notes printed with the report, e.g. COGS coverage. */
   notes?: (totals: Record<string, Decimal | null>, filters: F) => string[];
 }
@@ -76,6 +78,23 @@ export interface Report {
 }
 
 const NUMERIC: readonly ColumnKind[] = ['int', 'money', 'cost', 'pct', 'qty'];
+
+/** Filters by their names on screen, for the footer (FINANCE_REPORTING.md §6). */
+const FILTER_NAMES: Record<string, string> = {
+  orderType: 'Order type',
+  categoryId: 'Category',
+  itemId: 'Item',
+  staffId: 'Staff',
+  kind: 'Kind',
+  channel: 'Channel',
+  riderId: 'Rider',
+  status: 'Outcome',
+  invoiceId: 'Bill',
+  stockCategory: 'Stock category',
+  inventoryItemId: 'Stock item',
+  supplierId: 'Supplier',
+  entityType: 'Record',
+};
 
 /** One shape per kind: money and percentages with 2 decimals, costs at full precision. */
 export function shape(kind: ColumnKind, v: Cell | undefined): Cell {
@@ -137,7 +156,7 @@ export async function runReport<F extends { from: string; to: string }>(
     footer: {
       period: from === to ? `Business date ${from}` : `Business dates ${from} to ${to}`,
       businessDay: 'A business day runs from 04:00 to 03:59 the next morning (Asia/Karachi, D-22)',
-      filters: shown.map(([k, v]) => `${k}: ${labels[k] ?? String(v)}`),
+      filters: shown.map(([k, v]) => `${FILTER_NAMES[k] ?? k}: ${labels[k] ?? String(v)}`),
       formulas: visible
         .filter((c) => c.formula)
         .map((c) => ({ column: c.label, formula: c.formula ?? '' })),

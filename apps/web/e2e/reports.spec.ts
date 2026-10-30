@@ -2,7 +2,9 @@
  * Phase 6 step 6.2 on screen: the owner sells a coffee, opens Reports (J8: the top items by
  * margin are on the overview, one click from the menu), opens the Net sales tile to its report,
  * and drills from the day to its items. Accessibility on the overview and a report (AT-86).
+ * Step 6.5: a report downloaded as CSV, and the day-end.
  */
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible, logIn, registerDevice, shop } from './support.ts';
 
@@ -82,6 +84,24 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expect(items.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
   await page.getByText('How these figures are worked out').click();
   await expect(page.locator('li', { hasText: 'Σ line gross' }).first()).toBeVisible();
+
+  // Step 6.5: the report on screen downloads as CSV, the same figures (AT-103).
+  const [csv] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('link', { name: 'Download CSV' }).click(),
+  ]);
+  expect(csv.suggestedFilename()).toMatch(/^sales-by-item_\d{4}-\d{2}-\d{2}\.csv$/);
+  const text = readFileSync(await csv.path(), 'utf8');
+  expect(text.startsWith('\uFEFFItem,')).toBe(true);
+  expect(text).toContain('Report flat white');
+  await expect(page.getByRole('link', { name: 'Download PDF' })).toBeVisible();
+
+  // The day-end of yesterday: figures, its PDF and the printed slip.
+  await page.getByRole('tab', { name: 'Day-end' }).click();
+  await expect(page.getByRole('heading', { name: /^Day-end · Business date/ })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Sales' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Download PDF' })).toBeVisible();
+  await expectAccessible(page, 'day-end');
 
   // Step 6.4: stock and people reports, each with its own filters.
   await page.getByRole('tab', { name: 'Stock on hand' }).click();

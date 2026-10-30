@@ -7,6 +7,7 @@ import type pg from 'pg';
 import { redactDeliveryDetails } from '../modules/delivery/index.ts';
 import { scanStaleSessions } from '../modules/floor/index.ts';
 import { raiseLedgerAlerts } from '../modules/ledger/index.ts';
+import { closeDay } from '../modules/reports/index.ts';
 import {
   escalateOverdue,
   expireUnpaidTakeaways,
@@ -123,12 +124,17 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
         helpers.logger.info('ledger check: every source has exactly its entry');
       }
     },
+    // P6-9: the day-end of the business day that just ended, made once and kept.
+    'reports:day_end': async (_payload, helpers) => {
+      const made = await closeDay(pool, new Date());
+      helpers.logger.info(`day-end for ${made.date} (${made.generatedBy})`);
+    },
   };
 }
 
 /**
  * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the expiry scan (04:05), the stock check
- * (04:10), the ledger check (04:15) and the delivery redaction (04:20) run nightly just after the business-day cutoff (04:00 shop time, D-22).
+ * (04:10), the ledger check (04:15), the delivery redaction (04:20) and the day-end report (04:25) run nightly just after the business-day cutoff (04:00 shop time, D-22).
  */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
@@ -144,6 +150,7 @@ export const CRONTAB = [
   '10 4 * * * stock:reconcile',
   '15 4 * * * ledger:reconcile',
   '20 4 * * * privacy:redact_delivery',
+  '25 4 * * * reports:day_end',
 ].join('\n');
 
 export interface WorkerRunOptions {

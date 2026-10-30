@@ -1,0 +1,28 @@
+Coffee Lounge
+12 Main Boulevard, Gulberg
+Sales by day
+Business dates 2026-10-01 to 2026-10-02
+Business date
+Orders
+Net sales
+Gross margin %
+2026-10-01
+41
+28,450.00
+61.20 %
+2026-10-02
+1
+450.00
+-
+Total
+42
+28,900.00
+61.02 %
+How these figures are worked out
+Business dates 2026-10-01 to 2026-10-02. A business day runs from 04:00 to 03:59 the next morning (Asia/Karachi, D-22).
+Filters: Category: Hot coffee.
+Orders: settled bills
+Net sales: sum of line net - refunds
+COGS coverage 97.50 %: costs are missing for some items
+Made 03 Oct 2026 09:00 (shop clock).
+Page 1 of 1

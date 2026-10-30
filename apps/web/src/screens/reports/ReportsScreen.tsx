@@ -1,15 +1,18 @@
 /**
- * Reports (FINANCE_REPORTING.md §6; UI_UX.md §5; Phase 6 steps 6.2–6.4). The overview opens
+ * Reports (FINANCE_REPORTING.md §6–§8; UI_UX.md §5; Phase 6 steps 6.2–6.5). The overview opens
  * first: the headline tiles against the same weekday(s) last week, sales by day and by hour,
  * the top items, and what is open in the inboxes. Every tile and every chart opens the report
  * behind it, and a report's rows open the next level down (a day → its items; an item → its
  * days). Figures come from the server exactly as the exports will (AC-RPT-1); costs and
- * margins only for those who may see them.
+ * margins only for those who may see them. With `reports.export`, each report downloads as
+ * CSV or PDF (the same figures); the day-end of a finished business date shows, downloads
+ * as a PDF and prints on the counter's receipt printer.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { api, messageOf } from '../../api/client.ts';
+import { API_BASE, api, messageOf } from '../../api/client.ts';
+import { permissionSet, useMe } from '../../auth/session.ts';
 import { Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 
@@ -52,6 +55,7 @@ interface CatalogEntry {
   title: string;
   filters: string[];
   drillOnly: boolean;
+  formats: ('csv' | 'pdf')[];
 }
 interface Overview {
   period: { from: string; to: string };
@@ -145,6 +149,20 @@ export function ReportsScreen() {
             Overview
           </button>
         ) : null}
+        {overview ? (
+          <button
+            type="button"
+            role="tab"
+            id="reports-tab-day-end"
+            aria-selected={open === 'day-end'}
+            aria-controls="reports-panel"
+            onClick={() => {
+              goTo('day-end');
+            }}
+          >
+            Day-end
+          </button>
+        ) : null}
         {items
           .filter((r) => !r.drillOnly)
           .map((r) => (
@@ -173,6 +191,8 @@ export function ReportsScreen() {
       >
         {catalog.isPending ? null : open === null ? (
           <OverviewPanel onOpen={goTo} />
+        ) : open === 'day-end' && overview ? (
+          <DayEndPanel />
         ) : entry ? (
           <ReportPanel key={open} entry={entry} onOpen={goTo} />
         ) : null}
@@ -560,6 +580,8 @@ function ReportPanel({
     ...Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) ?? ''])),
   }));
   const has = (k: string) => entry.filters.includes(k);
+  const me = useMe();
+  const canExport = me.data ? permissionSet(me.data).has('reports.export') : false;
   const set = (k: string) => (v: string) => {
     setFilters({
       ...filters,
@@ -751,6 +773,20 @@ function ReportPanel({
           <h2 id="report-head">
             {r.title} · {r.footer.period}
           </h2>
+          {canExport ? (
+            <div className="row" role="group" aria-label="Download">
+              {entry.formats.map((f) => (
+                <a
+                  key={f}
+                  className="btn btn-ghost"
+                  href={`${API_BASE}/reports/${entry.key}/export?format=${f}&${query}`}
+                  download
+                >
+                  Download {f.toUpperCase()}
+                </a>
+              ))}
+            </div>
+          ) : null}
           {r.footer.notes.map((n) => (
             <p key={n} className="banner banner-warning">
               {n}
@@ -814,6 +850,202 @@ function ReportPanel({
               <li>Worked out at {new Date(r.footer.generatedAt).toLocaleString('en-GB')}</li>
             </ul>
           </details>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+interface DayEndView {
+  date: string;
+  generatedAt: string;
+  report: {
+    sales: Record<string, string | number | null>;
+    byOrderType: { type: string; label: string; orders: number; net_sales: string }[];
+    payments: {
+      method: string;
+      payments: number;
+      taken: string;
+      refunded: string;
+      collected: string;
+    }[];
+    openBills: { count: number; value: string };
+    cod: { rider: string; deliveries: number; amount: string }[];
+    shifts: {
+      till: string;
+      cashier: string;
+      status: string;
+      expected: string | null;
+      counted: string | null;
+      variance: string | null;
+      reason: string | null;
+      approved_by: string | null;
+    }[];
+    voids: { events: number; units: number; value: string };
+    waste: { records: number; cost: string | null };
+    topItems: { item: string; items: number; net_sales: string; margin: string | null }[];
+    profit: Record<string, string | null> | null;
+    alerts: { kind: string; label: string; open: number }[];
+  };
+}
+
+/** Label and value rows (the day-end's figures). */
+function Figures({ label, rows }: { label: string; rows: [string, string][] }) {
+  return (
+    <table className="data" aria-label={label}>
+      <tbody>
+        {rows.map(([name, value]) => (
+          <tr key={name}>
+            <th scope="row">{name}</th>
+            <td className="num">{value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * The day-end of a finished business date (FINANCE_REPORTING.md §7; P6-9): made once after
+ * the 04:00 cutoff and kept, so the screen, the PDF and the printed slip agree.
+ */
+function DayEndPanel() {
+  const [params, setParams] = useSearchParams();
+  const yesterday = shift(today(), -1);
+  const date = params.get('date') ?? yesterday;
+  const me = useMe();
+  const canExport = me.data ? permissionSet(me.data).has('reports.export') : false;
+  const dayEnd = useQuery({
+    queryKey: ['reports', 'day-end', date],
+    queryFn: ({ signal }) => api<DayEndView>(`/reports/day-end?date=${date}`, { signal }),
+    retry: false,
+  });
+  const print = useMutation({
+    mutationFn: () =>
+      api<{ copyNo: number }>('/reports/day-end/print', { method: 'POST', body: { date } }),
+  });
+  const d = dayEnd.data?.report;
+  const money = (v: string | number | null | undefined) => show('money', v ?? null);
+  return (
+    <>
+      <div className="row">
+        <Field
+          label="Business date"
+          type="date"
+          value={date}
+          max={yesterday}
+          onChange={(e) => {
+            print.reset();
+            setParams({ report: 'day-end', date: e.target.value || yesterday });
+          }}
+        />
+      </div>
+      {dayEnd.isPending ? <Loading label="Loading the day-end" /> : null}
+      {dayEnd.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {messageOf(dayEnd.error)}
+        </div>
+      ) : null}
+      {d && dayEnd.data ? (
+        <section className="card stack" aria-labelledby="day-end-head">
+          <h2 id="day-end-head">Day-end · Business date {dayEnd.data.date}</h2>
+          <div className="row" role="group" aria-label="Download or print">
+            {canExport ? (
+              <a
+                className="btn btn-ghost"
+                href={`${API_BASE}/reports/day-end/export?format=pdf&date=${dayEnd.data.date}`}
+                download
+              >
+                Download PDF
+              </a>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={print.isPending}
+              onClick={() => {
+                print.mutate();
+              }}
+            >
+              Print on the receipt printer
+            </button>
+          </div>
+          {print.isSuccess ? (
+            <p role="status" className="banner banner-success">
+              Sent to the printer (copy {print.data.copyNo}).
+            </p>
+          ) : null}
+          {print.isError ? (
+            <div role="alert" className="banner banner-danger">
+              {messageOf(print.error)}
+            </div>
+          ) : null}
+          <div className="tiles">
+            <Figures
+              label="Sales"
+              rows={[
+                ['Gross sales', money(d.sales['gross'])],
+                ['Promotions', money(d.sales['promotions'])],
+                ['Manual discounts', money(d.sales['manual'])],
+                ['Comps', money(d.sales['comps'])],
+                ['Refunds', money(d.sales['refunds'])],
+                ['Net sales', money(d.sales['net_sales'])],
+                ['Cash rounding', money(d.sales['rounding'])],
+                ['Orders', show('int', d.sales['orders'] ?? null)],
+                ['Average order', money(d.sales['aov'])],
+                ...d.byOrderType.map((o): [string, string] => [
+                  `${o.label} (${String(o.orders)})`,
+                  money(o.net_sales),
+                ]),
+              ]}
+            />
+            <Figures
+              label="Collected by method"
+              rows={d.payments.map((p): [string, string] => [p.method, money(p.collected)])}
+            />
+            <Figures
+              label="Still open when the day ended"
+              rows={[
+                [`Open bills (${String(d.openBills.count)})`, money(d.openBills.value)],
+                ...d.cod.map((c): [string, string] => [`COD with ${c.rider}`, money(c.amount)]),
+                [`Voids (${String(d.voids.events)})`, money(d.voids.value)],
+                ['Waste records', show('int', d.waste.records)],
+                ...(d.waste.cost === null
+                  ? []
+                  : [['Waste cost', show('cost', d.waste.cost)] as [string, string]]),
+                ...d.alerts.map((a): [string, string] => [a.label, show('int', a.open)]),
+              ]}
+            />
+            {d.profit ? (
+              <Figures
+                label="Costs and margin"
+                rows={[
+                  ['COGS', show('cost', d.profit['cogs'] ?? null)],
+                  ['COGS coverage', show('pct', d.profit['coverage'] ?? null)],
+                  ['Gross profit after waste', show('cost', d.profit['gross_profit'] ?? null)],
+                  ['Gross margin', show('pct', d.profit['margin'] ?? null)],
+                  [
+                    'Recorded operating result',
+                    d.profit['needs_recipes'] ?? money(d.profit['operating_result']),
+                  ],
+                ]}
+              />
+            ) : null}
+          </div>
+          {d.shifts.length > 0 ? (
+            <Figures
+              label="Cash shifts"
+              rows={d.shifts.map((x): [string, string] => [
+                `${x.till}, ${x.cashier} (${x.status})`,
+                x.variance === null ? 'Still open' : `Variance ${money(x.variance)}`,
+              ])}
+            />
+          ) : (
+            <p className="muted">No cash shift was opened this day.</p>
+          )}
+          <p className="muted">
+            Made once, after the day ended; later changes to that day show in the reports.
+          </p>
         </section>
       ) : null}
     </>

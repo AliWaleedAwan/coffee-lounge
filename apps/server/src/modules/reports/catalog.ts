@@ -418,6 +418,7 @@ export const deliveriesReport: ReportDefinition<z.infer<typeof deliveriesFilter>
 
 export const operatingResultReport: ReportDefinition<z.infer<typeof periodFilter>> = {
   key: 'operating-result',
+  formats: ['pdf'],
   title: 'Recorded operating result',
   permission: 'reports.profit',
   filters: periodFilter,
@@ -708,6 +709,7 @@ export const auditReport: ReportDefinition<z.infer<typeof auditFilter>> = {
   key: 'audit-log',
   title: 'Audit log',
   permission: 'audit.read',
+  formats: ['csv'],
   filters: auditFilter,
   columns: [
     text('at', 'When (shop clock)'),

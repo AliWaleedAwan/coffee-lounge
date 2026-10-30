@@ -1,10 +1,11 @@
 /**
  * Counter app (Electron) on this Mac: unavailable screen and recovery, certificate
  * pinning, origin lock, CSP, no Node in pages, and AT-46 (closing the counter app does not
- * affect the server). Windows behaviour (installer, full screen, auto-start) is step 2.9.
+ * affect the server), and the download path for the app's own exports (P6-7). Windows
+ * behaviour (installer, full screen, auto-start) is step 2.9.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,11 +36,14 @@ test.afterAll(() => {
 
 interface Server {
   process: ChildProcess;
+  /** The test users and registration codes the e2e server wrote. */
+  stateFile: string;
   stop(): Promise<void>;
 }
 
 /** Starts a disposable shop on PORT with the given certificate. */
 async function startServer(cert: string, key: string): Promise<Server> {
+  const stateFile = join(work, `state-${String(Date.now())}.json`);
   const child = spawn(process.execPath, ['--env-file=../../.env', 'scripts/e2e-server.ts'], {
     cwd: SERVER_DIR,
     env: {
@@ -48,7 +52,7 @@ async function startServer(cert: string, key: string): Promise<Server> {
       E2E_CUSTOMER_PORT: String(PORT + 37),
       E2E_TLS_CERT: cert,
       E2E_TLS_KEY: key,
-      E2E_STATE_FILE: join(work, `state-${String(Date.now())}.json`),
+      E2E_STATE_FILE: stateFile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -73,6 +77,7 @@ async function startServer(cert: string, key: string): Promise<Server> {
   });
   return {
     process: child,
+    stateFile,
     stop: () =>
       new Promise<void>((resolve) => {
         if (child.exitCode !== null) {
@@ -87,16 +92,21 @@ async function startServer(cert: string, key: string): Promise<Server> {
   };
 }
 
-async function launch(configFile: string): Promise<{ app: ElectronApplication; page: Page }> {
+async function launch(
+  configFile: string,
+  env: Record<string, string> = {},
+): Promise<{ app: ElectronApplication; page: Page; profile: string }> {
+  const profile = mkdtempSync(join(work, 'profile-'));
   const app = await electron.launch({
     args: [DESKTOP_DIR],
     env: {
       ...process.env,
       CL_DESKTOP_CONFIG: configFile,
-      CL_USER_DATA_DIR: mkdtempSync(join(work, 'profile-')),
+      CL_USER_DATA_DIR: profile,
+      ...env,
     },
   });
-  return { app, page: await app.firstWindow() };
+  return { app, page: await app.firstWindow(), profile };
 }
 
 function config(name: string, body: Record<string, unknown>): string {
@@ -250,6 +260,49 @@ test('AT-46: closing the counter app leaves the server running for every other d
     expect(server.process.exitCode).toBeNull();
     expect(await readyStatus()).toBe(200);
   } finally {
+    await server.stop();
+  }
+});
+
+test('P6-7: an export saves into the download folder; any other download is refused', async () => {
+  const server = await startServer(pki.leafFile, pki.leafKeyFile);
+  const downloads = mkdtempSync(join(work, 'downloads-'));
+  const { app, page, profile } = await launch(shopConfig(), { CL_DOWNLOAD_DIR: downloads });
+  try {
+    const state = JSON.parse(readFileSync(server.stateFile, 'utf8')) as {
+      owner: { username: string; password: string };
+      codes: string[];
+    };
+    await expect(page.getByRole('heading', { name: 'Register this device' })).toBeVisible();
+    await page.getByLabel('Registration code').fill(state.codes[0] ?? '');
+    await page.getByRole('button', { name: 'Register device' }).click();
+    await page.getByLabel('Username').fill(state.owner.username);
+    await page.getByLabel('Password').fill(state.owner.password);
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+
+    await page.goto(`${ORIGIN}/reports?report=payment-mix`);
+    await page.getByRole('link', { name: 'Download CSV' }).click();
+    await expect.poll(() => readdirSync(downloads), { timeout: 10_000 }).toHaveLength(1);
+    const [file = ''] = readdirSync(downloads);
+    expect(file).toMatch(/^payment-mix_\d{4}-\d{2}-\d{2}(_\d{4}-\d{2}-\d{2})?\.csv$/);
+    expect(readFileSync(join(downloads, file), 'utf8').startsWith('\uFEFFMethod,')).toBe(true);
+
+    // The same server, but not an export: refused, nothing saved.
+    await page.evaluate(() => {
+      const a = document.createElement('a');
+      a.href = '/api/staff/v1/reports/payment-mix';
+      a.download = 'report.json';
+      document.body.append(a);
+      a.click();
+    });
+    await expect
+      .poll(() => readFileSync(join(profile, 'desktop.log'), 'utf8'), { timeout: 10_000 })
+      .toContain('download blocked');
+    expect(readdirSync(downloads)).toEqual([file]);
+    expect(readFileSync(join(profile, 'desktop.log'), 'utf8')).toContain('download saved');
+  } finally {
+    await app.close();
     await server.stop();
   }
 });

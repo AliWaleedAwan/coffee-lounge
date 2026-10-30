@@ -55,11 +55,12 @@ describe('route × role matrix (SEC-ALL)', () => {
           url: concrete(route.url),
           ...(route.method === 'GET' || route.method === 'DELETE' ? {} : { payload: {} }),
         });
-        const allowed = entry.permissions.has(permission);
+        const also = route.config.alsoNeeds;
+        const allowed = entry.permissions.has(permission) && (!also || entry.permissions.has(also));
         results.push(`${route.method} ${route.url} ${role}`);
         expect(
           isForbidden(res),
-          `${route.method} ${route.url} as ${role} (${allowed ? 'has' : 'lacks'} ${permission}): ${res.body}`,
+          `${route.method} ${route.url} as ${role} (${allowed ? 'has' : 'lacks'} ${permission}${also ? ` + ${also}` : ''}): ${res.body}`,
         ).toBe(!allowed);
       }
     }

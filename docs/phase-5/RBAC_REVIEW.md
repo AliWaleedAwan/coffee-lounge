@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (216)
+### A. Every staff route (239)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -180,27 +180,50 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/refunds/bills` | `payments.refund_request` |
 | GET | `/reports` | session |
 | GET | `/reports/audit-log` | `audit.read` |
+| GET | `/reports/audit-log/export` | `audit.read` + `reports.export` |
 | GET | `/reports/bill-lines` | `reports.sales` |
+| GET | `/reports/bill-lines/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/bills` | `reports.sales` |
+| GET | `/reports/bills/export` | `reports.sales` + `reports.export` |
+| GET | `/reports/day-end` | `reports.sales` |
+| GET | `/reports/day-end/export` | `reports.sales` + `reports.export` |
+| POST | `/reports/day-end/print` | `reports.sales` |
 | GET | `/reports/deliveries` | `reports.sales` |
+| GET | `/reports/deliveries/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/discounts` | `reports.sales` |
+| GET | `/reports/discounts/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/expenses` | `expenses.read` |
+| GET | `/reports/expenses/export` | `expenses.read` + `reports.export` |
 | GET | `/reports/inventory-usage` | `reports.inventory` |
+| GET | `/reports/inventory-usage/export` | `reports.inventory` + `reports.export` |
 | GET | `/reports/ledger` | `ledger.read` |
+| GET | `/reports/ledger/export` | `ledger.read` + `reports.export` |
 | GET | `/reports/menu-engineering` | `reports.profit` |
+| GET | `/reports/menu-engineering/export` | `reports.profit` + `reports.export` |
 | GET | `/reports/operating-result` | `reports.profit` |
+| GET | `/reports/operating-result/export` | `reports.profit` + `reports.export` |
 | GET | `/reports/overview` | `reports.sales` |
 | GET | `/reports/payment-mix` | `reports.sales` |
+| GET | `/reports/payment-mix/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/purchases` | `reports.inventory` |
+| GET | `/reports/purchases/export` | `reports.inventory` + `reports.export` |
 | GET | `/reports/sales-by-category` | `reports.sales` |
+| GET | `/reports/sales-by-category/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/sales-by-day` | `reports.sales` |
+| GET | `/reports/sales-by-day/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/sales-by-hour` | `reports.sales` |
+| GET | `/reports/sales-by-hour/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/sales-by-item` | `reports.sales` |
+| GET | `/reports/sales-by-item/export` | `reports.sales` + `reports.export` |
 | GET | `/reports/staff` | `reports.sales` |
 | GET | `/reports/staff-activity` | `reports.staff` |
+| GET | `/reports/staff-activity/export` | `reports.staff` + `reports.export` |
 | GET | `/reports/stock-counts` | `reports.inventory` |
+| GET | `/reports/stock-counts/export` | `reports.inventory` + `reports.export` |
 | GET | `/reports/stock-on-hand` | `reports.inventory` |
+| GET | `/reports/stock-on-hand/export` | `reports.inventory` + `reports.export` |
 | GET | `/reports/waste` | `reports.inventory` |
+| GET | `/reports/waste/export` | `reports.inventory` + `reports.export` |
 | GET | `/riders` | `delivery.dispatch` |
 | POST | `/riders` | `riders.manage` |
 | PATCH | `/riders/:id` | `riders.manage` |
@@ -286,6 +309,6 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 
 ### E. Permissions no route names (checked inside services, or for later phases)
 
-`backup.manage`, `backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `reports.export`, `reports.schedule`, `settings.financial`
+`backup.manage`, `backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `reports.schedule`, `settings.financial`
 
 <!-- generated:end -->

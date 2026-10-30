@@ -2,13 +2,15 @@
  * Counter PC shell (02-architecture §2.11). Loads the staff web app from the shop server
  * and holds no business logic. Hardened: sandboxed, context-isolated renderers without
  * Node, navigation and network locked to the server origin, the server certificate
- * pinned to the shop root, no permissions, no downloads, no new windows. If the server
+ * pinned to the shop root, no permissions, no new windows, and downloads only of the app's
+ * own exports and attached bills, into Downloads with a save dialog (P6-7). If the server
  * cannot be reached it shows its own "Server unavailable" screen and keeps retrying.
  *
  * Development and tests only (ignored by the installed app, so nobody can point it
  * elsewhere): CL_DESKTOP_CONFIG (config file; default on Windows
  * %ProgramData%\CoffeeLounge\desktop\desktop.json, elsewhere <userData>/desktop.json),
- * CL_USER_DATA_DIR (separate profile, used by tests).
+ * CL_USER_DATA_DIR (separate profile, used by tests), CL_DOWNLOAD_DIR (saves there without
+ * the dialog, used by tests).
  */
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,8 +20,10 @@ import { ConfigError, loadDesktopConfig, type DesktopConfig } from './config.ts'
 import { chainOf, chromiumAcceptable, pinnedVerdict } from './pinning.ts';
 import {
   classifyLoadFailure,
+  isAllowedDownload,
   isAllowedRequest,
   isServerPage,
+  safeFileName,
   withCsp,
   type FailureKind,
 } from './policy.ts';
@@ -35,6 +39,7 @@ type Reason = FailureKind | 'config';
 const devOverride = (name: string): string | undefined =>
   app.isPackaged ? undefined : process.env[name] || undefined;
 const userDataOverride = devOverride('CL_USER_DATA_DIR');
+const downloadDirOverride = devOverride('CL_DOWNLOAD_DIR');
 if (userDataOverride) app.setPath('userData', userDataOverride);
 if (!app.requestSingleInstanceLock()) app.quit();
 app.enableSandbox();
@@ -107,8 +112,23 @@ function hardenSession(ses: Session, cfg: DesktopConfig | null): void {
   });
   ses.setPermissionCheckHandler(() => false);
   ses.setDevicePermissionHandler(() => false);
-  ses.on('will-download', (event) => {
-    event.preventDefault(); // exports arrive in a later phase, through a reviewed path
+  ses.on('will-download', (event, item) => {
+    const chain = item.getURLChain();
+    if (!cfg || !isAllowedDownload(chain.length > 0 ? chain : [item.getURL()], origin)) {
+      event.preventDefault();
+      log('download blocked', { url: item.getURL().slice(0, 200) });
+      return;
+    }
+    const name = safeFileName(item.getFilename());
+    if (downloadDirOverride) item.setSavePath(join(downloadDirOverride, name));
+    else
+      item.setSaveDialogOptions({
+        title: 'Save the file',
+        defaultPath: join(app.getPath('downloads'), name),
+      });
+    item.once('done', (_event, state) => {
+      log(state === 'completed' ? 'download saved' : 'download not saved', { file: name, state });
+    });
   });
 }
 

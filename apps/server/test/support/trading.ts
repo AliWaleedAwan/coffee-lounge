@@ -261,6 +261,24 @@ export class TradingShop {
     return payment;
   }
 
+  /** A table with `qty` coffees whose bill is presented (locked) but not paid; its invoice id. */
+  async openBill(qty: number): Promise<string> {
+    this.table += 1;
+    const t = await this.ok(this.owner, 'POST', '/tables', {
+      code: `${this.prefix}${String(this.table)}`,
+      name: `${this.prefix} table ${String(this.table)}`,
+    });
+    const s = await this.ok(this.owner, 'POST', `/tables/${String(t['id'])}/sessions`, {});
+    await this.ok(this.owner, 'POST', `/sessions/${String(s['id'])}/rounds`, {
+      lines: [{ variantId: this.coffee, qty, modifierOptionIds: [] }],
+    });
+    const bill = (await this.ok(this.owner, 'GET', `/sessions/${String(s['id'])}/bill`)) as {
+      invoice: { id: string };
+    };
+    await this.ok(this.owner, 'POST', `/invoices/${bill.invoice.id}/lock`, {});
+    return bill.invoice.id;
+  }
+
   private async approval(invoiceId: string, action: string): Promise<string> {
     const res = await this.ok(this.cashier, 'POST', '/auth/step-up', {
       action,

@@ -51,6 +51,46 @@ export function isAllowedRequest(url: string, serverOrigin: string, staticDirUrl
   return false;
 }
 
+/**
+ * Downloads (P6-7, closes F-10): only the app's own report exports and the bill files
+ * attached to expenses, from the server itself. Every address the download passed through
+ * must be one of them; anything else is refused.
+ */
+const DOWNLOADS = [
+  /^\/api\/staff\/v1\/reports\/[a-z-]+\/export$/,
+  /^\/api\/staff\/v1\/expenses\/\d+\/attachment$/,
+];
+export function isAllowedDownload(urls: readonly string[], serverOrigin: string): boolean {
+  if (urls.length === 0) return false;
+  return urls.every((url) => {
+    if (!isServerPage(url, serverOrigin)) return false;
+    try {
+      const { pathname } = new URL(url);
+      return DOWNLOADS.some((pattern) => pattern.test(pathname));
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * A file name safe on Windows: no folders, no reserved characters or names, no leading
+ * dots, at most 120 characters, keeping its extension.
+ */
+export function safeFileName(name: string): string {
+  const base = Array.from(name.split(/[\\/]/).pop() ?? '', (ch) =>
+    ch < ' ' || '<>:"|?*'.includes(ch) ? '_' : ch,
+  )
+    .join('')
+    .replace(/^[.\s]+|[.\s]+$/g, '');
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot).slice(0, 10) : '';
+  const reserved = /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(stem);
+  const safeStem = (reserved ? `_${stem}` : stem).slice(0, 120 - ext.length) || 'download';
+  return `${safeStem}${ext}`;
+}
+
 /** Adds the CSP to a server document response that arrived without one. */
 export function withCsp(headers: Record<string, string[]>): {
   headers: Record<string, string[]>;

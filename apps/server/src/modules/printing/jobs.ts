@@ -19,6 +19,7 @@ import { enqueueJob } from '../../platform/jobs.ts';
 import { publish } from '../../platform/outbox.ts';
 import { readSetting } from '../../platform/settings.ts';
 import {
+  renderDayEnd,
   renderKitchenTicket,
   renderReceipt,
   renderRefundSlip,
@@ -26,6 +27,7 @@ import {
   renderTestPage,
   type KitchenTicketData,
 } from './documents.ts';
+import { dayEndPrintData } from './day-end-data.ts';
 import { receiptData } from './receipt-data.ts';
 import { refundSlipData } from './refund-slip-data.ts';
 import { shiftReportData } from './shift-report-data.ts';
@@ -37,7 +39,7 @@ const BACKOFF_SECONDS = [5, 15, 45, 135];
 export const STALE_SEND_MS = 2 * 60_000;
 
 export type DocumentType =
-  'kitchen_ticket' | 'receipt' | 'refund_slip' | 'shift_report' | 'test_page';
+  'kitchen_ticket' | 'receipt' | 'refund_slip' | 'shift_report' | 'test_page' | 'day_end';
 
 export interface PrinterRow extends PrinterTarget {
   id: string;
@@ -198,6 +200,8 @@ export async function renderJob(db: Queryable, job: JobRow, printer: PrinterRow)
       return renderShiftReport(await shiftReportData(db, job.document_id), options);
     case 'refund_slip':
       return renderRefundSlip(await refundSlipData(db, job.document_id), options);
+    case 'day_end':
+      return renderDayEnd(await dayEndPrintData(db, job.document_id), options);
     default: {
       const unknown: never = job.document_type;
       throw new Error(`unknown document type ${JSON.stringify(unknown)}`);

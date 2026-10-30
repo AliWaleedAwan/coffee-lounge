@@ -42,6 +42,8 @@ jobs:
         run: |
           corepack enable
           corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit the production dependencies (fails on high or critical advisories; P6-3)
+        run: corepack pnpm audit --prod --audit-level high
       - name: Verify (format, lint, types, architecture, traceability, tests)
         run: corepack pnpm verify
 

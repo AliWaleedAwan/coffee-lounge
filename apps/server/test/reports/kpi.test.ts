@@ -297,7 +297,7 @@ describe('the KPIs of a hand-worked day (FINANCE_REPORTING.md §3)', () => {
       rounding: null,
     });
     const footer = res.body['footer'] as { filters: string[]; notes: string[] };
-    expect(footer.filters).toEqual(['itemId: KPI cake']);
+    expect(footer.filters).toEqual(['Item: KPI cake']);
     expect(footer.notes).toContain(
       'Waste, stock variance, expenses and cash rounding belong to the whole shop: left out when filtering by order type, category or item',
     );

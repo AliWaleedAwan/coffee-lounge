@@ -32,7 +32,7 @@ export interface Client {
 export interface CollectedRoute {
   method: string;
   url: string;
-  config: { auth?: string; permission?: string };
+  config: { auth?: string; permission?: string; alsoNeeds?: string };
 }
 
 export interface FixtureOptions {
