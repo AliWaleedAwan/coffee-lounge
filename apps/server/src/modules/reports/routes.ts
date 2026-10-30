@@ -11,51 +11,18 @@ import { z } from 'zod';
 import { writeAudit } from '../../platform/audit.ts';
 import { withTransaction } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
-import { businessDateOf, readSetting } from '../../platform/settings.ts';
+import { businessDateOf } from '../../platform/settings.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { counterTill } from '../billing/index.ts';
 import { authOf, factsOf } from '../identity/index.ts';
 import { requestPrint } from '../printing/index.ts';
-import { readBranding } from '../settings/index.ts';
 import { REPORTS } from './catalog.ts';
-import { exportFileName, toCsv } from './csv.ts';
 import { completedDay, dayEndOf, dayEndView } from './day-end.ts';
+import { dayEndFile, filterLabels, FORMATS, reportFile } from './files.ts';
 import { runReport, type ReportDefinition } from './engine.ts';
 import { overview } from './overview.ts';
-import { renderDayEndPdf, renderReportPdf, type PdfBrand } from './pdf.ts';
 import { checkPeriod, monthOf } from './periods.ts';
 
-/** Names for the footer and the file name instead of ids (FINANCE_REPORTING.md §6, §8). */
-const LABEL_QUERIES: Record<string, string> = {
-  categoryId: 'SELECT name FROM cl.menu_categories WHERE id = $1',
-  itemId: 'SELECT name FROM cl.menu_items WHERE id = $1',
-  staffId: 'SELECT display_name AS name FROM cl.users WHERE id = $1',
-  riderId: 'SELECT display_name AS name FROM cl.staff_profiles WHERE id = $1',
-  inventoryItemId: 'SELECT name FROM cl.inventory_items WHERE id = $1',
-  supplierId: 'SELECT name FROM cl.suppliers WHERE id = $1',
-};
-
-async function filterLabels(
-  pool: pg.Pool,
-  filters: Record<string, unknown>,
-  report: string,
-): Promise<Record<string, string>> {
-  const labels: Record<string, string> = {};
-  for (const [key, sql] of Object.entries(LABEL_QUERIES)) {
-    const value = filters[key];
-    if (typeof value !== 'string') continue;
-    // The expense report's categories are expense categories, not menu ones.
-    const query =
-      key === 'categoryId' && report === 'expenses'
-        ? 'SELECT name FROM cl.expense_categories WHERE id = $1'
-        : sql;
-    const { rows } = await pool.query<{ name: string }>(query, [value]);
-    if (rows[0]) labels[key] = rows[0].name;
-  }
-  return labels;
-}
-
-const FORMATS = ['csv', 'pdf'] as const;
 const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 export async function reportRoutes(
@@ -68,6 +35,8 @@ export async function reportRoutes(
   app.get('/reports', async (request) => {
     const permissions = authOf(request).permissions;
     return {
+      // The shop's business date now, for the screen's "Today" (before 04:00 it is yesterday's).
+      today: await businessDateOf(pool, now()),
       items: REPORTS.filter((r) => permissions.has(r.permission)).map((r) => ({
         key: r.key,
         title: r.title,
@@ -113,17 +82,6 @@ export async function reportRoutes(
       ...(facts.ip ? { ip: facts.ip } : {}),
     };
   };
-  const pdfSetup = async (): Promise<{ brand: PdfBrand; timeZone: string }> => {
-    const branding = await readBranding(pool);
-    return {
-      brand: {
-        shopName: branding.shopName,
-        addressLine: branding.addressLine,
-        primary: branding.primary,
-      },
-      timeZone: await readSetting(pool, 'shop.timezone', z.string().min(1)),
-    };
-  };
   const sendFile = (reply: FastifyReply, format: 'csv' | 'pdf', name: string, body: Buffer) =>
     reply
       .header('content-type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/pdf')
@@ -166,14 +124,7 @@ export async function reportRoutes(
       }
       const { report, labels } = await prepare(request, ['format']);
       const kind = format as (typeof FORMATS)[number];
-      const name = exportFileName(report, labels, kind);
-      const body =
-        kind === 'csv'
-          ? toCsv(report)
-          : await (async () => {
-              const { brand, timeZone } = await pdfSetup();
-              return renderReportPdf(report, brand, { timeZone });
-            })();
+      const { name, body } = await reportFile(pool, report, labels, kind);
       await writeAudit(pool, who(request), {
         action: 'report.export',
         entityType: 'report',
@@ -222,12 +173,11 @@ export async function reportRoutes(
         request.query,
       );
       const d = await dayEndFor(query.date);
-      const { brand, timeZone } = await pdfSetup();
-      const view = dayEndView(d.report, authOf(request).permissions.has('reports.profit'));
-      const body = await renderDayEndPdf({ ...view, generatedAt: d.generatedAt }, brand, {
-        timeZone,
-      });
-      const name = `day-end_${d.date}.pdf`;
+      const { name, body } = await dayEndFile(
+        pool,
+        d,
+        authOf(request).permissions.has('reports.profit'),
+      );
       await writeAudit(pool, who(request), {
         action: 'report.export',
         entityType: 'day_end_report',

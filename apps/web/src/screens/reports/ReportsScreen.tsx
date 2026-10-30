@@ -15,6 +15,7 @@ import { API_BASE, api, messageOf } from '../../api/client.ts';
 import { permissionSet, useMe } from '../../auth/session.ts';
 import { Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
+import { EmailsPanel } from './EmailsPanel.tsx';
 
 type Cell = string | number | null;
 interface Column {
@@ -85,7 +86,14 @@ export function show(kind: Column['kind'], v: Cell): string {
   return String(v);
 }
 
+/**
+ * The shop's business date, as the server last said (`GET /reports`): between midnight and
+ * the 04:00 cutoff it is still yesterday's calendar date (D-22). The screen waits for the
+ * catalogue before showing a period, so this is set first; the PC's date is only a fallback.
+ */
+let businessToday: string | null = null;
 function today(): string {
+  if (businessToday) return businessToday;
   const d = new Date();
   return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -119,12 +127,18 @@ export function ReportsScreen() {
   const [params, setParams] = useSearchParams();
   const catalog = useQuery({
     queryKey: ['reports', 'catalog'],
-    queryFn: ({ signal }) => api<{ items: CatalogEntry[] }>('/reports', { signal }),
+    queryFn: async ({ signal }) => {
+      const body = await api<{ today: string; items: CatalogEntry[] }>('/reports', { signal });
+      businessToday = body.today;
+      return body;
+    },
   });
   // The overview is built from the sales reports; without them (a stock clerk) the first
   // report the person may open comes up instead.
   const items = catalog.data?.items ?? [];
   const overview = items.some((r) => r.key === 'sales-by-day');
+  const me = useMe();
+  const schedules = me.data ? permissionSet(me.data).has('reports.schedule') : false;
   const open =
     params.get('report') ?? (overview ? null : (items.find((r) => !r.drillOnly)?.key ?? null));
   const entry = catalog.data?.items.find((r) => r.key === open);
@@ -163,6 +177,20 @@ export function ReportsScreen() {
             Day-end
           </button>
         ) : null}
+        {schedules ? (
+          <button
+            type="button"
+            role="tab"
+            id="reports-tab-emails"
+            aria-selected={open === 'emails'}
+            aria-controls="reports-panel"
+            onClick={() => {
+              goTo('emails');
+            }}
+          >
+            E-mails
+          </button>
+        ) : null}
         {items
           .filter((r) => !r.drillOnly)
           .map((r) => (
@@ -193,6 +221,10 @@ export function ReportsScreen() {
           <OverviewPanel onOpen={goTo} />
         ) : open === 'day-end' && overview ? (
           <DayEndPanel />
+        ) : open === 'emails' && schedules ? (
+          <EmailsPanel
+            reports={items.filter((r) => !r.drillOnly).map((r) => ({ key: r.key, title: r.title }))}
+          />
         ) : entry ? (
           <ReportPanel key={open} entry={entry} onOpen={goTo} />
         ) : null}

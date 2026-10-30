@@ -46,7 +46,7 @@ Out of scope: nation-state attackers, internet-facing exposure (the system is ne
 
 ### 2.5 Server PC
 - Standard (non-admin) `Counter` Windows account for daily use; owner keeps the administrator password.
-- Services under dedicated low-privilege virtual accounts; config folder ACL-restricted; secrets (database password, SMTP password) encrypted with Windows DPAPI.
+- Services under dedicated low-privilege virtual accounts; config folder ACL-restricted; secrets (database passwords) encrypted with Windows DPAPI; the mailbox app password sealed in the database with AES-256-GCM under a key file in the protected config folder (P6-4, step 6.6), so database backups hold it only encrypted.
 - No browsing, e-mail, file sharing or extra software on the server PC (D-34 makes this essential).
 - Microsoft Defender on; USB autorun off.
 - No full-disk encryption (no TPM; would block unattended restart). **Backups are always encrypted** with a key the PC can't decrypt.

@@ -179,6 +179,26 @@ describe('people reports', () => {
   });
 });
 
+describe('the audit report counts business days, not calendar days (D-22)', () => {
+  it('03:59 the next morning is still the day; 04:00 is the next one', async () => {
+    const next = new Date(`${today}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const nextDate = next.toISOString().slice(0, 10);
+    for (const [time, action] of [
+      ['03:59', 'test.edge_inside'],
+      ['04:00', 'test.edge_outside'],
+    ] as const) {
+      await fx.pool.query(
+        `INSERT INTO cl.audit_events (actor_kind, action, entity_type, correlation_id, occurred_at)
+         VALUES ('system', $1, 'test', gen_random_uuid(), $2)`,
+        [action, `${nextDate}T${time}:00+05:00`],
+      );
+    }
+    const actions = (await ok('audit-log', '&entityType=test')).rows.map((r) => r['action']);
+    expect(actions).toEqual(['test.edge_inside']);
+  });
+});
+
 describe('who sees what', () => {
   it('the clerk sees stock without values; the manager people; the waiter nothing', async () => {
     const usage = await ok('inventory-usage', '', clerk);

@@ -35,6 +35,8 @@ const schema = z
     DISK_CHECK_PATH: z.string().min(1).optional(),
     /** Attached bills of expenses (P5-3; installed: `C:\ProgramData\CoffeeLounge\files`). Unset: `.local/files`. */
     FILES_DIR: z.string().min(1).optional(),
+    /** Key that seals the mailbox password (P6-4; installed: `C:\ProgramData\CoffeeLounge\config\mail.key`). Unset: `.local/mail.key`. */
+    MAIL_KEY_FILE: z.string().min(1).optional(),
     /** USB backup drive root (H-17: `B:\`). Unset: reported as not present. */
     BACKUP_DRIVE_PATH: z.string().min(1).optional(),
     /** `host:port` reached over TCP to report internet online/offline, or `off`. */

@@ -216,6 +216,15 @@ if ($needCertificates) {
 $RootCa = Join-Path $Tls 'coffee-lounge-root.pem'
 
 # ------------------------------------------------------------------ 6. configuration
+# The key that seals the mailbox password in the database (P6-4). Kept on reinstall, like
+# the other secrets; readable only by the services and administrators (ACL below).
+$mailKey = Join-Path $Config 'mail.key'
+if (-not (Test-Path $mailKey)) {
+  $keyBytes = New-Object byte[] 32
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
+  Set-Content -Path $mailKey -Encoding ASCII -Value ([Convert]::ToBase64String($keyBytes))
+}
 $envFile = Join-Path $Config 'server.env'
 Set-Content -Path $envFile -Encoding ASCII -Value @"
 DATABASE_URL=postgres://cl_service:$servicePassword@127.0.0.1:$PgPort/$Database
@@ -229,6 +238,7 @@ DISK_CHECK_PATH=$env:SystemDrive\
 BACKUP_DRIVE_PATH=B:\
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
+MAIL_KEY_FILE=$mailKey
 LOG_LEVEL=info
 "@
 

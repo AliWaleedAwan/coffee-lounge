@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { businessDateOf } from '../../src/platform/settings.ts';
+import { businessDateOf, shopDateOf } from '../../src/platform/settings.ts';
 import { identityFixture, OWNER, type Client, type IdentityFixture } from '../support/identity.ts';
 
 let fx: IdentityFixture;
@@ -207,7 +207,8 @@ describe('corrections keep the original (AT-23, asset part)', () => {
       category: 'Refrigeration',
     });
     const id = String(a.body['id']);
-    const tomorrow = new Date(`${today}T00:00:00Z`);
+    // Tomorrow on the shop's calendar (after midnight, before 04:00, the business date lags it).
+    const tomorrow = new Date(`${await shopDateOf(fx.pool, new Date())}T00:00:00Z`);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     const later = tomorrow.toISOString().slice(0, 10);
     expect(

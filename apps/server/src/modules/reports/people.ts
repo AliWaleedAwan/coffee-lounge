@@ -56,7 +56,8 @@ export async function auditEvents(
   f: { from: string; to: string; staffId?: string | undefined; entityType?: string | undefined },
 ): Promise<Row[]> {
   const { rows } = await db.query<Raw>(
-    `WITH tz AS (SELECT value #>> '{}' AS zone FROM cl.system_settings WHERE key = 'shop.timezone')
+    `WITH tz AS (SELECT (SELECT value #>> '{}' FROM cl.system_settings WHERE key = 'shop.timezone') AS zone,
+                        (SELECT (value #>> '{}')::interval FROM cl.system_settings WHERE key = 'shop.business_day_cutoff') AS cutoff)
      SELECT to_char(a.occurred_at AT TIME ZONE tz.zone, 'YYYY-MM-DD HH24:MI:SS') AS at,
             COALESCE(u.display_name, initcap(a.actor_kind)) AS who, d.name AS device, a.action,
             a.entity_type || COALESCE(' #' || a.entity_id, '') AS record, a.reason, ap.display_name AS approved_by,
@@ -65,8 +66,9 @@ export async function auditEvents(
        LEFT JOIN cl.users u ON u.id = a.actor_user_id
        LEFT JOIN cl.users ap ON ap.id = a.approved_by
        LEFT JOIN cl.devices d ON d.id = a.device_id
-      WHERE a.occurred_at >= ($1::date::timestamp AT TIME ZONE tz.zone)
-        AND a.occurred_at < (($2::date + 1)::timestamp AT TIME ZONE tz.zone)
+      -- Business days (D-22): from the cutoff on the first date to the cutoff after the last.
+      WHERE a.occurred_at >= (($1::date + tz.cutoff) AT TIME ZONE tz.zone)
+        AND a.occurred_at < ((($2::date + 1) + tz.cutoff) AT TIME ZONE tz.zone)
         AND ($3::bigint IS NULL OR a.actor_user_id = $3 OR a.approved_by = $3)
         AND ($4::text IS NULL OR a.entity_type = $4)
       ORDER BY a.id

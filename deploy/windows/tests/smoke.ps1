@@ -159,7 +159,7 @@ Check 'the services log in without owner or superuser powers' {
 }
 Check 'secrets are not readable by ordinary users' {
   $config = Join-Path $DataDir 'config'
-  foreach ($item in @($config, (Join-Path $config 'server.env'), (Join-Path $Tls 'server.key'))) {
+  foreach ($item in @($config, (Join-Path $config 'server.env'), (Join-Path $config 'mail.key'), (Join-Path $Tls 'server.key'))) {
     $ids = (Get-Acl $item).Access | ForEach-Object { $_.IdentityReference.Value }
     $open = $ids | Where-Object { $_ -match 'Users|Everyone|Authenticated' }
     if ($open) { throw "$item readable by $($open -join ', ')" }

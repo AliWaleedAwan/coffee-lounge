@@ -346,7 +346,7 @@ Every report is one definition shared by the screen and, from step 6.5, the CSV 
 
 | Endpoint | Permission | Notes |
 |---|---|---|
-| `GET /reports` | session | The reports the caller may open: `key`, `title`, whether cost columns will show, the `filters` each takes, `drillOnly`, and the `formats` it exports to |
+| `GET /reports` | session | `today`: the shop's business date now (before the 04:00 cutoff, yesterday's calendar date; the screen's "Today" uses it). `items`: the reports the caller may open: `key`, `title`, whether cost columns will show, the `filters` each takes, `drillOnly`, and the `formats` it exports to |
 | `GET /reports/sales-by-day?from=&to=&orderType=&categoryId=&itemId=` | `reports.sales` | One row per business date (quiet days included): orders, items, gross, discounts, refunds, net sales, average order, cash rounding, collected; with `reports.profit` also COGS, COGS coverage %, waste, stock variance, price variance, gross profit after waste, gross margin %, recorded expenses, recorded operating result or "Needs recipes" (FINANCE_REPORTING.md §3). Defaults: this business month to today; at most 400 days. Filtering by order type, category or item leaves out the shop-wide figures (waste, variances, expenses, rounding; collected also by category or item) |
 | `GET /reports/sales-by-item?…` | `reports.sales` | One row per menu item sold, best sellers first: sold, gross, discounts, refunds (as far as refunds name their items), net sales; with `reports.profit` COGS, coverage, gross profit, margin |
 | `GET /reports/sales-by-hour?…` | `reports.sales` | Sales after discounts by the shop's clock hour of settlement, all 24 hours in business-day order from the 04:00 cutoff (refunds stay on their own date, FINANCE_REPORTING.md §1) |
@@ -377,6 +377,23 @@ Every report is one definition shared by the screen and, from step 6.5, the CSV 
 The sales reports also take `staffId`: bills settled by that person (refunds: asked for by them). `GET /reports` lists each report's other `filters` and marks `drillOnly` reports (bill lines).
 
 Each report answers `{key, title, period, filters, columns: [{key, label, kind, profit?, total?, formula?}], rows (with an `id` where a row opens the next level, e.g. the item), totals, footer: {period, businessDay, filters (with names), formulas, notes, generatedAt}}`. `400` for a reversed or too long period or an unknown filter value.
+
+### 5.15 Scheduled e-mails (Phase 6 step 6.6)
+
+The shop's own mailbox sends the reports in schedules (D-20, P6-4). The password is entered once on the owner screen, sealed with AES-256-GCM under `MAIL_KEY_FILE` (in the ACL-protected config folder) and never returned. Each completed period of a schedule is made once into a run; one e-mail per recipient waits in the queue, is retried with backoff (1, 2, 4 … 60 minutes) while the mail server cannot be reached, and keeps its Message-ID on every retry (AT-21, AT-104).
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /mail/account` | `settings.mailbox` (owner) | `{configured: false}` or host, port, security (`starttls`/`tls`), user name, from address and name, `passwordSet`, `version`; never the password |
+| `PUT /mail/account` | `settings.mailbox` | `{host, port, security, username, fromAddress, fromName, password?, expectedVersion?}`; the password is required the first time and kept when left out. Audited (`mail.account_update`, with `passwordChanged` only) |
+| `POST /mail/test` `{to}` | `settings.mailbox` | Sends a test now; 400 with the provider's answer in words (wrong app password, no internet, refused address). Audited |
+| `GET /report-schedules` | `reports.schedule` | Schedules: report (`day-end` or a report key), filters, frequency (`daily` yesterday / `weekly` last Monday–Sunday on `weekday` 1–7 / `monthly` last month on the 1st), `sendAt` (04:30 or later, shop clock), recipients (1–10 plain addresses), `isActive`, `startsOn` |
+| `POST /report-schedules` | `reports.schedule` | Creates one; the author must be able to open and export the report (`reports.export`). The first e-mail covers the next period that ends. Audited |
+| `PUT /report-schedules/:id` | `reports.schedule` | Changes or pauses one (`isActive`), with `expectedVersion`. Audited |
+| `GET /report-deliveries` | `reports.schedule` | The latest 100 e-mails: report, period, recipient, status (`queued` waiting, `sending`, `sent`, `failed` refused address, `not_made` the report could not be made), tries, the last error in words, the next try, when sent, Message-ID |
+| `POST /report-deliveries/:id/retry` | `reports.schedule` | A waiting or refused e-mail is tried again now, with the same Message-ID. Audited |
+
+The worker looks at schedules every 5 minutes (`mail:schedule_scan`) and sends what is due every minute (`mail:send`). Runs are made with the permissions their author has at that moment (costs only with `reports.profit`); if the author can no longer open the report, the run is kept as `not_made` with the reason.
 
 ## 6. Errors
 

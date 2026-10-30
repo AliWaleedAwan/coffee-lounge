@@ -175,6 +175,8 @@ describe('job queue', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
       'ledger:reconcile',
+      'mail:schedule_scan',
+      'mail:send',
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_logs',
       'maintenance:prune_outbox',
@@ -216,6 +218,8 @@ describe('job queue', () => {
       'ledger:reconcile': '15 4 * * *',
       'privacy:redact_delivery': '20 4 * * *',
       'reports:day_end': '25 4 * * *',
+      'mail:schedule_scan': '*/5 * * * *',
+      'mail:send': '* * * * *',
     });
     for (const line of CRONTAB.split('\n')) expect(tasks[line.split(' ')[5] ?? '']).toBeDefined();
   });

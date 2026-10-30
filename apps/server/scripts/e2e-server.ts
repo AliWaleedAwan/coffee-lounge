@@ -139,6 +139,7 @@ const apps = buildApps(
         health,
         guestBaseUrl: `http://127.0.0.1:${String(CUSTOMER_PORT)}`,
         filesDir: mkdtempSync(join(tmpdir(), 'cl-e2e-files-')),
+        mail: { keyFile: join(mkdtempSync(join(tmpdir(), 'cl-e2e-mail-')), 'mail.key') },
       }),
   },
 );

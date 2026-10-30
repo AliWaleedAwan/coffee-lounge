@@ -97,6 +97,7 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | `devices.manage` | Register/revoke devices (incl. personal phones) | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | `settings.manage` | Operational settings, branding | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `settings.financial` 🔒 | Business day, rounding, tax, costing parameters | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `settings.mailbox` 🔒 | The shop's mailbox for scheduled e-mails (address, app password) | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `printers.manage` | Printer setup, test print | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | `audit.read` | Audit log | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `system.health` | Diagnostics page | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |

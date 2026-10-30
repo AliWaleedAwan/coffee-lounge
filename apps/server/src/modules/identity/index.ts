@@ -6,6 +6,7 @@ import { identityRoutes } from './routes.ts';
 
 export { authOf, deviceOf, factsOf, type AccessConfig } from './http.ts';
 export type { Grant, Scope, EffectivePermissions } from './permissions.ts';
+export { loadEffectivePermissions } from './permissions.ts';
 export {
   consumeStepUp,
   createOwner,

@@ -2,7 +2,7 @@
  * Phase 6 step 6.2 on screen: the owner sells a coffee, opens Reports (J8: the top items by
  * margin are on the overview, one click from the menu), opens the Net sales tile to its report,
  * and drills from the day to its items. Accessibility on the overview and a report (AT-86).
- * Step 6.5: a report downloaded as CSV, and the day-end.
+ * Step 6.5: a report downloaded as CSV, and the day-end. Step 6.6: a scheduled e-mail.
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
@@ -102,6 +102,22 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expect(page.getByRole('table', { name: 'Sales' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download PDF' })).toBeVisible();
   await expectAccessible(page, 'day-end');
+
+  // Step 6.6: a scheduled e-mail, and the mailbox it goes out from.
+  await page.getByRole('tab', { name: 'E-mails' }).click();
+  await page.getByLabel('To (one or more addresses)').fill('owner@example.test');
+  await page.getByRole('button', { name: 'Schedule it' }).click();
+  await expect(
+    page
+      .getByRole('table', { name: 'Scheduled e-mails' })
+      .getByRole('row', { name: /Day-end report/ }),
+  ).toContainText('Daily at 08:00');
+  await expectAccessible(page, 'scheduled e-mails');
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: 'E-mail (scheduled reports)' })).toBeVisible();
+  await expect(page.getByLabel('App password')).toHaveAttribute('type', 'password');
+  await expectAccessible(page, 'mailbox settings');
+  await page.goto('/reports');
 
   // Step 6.4: stock and people reports, each with its own filters.
   await page.getByRole('tab', { name: 'Stock on hand' }).click();

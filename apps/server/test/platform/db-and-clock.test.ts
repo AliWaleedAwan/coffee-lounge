@@ -6,6 +6,7 @@ import { ConfigError, loadConfig } from '../../src/platform/config.ts';
 import { loadMigrations } from '../../src/platform/db/migrate.ts';
 import { LockOrderError, withTransaction } from '../../src/platform/db/tx.ts';
 import { Readiness, runStartupChecks } from '../../src/platform/readiness.ts';
+import { businessDateOf, shopDateOf } from '../../src/platform/settings.ts';
 import { MIGRATIONS_DIR } from '../support/db.ts';
 import { platformFixture, type PlatformFixture } from '../support/platform.ts';
 
@@ -222,5 +223,15 @@ describe('configuration', () => {
     expect(() => loadConfig({ ...base, STAFF_TLS_CERT: 'c.pem' })).toThrow(/set together/);
     expect(() => loadConfig({ ...base, CUSTOMER_PORT: '8443' })).toThrow(/must differ/);
     expect(() => loadConfig({ ...base, DATABASE_URL: 'mysql://x' })).toThrow(/postgres/);
+  });
+});
+
+describe('business date and shop date (D-22)', () => {
+  it('at 02:00 in Karachi the business day is still yesterday; the shop’s calendar date is today', async () => {
+    const at = new Date('2026-10-31T02:00:00+05:00');
+    expect(await businessDateOf(fx.pool, at)).toBe('2026-10-30');
+    expect(await shopDateOf(fx.pool, at)).toBe('2026-10-31');
+    const later = new Date('2026-10-31T04:00:00+05:00');
+    expect(await businessDateOf(fx.pool, later)).toBe('2026-10-31');
   });
 });
