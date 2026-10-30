@@ -317,7 +317,7 @@ export class TradingShop {
     const next = method === 'transfer' ? provider : null;
     if (p.refunded > 0 || (p.method === method && p.provider === next)) return false;
     if ((method === 'cash' || p.method === 'cash') && (!this.shiftId || !p.thisShift)) return false;
-    await this.ok(this.cashier, 'POST', `/invoices/${p.invoiceId}/refunds`, {
+    const done = await this.tillMay(this.cashier, `/invoices/${p.invoiceId}/refunds`, {
       kind: 'method_correction',
       paymentId: p.id,
       method,
@@ -325,6 +325,8 @@ export class TradingShop {
       reason: 'Taken another way',
       stepUpId: await this.approval(p.invoiceId, 'payment.correct'),
     });
+    // Out of cash when the till no longer holds it: refused, as a paid-out would be.
+    if (done === false) return false;
     this.add(channelOf(p.method), p.provider, -p.amount);
     this.add(channelOf(method), next, p.amount);
     p.method = method;
