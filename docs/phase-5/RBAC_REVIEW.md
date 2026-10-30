@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (209)
+### A. Every staff route (216)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -179,21 +179,28 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/refunds/:id/slip/reprint` | `payments.refund_request` |
 | GET | `/refunds/bills` | `payments.refund_request` |
 | GET | `/reports` | session |
+| GET | `/reports/audit-log` | `audit.read` |
 | GET | `/reports/bill-lines` | `reports.sales` |
 | GET | `/reports/bills` | `reports.sales` |
 | GET | `/reports/deliveries` | `reports.sales` |
 | GET | `/reports/discounts` | `reports.sales` |
 | GET | `/reports/expenses` | `expenses.read` |
+| GET | `/reports/inventory-usage` | `reports.inventory` |
 | GET | `/reports/ledger` | `ledger.read` |
 | GET | `/reports/menu-engineering` | `reports.profit` |
 | GET | `/reports/operating-result` | `reports.profit` |
 | GET | `/reports/overview` | `reports.sales` |
 | GET | `/reports/payment-mix` | `reports.sales` |
+| GET | `/reports/purchases` | `reports.inventory` |
 | GET | `/reports/sales-by-category` | `reports.sales` |
 | GET | `/reports/sales-by-day` | `reports.sales` |
 | GET | `/reports/sales-by-hour` | `reports.sales` |
 | GET | `/reports/sales-by-item` | `reports.sales` |
 | GET | `/reports/staff` | `reports.sales` |
+| GET | `/reports/staff-activity` | `reports.staff` |
+| GET | `/reports/stock-counts` | `reports.inventory` |
+| GET | `/reports/stock-on-hand` | `reports.inventory` |
+| GET | `/reports/waste` | `reports.inventory` |
 | GET | `/riders` | `delivery.dispatch` |
 | POST | `/riders` | `riders.manage` |
 | PATCH | `/riders/:id` | `riders.manage` |
@@ -279,6 +286,6 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 
 ### E. Permissions no route names (checked inside services, or for later phases)
 
-`backup.manage`, `backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `reports.export`, `reports.inventory`, `reports.schedule`, `reports.staff`, `settings.financial`
+`backup.manage`, `backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `reports.export`, `reports.schedule`, `settings.financial`
 
 <!-- generated:end -->

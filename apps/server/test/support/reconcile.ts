@@ -6,7 +6,7 @@ import { Decimal } from '@cl/shared';
 import { expect } from 'vitest';
 import type { Report } from '../../src/modules/reports/index.ts';
 
-const NUMERIC = ['int', 'money', 'cost', 'pct'];
+const NUMERIC = ['int', 'money', 'cost', 'pct', 'qty'];
 
 export function expectReconciled(report: Report): void {
   for (const c of report.columns) {

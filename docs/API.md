@@ -361,7 +361,14 @@ Every report is one definition shared by the screen and, from step 6.5, the CSV 
 | `GET /reports/operating-result?from=&to=` | `reports.profit` | The recorded operating result as signed lines that add up to it: net sales, COGS, waste, stock and price variance, expenses by category; total shown only at 95 % COGS coverage, with the D-19 wording |
 | `GET /reports/ledger?from=&to=&channel=` | `ledger.read` | Ledger entries as a report: in, out and each channel's balance after the entry |
 | `GET /reports/expenses?from=&to=&categoryId=` | `expenses.read` | Recorded expenses of the period, by expense category |
-| `GET /reports/staff` | `reports.sales` | Names for the "settled by" filter |
+| `GET /reports/inventory-usage?from=&to=&stockCategory=&inventoryItemId=` | `reports.inventory` | Step 6.4. Per stock item, from the stock ledger by business date: received, used, wasted, counted (+/−), returned to the supplier, net, in its base unit (quantities are never added across items, so their totals are blank); with `inventory.cost_view` also received, used, waste, variance and net value. Used value = COGS, waste and variance value = the sales report's (AC-RPT-1) |
+| `GET /reports/waste?from=&to=&stockCategory=&inventoryItemId=&kind=` | `reports.inventory` | Every waste record: date, item, kind (ingredient, prepared item, expired lot, failed delivery), reason, qty and unit (or units sold), lot, by; value with `inventory.cost_view` |
+| `GET /reports/stock-on-hand?stockCategory=` | `reports.inventory` | Each active stock item now: on hand, held for accepted orders, available, status (Low, Out of stock, Not counted yet); unit cost and value with `inventory.cost_view`, whose total equals Σ inventory balances. The period is ignored (stock is as it stands) |
+| `GET /reports/stock-counts?from=&to=` | `reports.inventory` | Posted stock counts: date, count, scope, counted by, approved by, lines, lines that differed; variance value (shortage positive) with `inventory.cost_view` |
+| `GET /reports/purchases?from=&to=&supplierId=` | `reports.inventory` | Purchase receipts: date, receipt, supplier, lines, posted or reversed, paid how (or on credit), receipts counted; cost with `inventory.cost_view` (a reversed receipt is listed and counts for nothing) |
+| `GET /reports/staff-activity?from=&to=&staffId=` | `reports.staff` | Per person: bills settled and their total, payments taken, orders accepted, discounts and comps given, refunds asked and approved, waste recorded. Taken adds up to the payment mix |
+| `GET /reports/audit-log?from=&to=&staffId=&entityType=` | `audit.read` | The audit log as a report (shop clock): who, device, action, record, reason, approved by; at most 20,000 events. Before/after values stay on the Audit log page; CSV with the 6.5 exports |
+| `GET /reports/staff` | `reports.sales` | Names for the "settled by", "person" and "who" filters (the filter is not offered to someone without `reports.sales`) |
 
 The sales reports also take `staffId`: bills settled by that person (refunds: asked for by them). `GET /reports` lists each report's other `filters` and marks `drillOnly` reports (bill lines).
 

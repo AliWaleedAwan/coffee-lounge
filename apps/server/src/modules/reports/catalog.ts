@@ -26,6 +26,8 @@ import {
   paymentMix,
 } from './money.ts';
 import { readLedger } from '../ledger/index.ts';
+import { auditEvents, staffActivity } from './people.ts';
+import { counts, onHand, purchases, usage, waste, WASTE_KINDS } from './stock.ts';
 import { listExpenses } from '../expenses/index.ts';
 import type { Decimal } from '@cl/shared';
 
@@ -500,6 +502,229 @@ export const expensesReport: ReportDefinition<z.infer<typeof expensesFilter>> = 
       .reverse(),
 };
 
+const COSTS = 'inventory.cost_view';
+const stockFilter = z
+  .object({
+    ...period,
+    stockCategory: z.string().trim().max(60).optional(),
+    inventoryItemId: id.optional(),
+  })
+  .strict();
+const toStock = (f: z.infer<typeof stockFilter>) => ({
+  from: f.from,
+  to: f.to,
+  category: f.stockCategory,
+  itemId: f.inventoryItemId,
+});
+const qty = (key: string, label: string, formula?: string): Column => ({
+  key,
+  label,
+  kind: 'qty',
+  total: 'none',
+  ...(formula ? { formula } : {}),
+});
+const value = (key: string, label: string, formula: string): Column => ({
+  key,
+  label,
+  kind: 'cost',
+  needs: COSTS,
+  formula,
+});
+
+export const usageReport: ReportDefinition<z.infer<typeof stockFilter>> = {
+  key: 'inventory-usage',
+  title: 'Inventory usage',
+  permission: 'reports.inventory',
+  filters: stockFilter,
+  rowId: 'item_id',
+  columns: [
+    text('item', 'Item'),
+    text('category', 'Category'),
+    text('unit', 'Unit'),
+    qty('received', 'Received', 'opening counts and receipts, in the item’s unit'),
+    qty('used', 'Used in sales', 'consumed when items were picked up'),
+    qty('wasted', 'Wasted'),
+    qty('counted', 'Count difference', 'found (+) or short (−) at counts'),
+    qty('returned', 'Returned to supplier'),
+    qty('net', 'Net change', 'Σ of every movement'),
+    value('received_value', 'Received value', 'at purchase cost'),
+    value('used_value', 'Used value', 'at the average cost when used (the COGS of the sales)'),
+    value('waste_value', 'Waste value', 'at the average cost'),
+    value('variance_value', 'Count variance', 'short (+) or found (−), at cost'),
+    value('net_value', 'Net value change', 'Σ of every movement’s value'),
+  ],
+  rows: (ctx, f) => usage(ctx.db, toStock(f)),
+  notes: () => [
+    'Quantities are in each item’s own unit (g, ml or pieces), so they are not added up across items',
+  ],
+};
+
+const wasteFilter = stockFilter.extend({ kind: z.enum(WASTE_KINDS).optional() }).strict();
+export const wasteReport: ReportDefinition<z.infer<typeof wasteFilter>> = {
+  key: 'waste',
+  title: 'Waste & expiry',
+  permission: 'reports.inventory',
+  filters: wasteFilter,
+  columns: [
+    { key: 'date', label: 'Business date', kind: 'date', total: 'none' },
+    text('item', 'Item'),
+    text('kind', 'Kind'),
+    text('reason', 'Reason'),
+    qty('qty', 'Quantity'),
+    text('unit', 'Unit'),
+    {
+      key: 'units',
+      label: 'Sold items',
+      kind: 'int',
+      formula: 'prepared items and failed deliveries',
+    },
+    text('lot', 'Lot'),
+    text('by', 'Recorded by'),
+    value('value', 'Value', 'Σ waste at cost (FINANCE_REPORTING.md §3)'),
+  ],
+  rows: (ctx, f) => waste(ctx.db, { ...toStock(f), kind: f.kind }),
+};
+
+const onHandFilter = z
+  .object({ ...period, stockCategory: z.string().trim().max(60).optional() })
+  .strict();
+export const onHandReport: ReportDefinition<z.infer<typeof onHandFilter>> = {
+  key: 'stock-on-hand',
+  title: 'Stock on hand',
+  permission: 'reports.inventory',
+  filters: onHandFilter,
+  rowId: 'item_id',
+  columns: [
+    text('sku', 'SKU'),
+    text('item', 'Item'),
+    text('category', 'Category'),
+    text('unit', 'Unit'),
+    qty('on_hand', 'On hand'),
+    qty('reserved', 'Held for orders', 'accepted, not yet picked up'),
+    qty('available', 'Free', 'on hand − held'),
+    {
+      key: 'unit_cost',
+      label: 'Average cost',
+      kind: 'cost',
+      needs: COSTS,
+      total: 'none',
+      formula: 'weighted average per unit (last cost when none is left)',
+    },
+    value('value', 'Value', 'Σ stock value at weighted average cost (COST_VALUATION.md)'),
+    text('status', ''),
+  ],
+  rows: (ctx, f) => onHand(ctx.db, { category: f.stockCategory }),
+  notes: () => [
+    'As of now, whatever the period: stock has no past state on this report (use Inventory usage for the period)',
+  ],
+};
+
+export const countsReport: ReportDefinition<z.infer<typeof periodFilter>> = {
+  key: 'stock-counts',
+  title: 'Stock counts & variances',
+  permission: 'reports.inventory',
+  filters: periodFilter,
+  columns: [
+    { key: 'date', label: 'Business date', kind: 'date', total: 'none' },
+    text('count_no', 'Count'),
+    text('scope', 'What was counted'),
+    text('counted_by', 'Counted by'),
+    text('approved_by', 'Approved by'),
+    { key: 'lines', label: 'Items counted', kind: 'int' },
+    { key: 'differed', label: 'Items different', kind: 'int' },
+    value(
+      'variance_value',
+      'Variance',
+      'short (+) or found (−) at cost (stock variance, FINANCE_REPORTING.md §3)',
+    ),
+  ],
+  rows: (ctx, f) => counts(ctx.db, f),
+};
+
+const purchasesFilter = z.object({ ...period, supplierId: id.optional() }).strict();
+export const purchasesReport: ReportDefinition<z.infer<typeof purchasesFilter>> = {
+  key: 'purchases',
+  title: 'Purchases',
+  permission: 'reports.inventory',
+  filters: purchasesFilter,
+  columns: [
+    { key: 'date', label: 'Business date', kind: 'date', total: 'none' },
+    text('receipt_no', 'Receipt'),
+    text('supplier', 'Supplier'),
+    { key: 'lines', label: 'Lines', kind: 'int' },
+    text('status', 'Status'),
+    text('paid', 'Paid'),
+    {
+      key: 'receipts',
+      label: 'Receipts',
+      kind: 'int',
+      formula: 'posted receipts (reversed ones count for nothing)',
+    },
+    {
+      key: 'cost',
+      label: 'Cost',
+      kind: 'money',
+      needs: COSTS,
+      formula: 'Σ receipt totals of posted receipts',
+    },
+  ],
+  rows: (ctx, f) => purchases(ctx.db, f),
+};
+
+const staffFilter = z.object({ ...period, staffId: id.optional() }).strict();
+export const staffActivityReport: ReportDefinition<z.infer<typeof staffFilter>> = {
+  key: 'staff-activity',
+  title: 'Staff activity',
+  permission: 'reports.staff',
+  filters: staffFilter,
+  columns: [
+    text('person', 'Person'),
+    { key: 'bills', label: 'Bills settled', kind: 'int' },
+    money('bills_amount', 'Bills total', 'Σ totals of the bills they settled'),
+    { key: 'payments', label: 'Payments taken', kind: 'int' },
+    money('taken', 'Taken', 'Σ payments they took'),
+    { key: 'orders_accepted', label: 'Orders accepted', kind: 'int' },
+    { key: 'discounts', label: 'Discounts & comps', kind: 'int' },
+    money('discounts_amount', 'Discounts given', 'on bills settled in the period'),
+    { key: 'refunds', label: 'Refunds asked', kind: 'int' },
+    money('refunds_amount', 'Refunded', 'refunds they asked for'),
+    { key: 'approvals', label: 'Refunds approved', kind: 'int' },
+    { key: 'waste_records', label: 'Waste recorded', kind: 'int' },
+  ],
+  rows: (ctx, f) => staffActivity(ctx.db, f),
+};
+
+const auditFilter = z
+  .object({
+    ...period,
+    staffId: id.optional(),
+    entityType: z
+      .string()
+      .regex(/^[a-z_]+$/)
+      .optional(),
+  })
+  .strict();
+export const auditReport: ReportDefinition<z.infer<typeof auditFilter>> = {
+  key: 'audit-log',
+  title: 'Audit log',
+  permission: 'audit.read',
+  filters: auditFilter,
+  columns: [
+    text('at', 'When (shop clock)'),
+    text('who', 'Who'),
+    text('device', 'Device'),
+    text('action', 'Action'),
+    text('record', 'Record'),
+    text('reason', 'Reason'),
+    text('approved_by', 'Approved by'),
+    { key: 'events', label: 'Events', kind: 'int' },
+  ],
+  rows: (ctx, f) => auditEvents(ctx.db, f),
+  notes: () => [
+    'Before and after values are on the Audit log page; at most 20,000 events per report',
+  ],
+};
+
 export const REPORTS = [
   salesByDayReport,
   billsReport,
@@ -513,5 +738,12 @@ export const REPORTS = [
   operatingResultReport,
   ledgerReport,
   expensesReport,
+  usageReport,
+  wasteReport,
+  onHandReport,
+  countsReport,
+  purchasesReport,
+  staffActivityReport,
+  auditReport,
   billLinesReport,
 ] as const;

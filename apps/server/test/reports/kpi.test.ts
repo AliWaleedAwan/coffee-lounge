@@ -499,6 +499,13 @@ describe('who sees what', () => {
       'operating-result',
       'ledger',
       'expenses',
+      'inventory-usage',
+      'waste',
+      'stock-on-hand',
+      'stock-counts',
+      'purchases',
+      'staff-activity',
+      'audit-log',
       'bill-lines',
     ]);
     expect((await report(owner, 'sales-by-day', 'from=2026-10-27&to=2026-10-01')).status).toBe(400);

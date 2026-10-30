@@ -82,4 +82,17 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expect(items.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
   await page.getByText('How these figures are worked out').click();
   await expect(page.locator('li', { hasText: 'Σ line gross' }).first()).toBeVisible();
+
+  // Step 6.4: stock and people reports, each with its own filters.
+  await page.getByRole('tab', { name: 'Stock on hand' }).click();
+  await expect(page.getByLabel('Stock category')).toBeVisible();
+  await expect(
+    page.getByRole('table', { name: 'Stock on hand' }).getByRole('row').last(),
+  ).toContainText('Total');
+  await expectAccessible(page, 'stock on hand');
+  await page.getByRole('tab', { name: 'Audit log' }).click();
+  await page.getByRole('button', { name: 'Today' }).click();
+  await page.getByLabel('Record').selectOption('invoice');
+  const audit = page.getByRole('table', { name: 'Audit log' });
+  await expect(audit.getByRole('row', { name: /invoice\.settle/ }).first()).toBeVisible();
 });

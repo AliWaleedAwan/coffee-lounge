@@ -11,7 +11,7 @@ import type { z } from 'zod';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { Period } from './periods.ts';
 
-export type ColumnKind = 'date' | 'text' | 'int' | 'money' | 'cost' | 'pct';
+export type ColumnKind = 'date' | 'text' | 'int' | 'money' | 'cost' | 'pct' | 'qty';
 
 export interface Column {
   key: string;
@@ -19,6 +19,8 @@ export interface Column {
   kind: ColumnKind;
   /** Shown only to those with `reports.profit` (costs, margins, coverage). */
   profit?: boolean;
+  /** Shown only with this permission (e.g. stock values with `inventory.cost_view`). */
+  needs?: string;
   /** How the total is made: summed (default for numbers), worked out from other totals, or none. */
   total?: 'sum' | 'derived' | 'none';
   /** The formula, printed in the footer (FINANCE_REPORTING.md §6). */
@@ -73,13 +75,13 @@ export interface Report {
   };
 }
 
-const NUMERIC: readonly ColumnKind[] = ['int', 'money', 'cost', 'pct'];
+const NUMERIC: readonly ColumnKind[] = ['int', 'money', 'cost', 'pct', 'qty'];
 
 /** One shape per kind: money and percentages with 2 decimals, costs at full precision. */
 export function shape(kind: ColumnKind, v: Cell | undefined): Cell {
   if (v === null || v === undefined || v === '') return null;
   if (kind === 'money' || kind === 'pct') return new Decimal(v).toFixed(2);
-  if (kind === 'cost') return new Decimal(v).toString();
+  if (kind === 'cost' || kind === 'qty') return new Decimal(v).toString();
   if (kind === 'int') return Number(v);
   return v;
 }
@@ -101,7 +103,9 @@ export async function runReport<F extends { from: string; to: string }>(
   filters: F,
   labels: Record<string, string> = {},
 ): Promise<Report> {
-  const visible = def.columns.filter((c) => !c.profit || ctx.can('reports.profit'));
+  const visible = def.columns.filter(
+    (c) => (!c.profit || ctx.can('reports.profit')) && (!c.needs || ctx.can(c.needs)),
+  );
   const raw = await def.rows(ctx, filters);
   const rows = raw.map((r) => ({
     ...(def.rowId ? { id: r[def.rowId] ?? null } : {}),

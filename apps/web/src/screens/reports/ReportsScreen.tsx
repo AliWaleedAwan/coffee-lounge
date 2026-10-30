@@ -17,7 +17,7 @@ type Cell = string | number | null;
 interface Column {
   key: string;
   label: string;
-  kind: 'date' | 'text' | 'int' | 'money' | 'cost' | 'pct';
+  kind: 'date' | 'text' | 'int' | 'qty' | 'money' | 'cost' | 'pct';
   total?: 'sum' | 'derived' | 'none';
   formula?: string;
 }
@@ -77,6 +77,7 @@ export function show(kind: Column['kind'], v: Cell): string {
   if (kind === 'money' || kind === 'cost') return `Rs ${number(v)}`;
   if (kind === 'pct') return `${number(v)} %`;
   if (kind === 'int') return Number(v).toLocaleString('en-US');
+  if (kind === 'qty') return Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 });
   return String(v);
 }
 
@@ -112,11 +113,16 @@ function preset(name: string): { from: string; to: string } {
 
 export function ReportsScreen() {
   const [params, setParams] = useSearchParams();
-  const open = params.get('report');
   const catalog = useQuery({
     queryKey: ['reports', 'catalog'],
     queryFn: ({ signal }) => api<{ items: CatalogEntry[] }>('/reports', { signal }),
   });
+  // The overview is built from the sales reports; without them (a stock clerk) the first
+  // report the person may open comes up instead.
+  const items = catalog.data?.items ?? [];
+  const overview = items.some((r) => r.key === 'sales-by-day');
+  const open =
+    params.get('report') ?? (overview ? null : (items.find((r) => !r.drillOnly)?.key ?? null));
   const entry = catalog.data?.items.find((r) => r.key === open);
   const goTo = (report: string | null, extra: Record<string, string> = {}) => {
     setParams(report ? { report, ...extra } : {});
@@ -125,19 +131,21 @@ export function ReportsScreen() {
     <>
       <h1>Reports</h1>
       <div className="tabs" role="tablist" aria-label="Reports">
-        <button
-          type="button"
-          role="tab"
-          id="reports-tab-overview"
-          aria-selected={open === null}
-          aria-controls="reports-panel"
-          onClick={() => {
-            goTo(null);
-          }}
-        >
-          Overview
-        </button>
-        {(catalog.data?.items ?? [])
+        {overview ? (
+          <button
+            type="button"
+            role="tab"
+            id="reports-tab-overview"
+            aria-selected={open === null}
+            aria-controls="reports-panel"
+            onClick={() => {
+              goTo(null);
+            }}
+          >
+            Overview
+          </button>
+        ) : null}
+        {items
           .filter((r) => !r.drillOnly)
           .map((r) => (
             <button
@@ -163,7 +171,7 @@ export function ReportsScreen() {
           : { 'aria-labelledby': `reports-tab-${open ?? 'overview'}` })}
         className="stack"
       >
-        {open === null ? (
+        {catalog.isPending ? null : open === null ? (
           <OverviewPanel onOpen={goTo} />
         ) : entry ? (
           <ReportPanel key={open} entry={entry} onOpen={goTo} />
@@ -462,6 +470,38 @@ const KINDS = [
   { value: 'comp', label: 'Comps' },
   { value: 'refund', label: 'Refunds' },
 ];
+const WASTE_KINDS = [
+  { value: '', label: 'All waste' },
+  { value: 'ingredient', label: 'Ingredients' },
+  { value: 'prepared_item', label: 'Prepared items' },
+  { value: 'expired_lot', label: 'Expired lots' },
+  { value: 'failed_delivery', label: 'Failed deliveries' },
+];
+const RECORDS = [
+  { value: '', label: 'Every record' },
+  { value: 'invoice', label: 'Bills' },
+  { value: 'order_round', label: 'Orders' },
+  { value: 'dining_session', label: 'Tables and sessions' },
+  { value: 'delivery_order', label: 'Deliveries' },
+  { value: 'cash_shift', label: 'Cash shifts' },
+  { value: 'expense', label: 'Expenses' },
+  { value: 'ledger_entry', label: 'Ledger entries' },
+  { value: 'purchase_receipt', label: 'Purchase receipts' },
+  { value: 'inventory_item', label: 'Stock items' },
+  { value: 'stock_count', label: 'Stock counts' },
+  { value: 'supplier', label: 'Suppliers' },
+  { value: 'menu_variant', label: 'Menu' },
+  { value: 'asset', label: 'Assets' },
+  { value: 'user', label: 'People' },
+  { value: 'device', label: 'Devices' },
+  { value: 'setting', label: 'Settings' },
+];
+/** Who the staff filter picks, in each report's own words. */
+const STAFF_LABEL: Record<string, string> = {
+  discounts: 'By',
+  'staff-activity': 'Person',
+  'audit-log': 'Who',
+};
 const CHANNELS = [
   { value: '', label: 'All channels' },
   { value: 'cash', label: 'Cash' },
@@ -488,6 +528,10 @@ const FILTER_KEYS = [
   'riderId',
   'status',
   'invoiceId',
+  'stockCategory',
+  'inventoryItemId',
+  'supplierId',
+  'entityType',
 ] as const;
 type Names = { id: string; name: string }[];
 
@@ -517,7 +561,12 @@ function ReportPanel({
   }));
   const has = (k: string) => entry.filters.includes(k);
   const set = (k: string) => (v: string) => {
-    setFilters({ ...filters, [k]: v, ...(k === 'categoryId' ? { itemId: '' } : {}) });
+    setFilters({
+      ...filters,
+      [k]: v,
+      ...(k === 'categoryId' ? { itemId: '' } : {}),
+      ...(k === 'stockCategory' ? { inventoryItemId: '' } : {}),
+    });
   };
   const menu = useQuery({
     queryKey: ['reports', 'menu'],
@@ -541,6 +590,22 @@ function ReportPanel({
     'staff',
     '/reports/staff',
     has('staffId'),
+    (b) => (b as { items: Names }).items,
+  );
+  const stock = useQuery({
+    queryKey: ['reports', 'stock-items'],
+    queryFn: ({ signal }) =>
+      api<{ items: { id: string; name: string; category: string | null }[]; categories: string[] }>(
+        '/inventory/items',
+        { signal },
+      ),
+    enabled: has('stockCategory') || has('inventoryItemId'),
+    retry: false,
+  });
+  const suppliers = useNames(
+    'suppliers',
+    '/suppliers?includeInactive=true',
+    has('supplierId'),
     (b) => (b as { items: Names }).items,
   );
   const riders = useNames(
@@ -635,12 +700,37 @@ function ReportPanel({
             ])
           : null}
         {has('staffId') && staff.data
-          ? select('staffId', entry.key === 'discounts' ? 'By' : 'Settled by', [
+          ? select('staffId', STAFF_LABEL[entry.key] ?? 'Settled by', [
               { value: '', label: 'Anyone' },
               ...staff.data.map((p) => ({ value: p.id, label: p.name })),
             ])
           : null}
-        {has('kind') ? select('kind', 'What', KINDS) : null}
+        {has('kind') ? select('kind', 'What', entry.key === 'waste' ? WASTE_KINDS : KINDS) : null}
+        {has('stockCategory') && stock.data
+          ? select('stockCategory', 'Stock category', [
+              { value: '', label: 'All categories' },
+              ...stock.data.categories.map((c) => ({ value: c, label: c })),
+            ])
+          : null}
+        {has('inventoryItemId') && stock.data
+          ? select('inventoryItemId', 'Stock item', [
+              { value: '', label: 'All items' },
+              ...stock.data.items
+                .filter(
+                  (i) =>
+                    (filters['stockCategory'] ?? '') === '' ||
+                    i.category === filters['stockCategory'],
+                )
+                .map((i) => ({ value: i.id, label: i.name })),
+            ])
+          : null}
+        {has('supplierId') && suppliers.data
+          ? select('supplierId', 'Supplier', [
+              { value: '', label: 'All suppliers' },
+              ...suppliers.data.map((p) => ({ value: p.id, label: p.name })),
+            ])
+          : null}
+        {has('entityType') ? select('entityType', 'Record', RECORDS) : null}
         {has('channel') ? select('channel', 'Channel', CHANNELS) : null}
         {has('riderId') && riders.data
           ? select('riderId', 'Rider', [

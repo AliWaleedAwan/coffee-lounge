@@ -200,6 +200,13 @@ describe('who may open which report', () => {
       'operating-result',
       'ledger',
       'expenses',
+      'inventory-usage',
+      'waste',
+      'stock-on-hand',
+      'stock-counts',
+      'purchases',
+      'staff-activity',
+      'audit-log',
       'bill-lines',
     ]);
   });
