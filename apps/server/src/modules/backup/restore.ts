@@ -151,7 +151,8 @@ export async function prepareBaseRestore(input: {
     ...(input.target === 'latest'
       ? []
       : [
-          `recovery_target_time = ${q(input.target.toISOString())}`,
+          // PostgreSQL's own format: no 'T', an explicit UTC offset (found by the drill).
+          `recovery_target_time = ${q(input.target.toISOString().replace('T', ' ').replace('Z', '+00'))}`,
           "recovery_target_inclusive = 'on'",
         ]),
     "recovery_target_action = 'promote'",

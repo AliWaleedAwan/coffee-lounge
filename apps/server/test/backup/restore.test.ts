@@ -179,7 +179,7 @@ describe('a point in time from a base backup and the WAL (§5.3, §5.4)', () => 
     expect(existsSync(join(dataDir, 'recovery.signal'))).toBe(true);
     const conf = readFileSync(join(dataDir, 'postgresql.auto.conf'), 'utf8');
     expect(conf).toContain(`restore_command = 'fetch "%f" "%p"'`);
-    expect(conf).toContain("recovery_target_time = '2026-11-05T07:00:00.000Z'");
+    expect(conf).toContain("recovery_target_time = '2026-11-05 07:00:00.000+00'");
     expect(conf).toContain("recovery_target_action = 'promote'");
     await expect(
       prepareBaseRestore({
