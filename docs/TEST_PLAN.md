@@ -22,7 +22,7 @@
 | E2E | Multi-device journeys (guest, waiter, cashier, clerk, owner) | Playwright, several browser contexts | Nightly + before release |
 | G | Golden output (kitchen tickets, receipts, PDFs, CSV) | Snapshot files reviewed by a human once | Every commit |
 | F | Fault injection (kill processes, restart DB, drop SSE, slow network) | Scripts + toxiproxy | Nightly |
-| L | Load | k6 on a Windows 10 machine of similar spec, then the iMac | Phase 7 |
+| L | Load | `apps/server/scripts/load.ts` (P7-6; replaces k6) from a laptop on the shop Wi-Fi against the iMac; rehearsed in Windows CI with a simulated power cut (`deploy/windows/tests/power-cut-drill.ps1`) | Phase 7 |
 | HW | Hardware (printer, scanner) | Checklists with photos | Phase 3 (first contact), Phase 7 (final) |
 | S | Site (router, Wi-Fi, power) | On-site checklist | Phase 7 |
 | D | Drill (restore, power cut, drive swap) | Timed runbook | Phase 7, then quarterly |

@@ -61,6 +61,8 @@ jobs:
     env:
       # One shop CA passphrase for the whole job: the restore drill reuses the root (step 7.3).
       CL_CA_PASSPHRASE: ci-ca-${{ github.run_id }}-${{ github.run_attempt }}-passphrase
+      # The test owner's password, for the load script too (step 7.5).
+      CL_OWNER_PASSWORD: ci-owner-${{ github.run_id }}-${{ github.run_attempt }}-password
     runs-on: windows-2022
     timeout-minutes: 90
     defaults:
@@ -108,11 +110,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
-          $env:CL_OWNER_PASSWORD = 'ci-owner-' + [guid]::NewGuid().ToString('N')
           & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
+      - name: Load and power cut (AC-PERF-1/2, AT-56; step 7.5)
+        run: |
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\power-cut-drill.ps1 -OwnerPassword $env:CL_OWNER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Restore drills (DRILL-1 point in time, AT-22 replacement PC; step 7.3)
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
