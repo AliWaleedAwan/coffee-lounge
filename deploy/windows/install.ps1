@@ -443,8 +443,11 @@ foreach ($s in $AppServices) {
 }
 
 # ------------------------------------------------------------------ 7b. database watchdog (W-1, P7-5)
-$watchdogCmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'setup\watchdog.ps1') + '"'
-Invoke-Native -FilePath 'schtasks.exe' -Arguments @('/Create', '/TN', 'Coffee Lounge database watchdog', '/SC', 'MINUTE', '/MO', '1', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', $watchdogCmd, '/F') | Out-Null
+$watchdogAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $InstallDir 'setup\watchdog.ps1'))
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+$watchdogPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$watchdogSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Action $watchdogAction -Trigger $watchdogTrigger -Principal $watchdogPrincipal -Settings $watchdogSettings -Force | Out-Null
 Write-Step 'Database watchdog: PostgreSQL is started again within a minute if it stops by itself'
 
 # ------------------------------------------------------------------ 8. firewall (H-3)
