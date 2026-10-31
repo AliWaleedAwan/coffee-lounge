@@ -56,8 +56,13 @@ try {
   try {
     Start-Service -Name $PgService
   } catch {
+    # An early failure (before PostgreSQL's own log starts) is only in the Windows event log.
+    Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue |
+      Where-Object { $_.ProviderName -like 'PostgreSQL*' -or $_.ProviderName -like 'postgresql*' } |
+      Select-Object -First 10 | ForEach-Object { Write-Step "  event: $($_.Message)" }
     $log = Get-ChildItem (Join-Path $PgData 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
-    if ($log) { Get-Content $log.FullName -Tail 40 | ForEach-Object { Write-Step "  pg log: $_" } }
+    if ($log) { Get-Content $log.FullName -Tail 15 | ForEach-Object { Write-Step "  pg log: $_" } }
+    Get-Content (Join-Path $PgData 'postgresql.auto.conf') | ForEach-Object { Write-Step "  auto.conf: $_" }
     throw
   }
   $super = Unprotect-FromFile (Join-Path $DataDir 'config\postgres.secret')
