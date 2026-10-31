@@ -21,6 +21,9 @@ param(
   [string]$CounterUser = 'Counter',
   # The backup drive's root (BACKUP_RECOVERY.md §3: the CL-BACKUP drive at B:\). Tests use a folder.
   [string]$BackupDrive = 'B:\',
+  # Restore mode on a replacement PC (BACKUP_RECOVERY.md §5.1, step 7.3): 'latest' or a dump file,
+  # with the owner's USB key in -CaExportDir (its backup key and shop root are reused).
+  [string]$RestoreFrom = '',
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
   [switch]$Unattended
@@ -221,7 +224,16 @@ if ($needCertificates) {
   try {
     $certs = Join-Path $InstallDir 'app\dist\certs.js'
     $caEnv = @{ CL_CA_PASSPHRASE = $CaPassphrase }
-    Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
+    $usbRoot = Join-Path $CaExportDir 'coffee-lounge-root.key'
+    if ((Test-Path $usbRoot) -and (Test-Path (Join-Path $CaExportDir 'coffee-lounge-root.pem'))) {
+      # A replacement PC: the shop root on the owner's USB key issues the new server certificate,
+      # so every staff device that trusts the shop keeps trusting it (BACKUP_RECOVERY.md §5.1 step 6).
+      Copy-Item (Join-Path $CaExportDir 'coffee-lounge-root.pem') $caTemp
+      Copy-Item $usbRoot $caTemp
+      Write-Step 'Using the shop root from the owner USB key'
+    } else {
+      Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
+    }
     Invoke-Native -FilePath $Node -Arguments @($certs, 'issue-server', '--ca-dir', $caTemp, '--out', $Tls, '--ip', $ShopIp, '--ip', '127.0.0.1') `
       -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
     New-Item -ItemType Directory -Force -Path $CaExportDir | Out-Null
@@ -298,6 +310,15 @@ ALTER SYSTEM SET archive_command = '$($walCmd.Replace("'", "''"))';
     Start-Sleep -Seconds 2
   }
   Write-Step "WAL archiving to $BackupDrive every 5 minutes at most; nightly backup at 04:35, base backup Mondays at 04:50, test restore on Sundays"
+}
+
+# ------------------------------------------------------------------ 6c. restore mode (step 7.3)
+if ($RestoreFrom) {
+  if (-not $CaExportDir) { throw '-RestoreFrom needs -CaExportDir: the owner USB key with the backup key' }
+  $keyFile = Join-Path $CaExportDir 'coffee-lounge-backup-key.txt'
+  Write-Step "Restoring the shop's records from $RestoreFrom"
+  Invoke-Native -FilePath $Node -Arguments @("--env-file=$envFile", (Join-Path $InstallDir 'app\dist\admin.js'), 'restore-dump', '--key', $keyFile, '--from', $RestoreFrom) `
+    -Environment @{ DATABASE_URL = "postgres://cl_migrator:$migratorPassword@127.0.0.1:$PgPort/$Database" } -Hide @($migratorPassword) | Out-Null
 }
 
 # ------------------------------------------------------------------ 7. services

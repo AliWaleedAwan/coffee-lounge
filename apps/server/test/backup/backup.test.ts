@@ -84,6 +84,11 @@ describe('the backup key pair (P7-1)', () => {
     await expect(makeBackupKeys(join(work, 'again'), pub)).rejects.toThrow(
       /already has a backup key/,
     );
+    // A replacement PC with the owner's USB key: the same key, so old backups still open.
+    expect(await makeBackupKeys(usb, join(work, 'config', 'again.pub'))).toBe(
+      readFileSync(pub, 'utf8').trim(),
+    );
+    expect(readFileSync(join(usb, PRIVATE_KEY_FILE), 'utf8')).toBe(keyText);
   });
 });
 

@@ -11,10 +11,24 @@ import { Decrypter, Encrypter, generateX25519Identity, identityToRecipient } fro
 
 export const PRIVATE_KEY_FILE = 'coffee-lounge-backup-key.txt';
 
-/** Makes the pair: the private key to `privateDir` (the owner's USB key), the public one to `publicFile`. */
+/**
+ * Makes the pair: the private key to `privateDir` (the owner's USB key), the public one to
+ * `publicFile`. If the USB key already holds the shop's key (a replacement PC), it is kept.
+ */
 export async function makeBackupKeys(privateDir: string, publicFile: string): Promise<string> {
   if (existsSync(publicFile))
     throw new Error(`${publicFile} exists: the shop already has a backup key`);
+  // A replacement PC (restore): the owner's existing key is kept, so old backups still open.
+  const existing = join(privateDir, PRIVATE_KEY_FILE);
+  if (existsSync(existing)) {
+    const line = readFileSync(existing, 'utf8')
+      .split('\n')
+      .find((l) => l.startsWith('AGE-SECRET-KEY-'));
+    if (!line) throw new Error(`${existing} is not a Coffee Lounge backup key`);
+    const kept = await identityToRecipient(line.trim());
+    writeFileSync(publicFile, `${kept}\n`, { flag: 'wx' });
+    return kept;
+  }
   const identity = await generateX25519Identity();
   const recipient = await identityToRecipient(identity);
   mkdirSync(privateDir, { recursive: true });

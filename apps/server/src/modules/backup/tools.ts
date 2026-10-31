@@ -25,12 +25,14 @@ export interface BackupConfig {
 /** The shop's folder on the backup drive. */
 export const backupRoot = (driveRoot: string) => join(driveRoot, 'CoffeeLounge');
 
-const tool = (c: BackupConfig, name: 'pg_dump' | 'pg_restore' | 'pg_basebackup') =>
-  c.pgBinDir ? join(c.pgBinDir, process.platform === 'win32' ? `${name}.exe` : name) : name;
+const tool = (
+  c: Pick<BackupConfig, 'pgBinDir'>,
+  name: 'pg_dump' | 'pg_restore' | 'pg_basebackup',
+) => (c.pgBinDir ? join(c.pgBinDir, process.platform === 'win32' ? `${name}.exe` : name) : name);
 
 /** Runs a PostgreSQL tool from the configured folder. */
 export const runTool = (
-  c: BackupConfig,
+  c: Pick<BackupConfig, 'pgBinDir'>,
   name: 'pg_dump' | 'pg_restore' | 'pg_basebackup',
   args: string[],
   input?: Buffer,

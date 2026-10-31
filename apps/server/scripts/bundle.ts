@@ -22,6 +22,7 @@ const ENTRIES = {
   admin: 'src/cli/admin.ts',
   certs: 'src/cli/certs.ts',
   'wal-archive': 'src/cli/wal-archive.ts',
+  'wal-fetch': 'src/cli/wal-fetch.ts',
 };
 
 rmSync(new URL('../dist', import.meta.url), { recursive: true, force: true });

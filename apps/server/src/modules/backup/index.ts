@@ -16,3 +16,12 @@ export {
   type OffsiteInput,
 } from './offsite.ts';
 export { backupRoutes } from './routes.ts';
+export {
+  baseBackups,
+  latestDump,
+  prepareBaseRestore,
+  readKeyFile,
+  restoreDump,
+  type PreparedRestore,
+} from './restore.ts';
+export { extractTar } from './tar.ts';

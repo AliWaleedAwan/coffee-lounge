@@ -14,12 +14,20 @@
  *   backup-now          [--test-restore]                           (a dump now, as the nightly one;
  *                       with the test restore and its integrity checks)
  *   backup-base                                                    (a base backup now, step 7.2)
+ *   restore-dump        --key <owner key file> [--from latest|<file>] [--replace]
+ *                       (step 7.3: a nightly dump into DATABASE_URL, which must hold no trading yet)
+ *   restore-prepare     --key <owner key file> --to <new data folder> [--time latest|<ISO time>]
+ *                       (step 7.3: the newest base backup before the time, set to replay the WAL;
+ *                       restore.ps1 runs it with the services stopped)
+ *   integrity-check                                                (BACKUP_RECOVERY.md §4 on DATABASE_URL)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
  * Usage (from apps/server): corepack pnpm admin <command> [options]
  */
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { lineReader, secret } from './input.ts';
 import { loadConfig } from '../platform/config.ts';
@@ -27,10 +35,17 @@ import { createPool } from '../platform/db/pool.ts';
 import { withTransaction } from '../platform/db/tx.ts';
 import { AppError } from '../platform/errors.ts';
 import {
+  backupRoot,
+  integrityChecks,
+  latestDump,
   makeBackupKeys,
+  prepareBaseRestore,
   PRIVATE_KEY_FILE,
+  readKeyFile,
+  restoreDump,
   runBaseBackup,
   runDump,
+  type IntegrityReport,
 } from '../modules/backup/index.ts';
 import { requestPrint } from '../modules/printing/index.ts';
 import { DEV_FILES_DIR } from '../platform/paths.ts';
@@ -55,6 +70,11 @@ const { positionals, values } = parseArgs({
     address: { type: 'string' },
     out: { type: 'string' },
     'test-restore': { type: 'boolean' },
+    key: { type: 'string' },
+    from: { type: 'string' },
+    to: { type: 'string' },
+    time: { type: 'string' },
+    replace: { type: 'boolean' },
   },
 });
 
@@ -62,6 +82,13 @@ const command = positionals[0];
 const config = loadConfig();
 const pool = createPool({ connectionString: config.DATABASE_URL, max: 2 });
 const input = lineReader();
+
+function printReport(report: IntegrityReport): void {
+  for (const c of report.checks) console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.name}: ${c.detail}`);
+  console.log(
+    report.ok ? 'Integrity: every check passed.' : 'Integrity: PROBLEMS FOUND (see above).',
+  );
+}
 
 function required(value: string | undefined, flag: string): string {
   if (!value) throw new Error(`--${flag} is required`);
@@ -197,9 +224,50 @@ try {
     );
     if (r.status !== 'succeeded') throw new Error(`base backup failed: ${String(r.error)}`);
     console.log(`Base backup written: ${String(r.path)}`);
+  } else if (command === 'restore-dump') {
+    const keyText = readKeyFile(required(values.key, 'key'));
+    const from = values.from ?? 'latest';
+    const dumpFile =
+      from === 'latest'
+        ? latestDump(required(config.BACKUP_DRIVE_PATH, 'BACKUP_DRIVE_PATH in the config'))
+        : from;
+    console.log(`Restoring ${dumpFile} …`);
+    const report = await restoreDump(
+      { pgBinDir: config.PG_BIN_DIR },
+      { targetUrl: config.DATABASE_URL, dumpFile, keyText, replace: values.replace === true },
+    );
+    printReport(report);
+    if (!report.ok) process.exitCode = 1;
+  } else if (command === 'restore-prepare') {
+    const keyFile = required(values.key, 'key');
+    const keyText = readKeyFile(keyFile);
+    const time = values.time ?? 'latest';
+    const target = time === 'latest' ? 'latest' : new Date(time);
+    if (target !== 'latest' && Number.isNaN(target.getTime()))
+      throw new Error('--time is "latest" or a time such as 2026-11-02T14:30:00+05:00');
+    const driveRoot = required(config.BACKUP_DRIVE_PATH, 'BACKUP_DRIVE_PATH in the config');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fetchScript = join(
+      here,
+      existsSync(join(here, 'wal-fetch.js')) ? 'wal-fetch.js' : 'wal-fetch.ts',
+    );
+    const prepared = await prepareBaseRestore({
+      driveRoot,
+      keyText,
+      dataDir: required(values.to, 'to'),
+      target,
+      restoreCommand: `"${process.execPath}" "${fetchScript}" --dir "${join(backupRoot(driveRoot), 'wal')}" --key "${keyFile}" "%f" "%p"`,
+    });
+    console.log(
+      `Unpacked ${prepared.baseBackup} (${String(prepared.files)} files); PostgreSQL will replay the WAL to ${time} when it starts.`,
+    );
+  } else if (command === 'integrity-check') {
+    const report = await integrityChecks(pool);
+    printReport(report);
+    if (!report.ok) process.exitCode = 1;
   } else {
     console.log(
-      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now, backup-base (see the header of src/cli/admin.ts)',
+      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now, backup-base, restore-dump, restore-prepare, integrity-check (see the header of src/cli/admin.ts)',
     );
     process.exitCode = 2;
   }

@@ -67,7 +67,7 @@ export async function runDump(
     const plain = await runTool(c, 'pg_dump', [
       '--format=custom',
       '--no-owner',
-      '--no-privileges',
+      // Grants are kept, so a restored database gives the application role what it had.
       '--schema=cl',
       '--schema=cl_meta',
       `--dbname=${c.connectionString}`,

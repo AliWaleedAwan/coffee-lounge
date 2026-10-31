@@ -58,8 +58,11 @@ jobs:
 
   windows:
     name: Install on Windows (AT-47)
+    env:
+      # One shop CA passphrase for the whole job: the restore drill reuses the root (step 7.3).
+      CL_CA_PASSPHRASE: ci-ca-${{ github.run_id }}-${{ github.run_attempt }}-passphrase
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: powershell
@@ -91,7 +94,6 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
       - name: Install with CoffeeLounge-Setup.exe (unattended)
         run: |
-          $env:CL_CA_PASSPHRASE = 'ci-' + [guid]::NewGuid().ToString('N')
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
           # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
           New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
@@ -111,6 +113,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
+      - name: Restore drills (DRILL-1 point in time, AT-22 replacement PC; step 7.3)
+        run: |
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\restore-drill.ps1 -UsbDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive' -Setup $setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Uninstall keeps the data; reinstalling picks it up
         run: |
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
