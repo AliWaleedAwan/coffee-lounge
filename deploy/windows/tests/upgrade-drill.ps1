@@ -31,7 +31,8 @@ function Wait-Api {
 function Build-Variant([string]$Name, [hashtable]$Extra) {
   foreach ($f in $Extra.Keys) { Set-Content -Path (Join-Path $Migrations $f) -Value $Extra[$f] -Encoding ASCII }
   try {
-    powershell -ExecutionPolicy Bypass -File (Join-Path $repo 'deploy\windows\build-bundle.ps1') -Out (Join-Path $repo "out\$Name")
+    # A function returns whatever a child prints: send it to the console, return only the path.
+    powershell -ExecutionPolicy Bypass -File (Join-Path $repo 'deploy\windows\build-bundle.ps1') -Out (Join-Path $repo "out\$Name") | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "building $Name failed" }
   } finally {
     foreach ($f in $Extra.Keys) { Remove-Item -Force (Join-Path $Migrations $f) }
@@ -39,7 +40,7 @@ function Build-Variant([string]$Name, [hashtable]$Extra) {
   return (Join-Path $repo "out\$Name")
 }
 function Install-From([string]$Bundle, [string[]]$More = @()) {
-  powershell -ExecutionPolicy Bypass -File (Join-Path $Bundle 'setup\install.ps1') -Source $Bundle -Unattended -SkipHostSettings -BackupDrive $BackupDrive @More
+  powershell -ExecutionPolicy Bypass -File (Join-Path $Bundle 'setup\install.ps1') -Source $Bundle -Unattended -SkipHostSettings -BackupDrive $BackupDrive @More | Out-Host
   return $LASTEXITCODE
 }
 function Last-Log { Get-ChildItem (Join-Path $DataDir 'logs') -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content -Raw }
