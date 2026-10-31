@@ -51,6 +51,9 @@ function run(command: string, args: string[], input?: Buffer): Promise<Buffer> {
       if (code === 0) resolve(Buffer.concat(out));
       else reject(new Error(`${command} failed (${String(code)}): ${err.trim().slice(0, 300)}`));
     });
+    // A tool may stop reading early (pg_restore --list has the table of contents at the start):
+    // the rest of the input then meets a closed pipe. Its exit code is what counts.
+    child.stdin.on('error', () => undefined);
     child.stdin.end(input);
   });
 }
