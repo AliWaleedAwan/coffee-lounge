@@ -9,9 +9,21 @@ import { api, messageOf } from '../api/client.ts';
 export interface SystemHealth {
   api: 'ok' | 'degraded';
   database: 'ok' | 'unreachable';
+  databaseRestarts?: { last: string | null; lastWeek: number };
   worker: { status: 'ok' | 'stale' | 'down'; lastHeartbeatAt: string | null };
   printer: { status: 'ok' | 'error' | 'unknown'; openJobs: number };
-  backup: { lastSuccessAt: string | null; lastVerifiedAt: string | null; usbDrivePresent: boolean };
+  backup: {
+    lastSuccessAt: string | null;
+    lastVerifiedAt: string | null;
+    usbDrivePresent: boolean;
+    configured?: boolean;
+    driveFreeBytes?: number | null;
+    lastDump?: { at: string; status: string; error: string | null } | null;
+    archiver?: { enabled: boolean; lastArchivedAt: string | null; lastFailedAt: string | null };
+    message?: string | null;
+    lastTestRestore?: { status: string; error: string | null } | null;
+    lastOffsite?: { at: string; status: string; error: string | null } | null;
+  };
   disk: { freePercent: number | null; status: 'ok' | 'warning' | 'critical' | 'unknown' };
   internet: 'online' | 'offline';
   warnings: Record<string, string>;
@@ -48,6 +60,11 @@ export function healthRows(h: SystemHealth): Row[] {
       label: 'Database',
       value: h.database === 'ok' ? 'Connected' : 'Not reachable',
       tone: h.database === 'ok' ? 'ok' : 'danger',
+      ...(h.databaseRestarts?.last
+        ? {
+            note: `Restarted by itself ${String(h.databaseRestarts.lastWeek)} times this week; last ${when(h.databaseRestarts.last)}`,
+          }
+        : {}),
     },
     {
       label: 'Background worker',
@@ -69,8 +86,53 @@ export function healthRows(h: SystemHealth): Row[] {
       label: 'Backup drive',
       value: h.backup.usbDrivePresent ? 'Plugged in' : 'Missing',
       tone: h.backup.usbDrivePresent ? 'ok' : 'warning',
-      note: `Last backup: ${when(h.backup.lastSuccessAt)}`,
+      note:
+        h.backup.driveFreeBytes === null || h.backup.driveFreeBytes === undefined
+          ? `Last backup: ${when(h.backup.lastSuccessAt)}`
+          : `Last backup: ${when(h.backup.lastSuccessAt)} · ${(h.backup.driveFreeBytes / 1e9).toFixed(0)} GB free`,
     },
+    ...(h.backup.configured
+      ? [
+          {
+            label: 'Backups',
+            value: h.backup.message ? 'Problem' : 'Working',
+            tone: (h.backup.message ? 'danger' : 'ok') as Tone,
+            note:
+              h.backup.message ??
+              (h.backup.archiver?.enabled
+                ? `Latest changes copied: ${when(h.backup.archiver.lastArchivedAt ?? null)}`
+                : 'Continuous copying is off'),
+          },
+          {
+            label: 'Test restore (weekly)',
+            value:
+              h.backup.lastTestRestore?.status === 'failed'
+                ? 'Found a problem'
+                : h.backup.lastVerifiedAt
+                  ? 'Passed'
+                  : 'Not run yet',
+            tone: (h.backup.lastTestRestore?.status === 'failed'
+              ? 'danger'
+              : h.backup.lastVerifiedAt
+                ? 'ok'
+                : 'info') as Tone,
+            note:
+              h.backup.lastTestRestore?.error ?? `Last passed: ${when(h.backup.lastVerifiedAt)}`,
+          },
+          {
+            label: 'Off-site copy',
+            value: !h.backup.lastOffsite
+              ? 'Not set up or none yet'
+              : h.backup.lastOffsite.status === 'succeeded'
+                ? 'Copied'
+                : 'Waiting for internet',
+            tone: (h.backup.lastOffsite?.status === 'succeeded' ? 'ok' : 'info') as Tone,
+            note: h.backup.lastOffsite
+              ? `${when(h.backup.lastOffsite.at)}${h.backup.lastOffsite.error ? ` · ${h.backup.lastOffsite.error}` : ''}`
+              : 'Settings → Off-site copy',
+          },
+        ]
+      : []),
     {
       label: 'Printer',
       value: { ok: 'Ready', error: 'Problem', unknown: 'Not set up yet' }[h.printer.status],

@@ -117,6 +117,8 @@ describe('no route forgets its permission', () => {
       'GET /api/staff/v1/branding',
       // The names of the reports the caller's own permissions open (step 6.1): no figures.
       'GET /api/staff/v1/reports',
+      // Whether backups have a problem, in words, for the banner on every device (step 7.1).
+      'GET /api/staff/v1/system/backup-status',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

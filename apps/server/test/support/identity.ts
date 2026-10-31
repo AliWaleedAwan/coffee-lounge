@@ -46,6 +46,8 @@ export interface FixtureOptions {
   /** Clock for time-dependent reads such as promotions. */
   now?: () => Date;
   customerLimits?: { perIp?: number; submissions?: number };
+  /** The backup watch the health page and the banner read (step 7.1). */
+  backup?: { status(): Promise<import('../../src/platform/health.ts').BackupReport> };
   /** TLS trust for the test mail server (the key file is always this fixture's own). */
   mailTls?: StaffRouteDeps['mail']['tls'];
 }
@@ -120,6 +122,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
     db: base.pool,
     readiness,
     probes: { internet: () => Promise.resolve('offline'), ...options.probes },
+    ...(options.backup ? { backup: options.backup } : {}),
   });
   const { staff, customer } = readyApps(
     base.pool,

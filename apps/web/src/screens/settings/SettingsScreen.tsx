@@ -11,6 +11,7 @@ import { messageOf } from '../../api/client.ts';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { useManagedPrinters, usePrintWrite } from '../printing/printing-api.ts';
 import { MailboxForm } from './MailboxForm.tsx';
+import { OffsiteForm } from './OffsiteForm.tsx';
 import { OwnerSettings } from './OwnerSettings.tsx';
 import { useSignedIn } from '../Shell.tsx';
 
@@ -21,6 +22,7 @@ export function SettingsScreen() {
       <h1>Settings</h1>
       {permissions.has('settings.manage') ? <OwnerSettings /> : null}
       {permissions.has('settings.mailbox') ? <MailboxForm /> : null}
+      {permissions.has('backup.manage') ? <OffsiteForm /> : null}
       {permissions.has('printers.manage') ? <Printers /> : null}
     </>
   );

@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (247)
+### A. Every staff route (251)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -61,6 +61,9 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/auth/pin` | session |
 | POST | `/auth/pin-switch` | device |
 | POST | `/auth/step-up` | session |
+| GET | `/backup/offsite` | `backup.manage` |
+| PUT | `/backup/offsite` | `backup.manage` |
+| POST | `/backup/offsite/test` | `backup.manage` |
 | GET | `/bills` | `invoices.read` |
 | GET | `/branding` | session |
 | GET | `/cash-shifts` | `cash_shifts.operate` |
@@ -266,6 +269,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/suppliers` | `inventory.read` |
 | POST | `/suppliers` | `suppliers.manage` |
 | PATCH | `/suppliers/:id` | `suppliers.manage` |
+| GET | `/system/backup-status` | session |
 | GET | `/system/health` | `system.health` |
 | GET | `/tables` | `tables.manage` |
 | POST | `/tables` | `tables.manage` |
@@ -317,6 +321,6 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 
 ### E. Permissions no route names (checked inside services, or for later phases)
 
-`backup.manage`, `backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `settings.financial`
+`backup.restore`, `inventory.cost_view`, `inventory.count_approve`, `inventory.opening_balance`, `inventory.stock_control_activate`, `kitchen.templates.manage`, `orders.void_prepared`, `payments.refund`, `purchases.manage`, `settings.financial`
 
 <!-- generated:end -->

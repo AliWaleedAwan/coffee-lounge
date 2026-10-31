@@ -37,6 +37,22 @@ const schema = z
     FILES_DIR: z.string().min(1).optional(),
     /** Key that seals the mailbox password (P6-4; installed: `C:\ProgramData\CoffeeLounge\config\mail.key`). Unset: `.local/mail.key`. */
     MAIL_KEY_FILE: z.string().min(1).optional(),
+    /** The backup public key (step 7.1; installed: `C:\ProgramData\CoffeeLounge\config\backup.pub`). Unset: no backups. */
+    BACKUP_PUBLIC_KEY_FILE: z.string().min(1).optional(),
+    /** This cluster's own WAL folder on the drive (`B:\\CoffeeLounge\\wal\\<system id>`; step 7.3). Unset: `wal`. */
+    BACKUP_WAL_DIR: z.string().min(1).optional(),
+    /** The backup login with REPLICATION, for base backups (step 7.2). Unset: no base backups. */
+    BACKUP_REPLICATION_URL: z
+      .string()
+      .regex(/^postgres(ql)?:\/\//)
+      .optional(),
+    /** The scratch database of the weekly test restore, owned by the backup login (step 7.2). */
+    RESTORE_TEST_DATABASE_URL: z
+      .string()
+      .regex(/^postgres(ql)?:\/\//)
+      .optional(),
+    /** PostgreSQL's bin folder for pg_dump (installed: `C:\Program Files\PostgreSQL\17\bin`). Unset: the PATH. */
+    PG_BIN_DIR: z.string().min(1).optional(),
     /** USB backup drive root (H-17: `B:\`). Unset: reported as not present. */
     BACKUP_DRIVE_PATH: z.string().min(1).optional(),
     /** `host:port` reached over TCP to report internet online/offline, or `off`. */

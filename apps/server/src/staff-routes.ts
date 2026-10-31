@@ -16,6 +16,7 @@ import { importRoutes } from './modules/imports/index.ts';
 import { assetRoutes } from './modules/assets/index.ts';
 import { auditRoutes } from './modules/audit/index.ts';
 import { expenseRoutes } from './modules/expenses/index.ts';
+import { backupRoutes } from './modules/backup/index.ts';
 import { ledgerRoutes } from './modules/ledger/index.ts';
 import { mailRoutes, type MailDeps } from './modules/mail/index.ts';
 import { reportRoutes } from './modules/reports/index.ts';
@@ -76,6 +77,10 @@ export async function registerStaffRoutes(
     pool: deps.pool,
     mail: deps.mail,
     ...(deps.now ? { now: deps.now } : {}),
+  });
+  await backupRoutes(app, {
+    pool: deps.pool,
+    offsite: { keyFile: deps.mail.keyFile, ...(deps.mail.tls ? { tls: deps.mail.tls } : {}) },
   });
   await expenseRoutes(app, {
     pool: deps.pool,

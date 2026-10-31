@@ -206,7 +206,8 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /print-jobs/{jobId}/retry`, `POST /printers/{id}/retry-all` | `kitchen.reprint` | Back to the queue (same job, not a reprint); printed in order, once |
 | `POST /print-jobs/{jobId}/resolve-uncertain` | `kitchen.reprint` | `printed` (mark sent) or `reprint` (new labelled copy) |
 | `POST /tickets/{ticketId}/reprint` | `kitchen.reprint` | K5: a new copy labelled `REPRINT #n` |
-| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
+| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups (drive and free space, last dump and its error, WAL archiving, the problem in words; step 7.1), disk, internet (§5.8) |
+| `GET /system/backup-status` | session | Step 7.1 (AT-80): `{problem, message, since}` for the banner on every device; `problem` is `drive_missing` (5 minutes without the drive), `archive_failing`, `dump_failed`, `restore_test_failed` (step 7.2), `dump_overdue` (no dump for 26 hours) or null; always null where backups are not set up |
 | `GET /branding` | any signed-in staff | `{shopName, primary}` for every screen's header and buttons (step 3.12) |
 | `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
 | `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130). Money and control settings (cash rounding, stock-count approval thresholds; `financial: true` in the list) also need the owner-only `settings.financial` (`403`, RBAC review F-4). List settings (`refunds.reasons`, `assets.categories`, `assets.locations`, step 5.6) take 1–30 names, each once |
@@ -394,6 +395,16 @@ The shop's own mailbox sends the reports in schedules (D-20, P6-4). The password
 | `POST /report-deliveries/:id/retry` | `reports.schedule` | A waiting or refused e-mail is tried again now, with the same Message-ID. Audited |
 
 The worker looks at schedules every 5 minutes (`mail:schedule_scan`) and sends what is due every minute (`mail:send`). Runs are made with the permissions their author has at that moment (costs only with `reports.profit`); if the author can no longer open the report, the run is kept as `not_made` with the reason.
+
+### 5.16 Backups (Phase 7 steps 7.1, 7.2)
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /backup/offsite` | `backup.manage` (owner) | The off-site bucket (P7-2): endpoint, region, bucket, folder, key ID, `secretSet`, `version`, and the last copy (`at`, `status`, `error`); never the secret key |
+| `PUT /backup/offsite` | `backup.manage` | `{endpoint (https only), region, bucket, prefix, accessKeyId, secretAccessKey?, expectedVersion?}`; the secret is required the first time and kept when left out; sealed like the mailbox password. Audited (`backup.offsite_update`, `secretChanged` only) |
+| `POST /backup/offsite/test` | `backup.manage` | Puts a small test file in the bucket now; 400 with the bucket's answer if it fails |
+
+The backups themselves run in the worker and from `admin` on the PC (BACKUP_RECOVERY.md §9): `backup-now [--test-restore]`, `backup-base`, `backup-keygen`.
 
 ## 6. Errors
 

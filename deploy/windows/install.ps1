@@ -19,6 +19,13 @@ param(
   [int]$PgPort = 5432,
   # Windows account the counter app starts for at login (H-9, H-11).
   [string]$CounterUser = 'Counter',
+  # The backup drive's root (BACKUP_RECOVERY.md §3: the CL-BACKUP drive at B:\). Tests use a folder.
+  [string]$BackupDrive = 'B:\',
+  # Restore mode on a replacement PC (BACKUP_RECOVERY.md §5.1, step 7.3): 'latest' or a dump file,
+  # with the owner's USB key in -CaExportDir (its backup key and shop root are reused).
+  [string]$RestoreFrom = '',
+  # Upgrade even while bills or a cash shift are open (the owner's decision; step 7.4).
+  [switch]$Force,
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
   [switch]$Unattended
@@ -45,7 +52,45 @@ $script:LogFile = Join-Path $DataDir ("logs\install-{0}.log" -f (Get-Date -Forma
 # Any failure from here on is written to the install log too (the console may close).
 trap {
   Write-Step ("INSTALL FAILED: {0}`n{1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+  if ($script:UpgradeArmed) { Invoke-Rollback }
   exit 1
+}
+$script:UpgradeArmed = $false
+$MaintenanceFlag = Join-Path $DataDir 'maintenance.flag'
+$Previous = Join-Path $DataDir 'previous-version'
+$PreUpgradeDir = Join-Path $DataDir 'pre-upgrade'
+
+# WINDOWS_DEPLOYMENT.md §7 (step 7.4): if an upgrade fails at any point, the previous program
+# files and the database as it was just before are put back, and the old version is started.
+function Invoke-Rollback {
+  $script:UpgradeArmed = $false
+  try {
+    Write-Step 'Rolling back to the previous version'
+    foreach ($s in $AppServices) { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
+    foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) {
+      & robocopy.exe (Join-Path $Previous $part) (Join-Path $InstallDir $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    }
+    Copy-Item (Join-Path $Previous 'VERSION.txt') $InstallDir -Force
+    & robocopy.exe (Join-Path $Previous 'pgsql') $PgDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ((Get-Service -Name $PgService).Status -ne 'Running') { Start-Service -Name $PgService }
+    $dump = Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -Last 1
+    $super = Unprotect-FromFile (Join-Path $Config 'postgres.secret')
+    $env:PGPASSWORD = $super
+    try {
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS $Database WITH (FORCE)" | Out-Null
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $Database OWNER cl_migrator ENCODING 'UTF8' TEMPLATE template0" | Out-Null
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "REVOKE CONNECT ON DATABASE $Database FROM PUBLIC; GRANT CONNECT ON DATABASE $Database TO cl_service" | Out-Null
+      & (Join-Path $PgDir 'bin\pg_restore.exe') -h 127.0.0.1 -p $PgPort -U postgres -d $Database --exit-on-error $dump.FullName
+      if ($LASTEXITCODE -ne 0) { throw "pg_restore of $($dump.FullName) failed" }
+    } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+    foreach ($s in $AppServices) { Start-Service -Name $s }
+    & (Join-Path $InstallDir 'runtime\node.exe') (Join-Path $InstallDir 'setup\wait-ready.mjs') 'https://127.0.0.1:8443/health/ready' (Join-Path $Tls 'coffee-lounge-root.pem') '180'
+    Write-Step "ROLLED BACK: the previous version runs again with the data as it was before the upgrade ($($dump.Name))."
+  } catch {
+    Write-Step "ROLLBACK FAILED: $($_.Exception.Message). Restore with setup\restore.ps1 or the dump in $PreUpgradeDir."
+  } finally {
+    Remove-Item -Force $MaintenanceFlag -ErrorAction SilentlyContinue
+  }
 }
 Write-Step "Coffee Lounge install from $Source"
 Write-Step (Get-Content -Raw (Join-Path $Source 'VERSION.txt'))
@@ -69,6 +114,43 @@ if ($pgServiceObj) {
   if ($imagePath -notlike "*$PgData*") { throw "A different $PgService service exists ($imagePath). Remove it first." }
 } elseif (-not (Test-PortFree $PgPort)) {
   throw "Port $PgPort is in use (another PostgreSQL?)."
+}
+
+# ------------------------------------------------------------------ 1b. upgrade (step 7.4)
+$upgrading = (-not $firstInstall) -and (Test-Path (Join-Path $InstallDir 'app')) -and $pgServiceObj -and ($pgServiceObj.Status -eq 'Running')
+if ($upgrading) {
+  $superNow = Unprotect-FromFile (Join-Path $Config 'postgres.secret')
+  $env:PGPASSWORD = $superNow
+  try {
+    $openWork = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d $Database -At -c "SELECT (SELECT count(*) FROM cl.invoices WHERE status <> 'settled' AND total > 0) + (SELECT count(*) FROM cl.cash_shifts WHERE status = 'open')").Trim()
+  } finally { Remove-Item Env:\PGPASSWORD }
+  if ($openWork -ne '0' -and -not $Force) {
+    throw "Upgrade refused: $openWork open bills or cash shifts. Settle them and close the shift first (or run with -Force if the owner decides so)."
+  }
+  New-Item -ItemType File -Force -Path $MaintenanceFlag | Out-Null
+  # The database just before (in this PC's protected data folder; the last three are kept).
+  New-Item -ItemType Directory -Force -Path $PreUpgradeDir | Out-Null
+  Set-RestrictedAcl -Path $PreUpgradeDir
+  $preDump = Join-Path $PreUpgradeDir ("pre-upgrade-{0}.dump" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  $env:PGPASSWORD = $superNow
+  try {
+    & (Join-Path $PgDir 'bin\pg_dump.exe') -h 127.0.0.1 -p $PgPort -U postgres -d $Database --format=custom --file=$preDump
+    if ($LASTEXITCODE -ne 0) { throw 'The pre-upgrade dump failed: nothing was changed.' }
+    & (Join-Path $PgDir 'bin\pg_restore.exe') --list $preDump | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'The pre-upgrade dump does not read back: nothing was changed.' }
+  } finally { Remove-Item Env:\PGPASSWORD }
+  Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -SkipLast 3 | Remove-Item -Force
+  Write-Step "Pre-upgrade dump: $preDump"
+  # The program as it is now, to go back to.
+  foreach ($s in $AppServices) { if (Get-Service -Name $s -ErrorAction SilentlyContinue) { Stop-Service -Name $s -Force } }
+  foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) {
+    & robocopy.exe (Join-Path $InstallDir $part) (Join-Path $Previous $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw 'Could not keep a copy of the current version: nothing was changed.' }
+  }
+  Copy-Item (Join-Path $InstallDir 'VERSION.txt') $Previous -Force
+  & robocopy.exe $PgDir (Join-Path $Previous 'pgsql') /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+  Write-Step "The current version is kept in $Previous"
+  $script:UpgradeArmed = $true
 }
 
 # ------------------------------------------------------------------ 2. program files
@@ -184,6 +266,24 @@ Invoke-Native -FilePath $Node -Arguments @((Join-Path $InstallDir 'app\dist\migr
 # The services log in as cl_service with the application role only (DATABASE.md §12, §15).
 Invoke-Sql 'cl_migrator' $migratorPassword $Database 'GRANT cl_app TO cl_service;'
 
+# The backup login (step 7.2): REPLICATION for base backups, and the owner of the scratch
+# database the weekly test restore uses. It cannot read or change the shop's data otherwise.
+$backupSecret = Join-Path $Config 'backup-login.secret'
+if (-not (Test-Path $backupSecret)) {
+  $backupPassword = New-Secret
+  Invoke-Sql 'postgres' $superPassword 'postgres' @"
+CREATE ROLE cl_backup LOGIN REPLICATION PASSWORD '$backupPassword';
+CREATE DATABASE coffee_lounge_restore_test OWNER cl_backup ENCODING 'UTF8' TEMPLATE template0;
+"@ @($backupPassword)
+  Invoke-Sql 'postgres' $superPassword 'coffee_lounge_restore_test' 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+  Protect-ToFile $backupPassword $backupSecret
+}
+$backupPassword = Unprotect-FromFile $backupSecret
+$hba = Join-Path $PgData 'pg_hba.conf'
+if (-not (Select-String -Path $hba -Pattern '^host\s+replication\s+cl_backup' -Quiet)) {
+  Add-Content -Path $hba -Encoding ASCII -Value 'host replication cl_backup 127.0.0.1/32 scram-sha-256'
+}
+
 # ------------------------------------------------------------------ 5. certificates
 New-Item -ItemType Directory -Force -Path $Tls | Out-Null
 if ($needCertificates) {
@@ -201,7 +301,16 @@ if ($needCertificates) {
   try {
     $certs = Join-Path $InstallDir 'app\dist\certs.js'
     $caEnv = @{ CL_CA_PASSPHRASE = $CaPassphrase }
-    Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
+    $usbRoot = Join-Path $CaExportDir 'coffee-lounge-root.key'
+    if ((Test-Path $usbRoot) -and (Test-Path (Join-Path $CaExportDir 'coffee-lounge-root.pem'))) {
+      # A replacement PC: the shop root on the owner's USB key issues the new server certificate,
+      # so every staff device that trusts the shop keeps trusting it (BACKUP_RECOVERY.md §5.1 step 6).
+      Copy-Item (Join-Path $CaExportDir 'coffee-lounge-root.pem') $caTemp
+      Copy-Item $usbRoot $caTemp
+      Write-Step 'Using the shop root from the owner USB key'
+    } else {
+      Invoke-Native -FilePath $Node -Arguments @($certs, 'create-ca', '--out', $caTemp) -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
+    }
     Invoke-Native -FilePath $Node -Arguments @($certs, 'issue-server', '--ca-dir', $caTemp, '--out', $Tls, '--ip', $ShopIp, '--ip', '127.0.0.1') `
       -Environment $caEnv -Hide @($CaPassphrase) | Out-Null
     New-Item -ItemType Directory -Force -Path $CaExportDir | Out-Null
@@ -225,6 +334,7 @@ if (-not (Test-Path $mailKey)) {
   try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
   Set-Content -Path $mailKey -Encoding ASCII -Value ([Convert]::ToBase64String($keyBytes))
 }
+$backupPub = Join-Path $Config 'backup.pub'
 $envFile = Join-Path $Config 'server.env'
 Set-Content -Path $envFile -Encoding ASCII -Value @"
 DATABASE_URL=postgres://cl_service:$servicePassword@127.0.0.1:$PgPort/$Database
@@ -235,12 +345,67 @@ STAFF_TLS_CERT=$Tls\server.pem
 STAFF_TLS_KEY=$Tls\server.key
 WEB_DIST_DIR=$InstallDir\web
 DISK_CHECK_PATH=$env:SystemDrive\
-BACKUP_DRIVE_PATH=B:\
+BACKUP_DRIVE_PATH=$BackupDrive
+BACKUP_PUBLIC_KEY_FILE=$backupPub
+PG_BIN_DIR=$PgDir\bin
+BACKUP_REPLICATION_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/$Database
+RESTORE_TEST_DATABASE_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/coffee_lounge_restore_test
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
 MAIL_KEY_FILE=$mailKey
 LOG_LEVEL=info
 "@
+
+# ------------------------------------------------------------------ 6b. backups (BACKUP_RECOVERY.md §1; step 7.1)
+# The backup key pair, once: the private key goes to the owner's USB key with the CA key
+# and is never kept here; this PC keeps only the public key to encrypt with.
+if (-not (Test-Path $backupPub)) {
+  if ($CaExportDir) {
+    & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') backup-keygen --out $CaExportDir
+    if ($LASTEXITCODE -ne 0) { throw 'Could not make the backup key' }
+    Write-Step "Backup key made: the private key is on $CaExportDir. Print it and keep both away from this PC."
+  } else {
+    Write-Step 'No backup key yet: run the installer again with -CaExportDir <owner USB> to make one.'
+  }
+}
+if (Test-Path $backupPub) {
+  # WAL archiving every 5 minutes at most, to the backup drive, through wal-archive.js
+  # (as the PostgreSQL service account: it needs only the public key).
+  # No backslash right before a closing quote: Windows would read it as an escaped quote.
+  $driveArg = $BackupDrive.TrimEnd('\') + '\.'
+  # Each database cluster archives into its own folder (its system id): a replacement PC's new
+  # cluster starts its WAL names again, and must never meet the old PC's files (step 7.3).
+  $env:PGPASSWORD = $superPassword
+  try { $sysId = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c 'SELECT system_identifier FROM pg_control_system()').Trim() }
+  finally { Remove-Item Env:\PGPASSWORD }
+  if ($sysId -notmatch '^\d+$') { throw "Could not read the database system id: $sysId" }
+  $walDir = Join-Path $BackupDrive "CoffeeLounge\wal\$sysId"
+  $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_DIR=*' }
+  Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_DIR=$walDir")
+  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + $walDir + '" --key "' + $backupPub + '" "%p" "%f"'
+  $superForArchive = Unprotect-FromFile $superSecret
+  Invoke-Sql 'postgres' $superForArchive 'postgres' @"
+ALTER SYSTEM SET archive_mode = 'on';
+ALTER SYSTEM SET archive_timeout = '300';
+ALTER SYSTEM SET archive_command = '$($walCmd.Replace("'", "''"))';
+"@ @($superForArchive)
+  Restart-Service -Name $PgService
+  for ($i = 0; $i -lt 30; $i++) {
+    & (Join-Path $PgDir 'bin\pg_isready.exe') -h 127.0.0.1 -p $PgPort | Out-Null
+    if ($LASTEXITCODE -eq 0) { break }
+    Start-Sleep -Seconds 2
+  }
+  Write-Step "WAL archiving to $BackupDrive every 5 minutes at most; nightly backup at 04:35, base backup Mondays at 04:50, test restore on Sundays"
+}
+
+# ------------------------------------------------------------------ 6c. restore mode (step 7.3)
+if ($RestoreFrom) {
+  if (-not $CaExportDir) { throw '-RestoreFrom needs -CaExportDir: the owner USB key with the backup key' }
+  $keyFile = Join-Path $CaExportDir 'coffee-lounge-backup-key.txt'
+  Write-Step "Restoring the shop's records from $RestoreFrom"
+  Invoke-Native -FilePath $Node -Arguments @("--env-file=$envFile", (Join-Path $InstallDir 'app\dist\admin.js'), 'restore-dump', '--key', $keyFile, '--from', $RestoreFrom) `
+    -Environment @{ DATABASE_URL = "postgres://cl_migrator:$migratorPassword@127.0.0.1:$PgPort/$Database" } -Hide @($migratorPassword) | Out-Null
+}
 
 # ------------------------------------------------------------------ 7. services
 $servicesDir = Join-Path $InstallDir 'services'
@@ -261,6 +426,8 @@ foreach ($s in $AppServices) {
 }
 $serviceAccounts = $AppServices | ForEach-Object { "NT SERVICE\$_" }
 Set-RestrictedAcl -Path $Config -Read $serviceAccounts
+# PostgreSQL's own account reads the backup public key for WAL archiving (nothing secret).
+if (Test-Path $backupPub) { Set-RestrictedAcl -Path $backupPub -Read ($serviceAccounts + @('NT AUTHORITY\NETWORK SERVICE')) }
 Set-RestrictedAcl -Path (Join-Path $DataDir 'logs') -Modify $serviceAccounts
 Set-RestrictedAcl -Path (Join-Path $DataDir 'files') -Modify $serviceAccounts
 foreach ($s in $AppServices) {
@@ -274,6 +441,14 @@ foreach ($s in $AppServices) {
     throw
   }
 }
+
+# ------------------------------------------------------------------ 7b. database watchdog (W-1, P7-5)
+$watchdogAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $InstallDir 'setup\watchdog.ps1'))
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+$watchdogPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$watchdogSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Action $watchdogAction -Trigger $watchdogTrigger -Principal $watchdogPrincipal -Settings $watchdogSettings -Force | Out-Null
+Write-Step 'Database watchdog: PostgreSQL is started again within a minute if it stops by itself'
 
 # ------------------------------------------------------------------ 8. firewall (H-3)
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -347,4 +522,7 @@ if ($firstInstall -and -not $Unattended) {
   & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner
   if ($LASTEXITCODE -ne 0) { throw 'Creating the owner failed.' }
 }
+$script:UpgradeArmed = $false
+Remove-Item -Force $MaintenanceFlag -ErrorAction SilentlyContinue
+if ($upgrading) { Write-Step 'Upgrade finished: health checks green.' }
 Write-Step 'Install finished.'

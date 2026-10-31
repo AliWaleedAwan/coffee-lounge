@@ -7,8 +7,8 @@
 | Layer | Method | Frequency | Destination | Encrypted |
 |---|---|---|---|---|
 | Continuous changes | PostgreSQL WAL archiving via `cl-admin wal-archive` (compress → encrypt → write, never overwrite) | Every completed WAL segment, forced at least every **5 min** while there is activity (`archive_timeout = 300`) | `B:\CoffeeLounge\wal\` | Yes |
-| Physical base backup | `pg_basebackup` (compressed, then encrypted) | **Weekly** (Monday 04:30) and automatically when a different backup drive is plugged in | `B:\CoffeeLounge\base\<date>\` | Yes |
-| Logical dump | `pg_dump -Fc` (portable to newer PostgreSQL versions) | **Nightly** at 04:15 (after the 04:00 business-day cutoff) | `B:\CoffeeLounge\dumps\` | Yes |
+| Physical base backup | `pg_basebackup` (compressed, then encrypted) | **Weekly** (Monday 04:50) and automatically when a different backup drive is plugged in | `B:\CoffeeLounge\base\<date>\` | Yes |
+| Logical dump | `pg_dump -Fc` (portable to newer PostgreSQL versions) | **Nightly** at 04:35 (after the 04:00 cutoff, the ledger check at 04:15 and the day-end at 04:25, so the dump holds the finished day-end) | `B:\CoffeeLounge\dumps\` | Yes |
 | Files | Logo, expense attachments, config (without secrets) | Nightly with the dump | `B:\CoffeeLounge\files\` | Yes |
 | Off-site copy | Latest nightly dump | Daily when internet is up (queued otherwise) **and/or** weekly drive rotation (§3) | Owner's cloud folder and/or second drive taken home | Yes |
 
@@ -98,3 +98,29 @@ Owner-only (`backup.restore` 🔒): choose a timestamp; everything after it is l
 ## 8. Health page items
 
 Last successful dump · last verified test restore · WAL archiver status and last archived time · backup drive present and free space · off-site copy status · SSD free space · next scheduled backup.
+
+## 9. As built (Phase 7 step 7.1)
+
+- **Key pair:** `admin backup-keygen --out <owner USB>`, run by the installer at the first install with `-CaExportDir`: `coffee-lounge-backup-key.txt` (the private key, age X25519) goes only to the owner's USB key; `config\backup.pub` stays on the PC (P7-1). Any `age` tool opens a backup: `age -d -i coffee-lounge-backup-key.txt file.age > file`.
+- **WAL:** `archive_mode = on`, `archive_timeout = 300`, `archive_command` = `wal-archive.js` (in the program folder), run by PostgreSQL's own account: gzip, encrypt, write `B:\CoffeeLounge\wal\<segment>.gz.age` under a temporary name, flush, rename; a checksum file beside it; never overwrites (the same segment again is accepted, a different one refused). While the drive is missing it fails and PostgreSQL keeps the segment and retries (AT-80).
+- **Nightly dump:** the worker's `backup:dump` at 04:35, as the service login: `pg_dump -Fc` of the `cl` and `cl_meta` schemas, checked with `pg_restore --list`, encrypted in memory (no plain copy on any disk), written to `B:\CoffeeLounge\dumps\cl-<UTC time>.dump.age`, read back against its checksum; the attached bills copied once each, encrypted, to `B:\CoffeeLounge\files\`. `admin backup-now` makes one on request. Each run is a row in `cl.backup_runs`.
+- **Watching:** the health page shows the drive (and its free space), the last dump and its error, and WAL archiving; every signed-in device shows a red banner when the drive has been missing for 5 minutes, archiving fails, the last dump failed or none succeeded for 26 hours.
+- **Drive rights:** PostgreSQL's account (NETWORK SERVICE) and the worker must be able to write to `B:\`. An NTFS-formatted drive allows it by default (Authenticated Users: Modify); the visit checks it (step 7.7).
+
+## 10. As built (Phase 7 step 7.2)
+
+- **Backup login:** `cl_backup` (LOGIN REPLICATION), made by the installer with its password DPAPI-sealed in `config\backup-login.secret`; it owns the scratch database `coffee_lounge_restore_test` (with `pg_trgm`) and reaches PostgreSQL for replication from this PC only (`pg_hba.conf`).
+- **Base backups:** `pg_basebackup -Ft -X fetch` as `cl_backup`, compressed and encrypted to `B:\CoffeeLounge\base\<UTC time>\base.tar.gz.age`, every Monday at 04:50 (`backup:base`), and within 5 minutes of a drive with no base backup being plugged in (`backup:watch`). `admin backup-base` makes one on request.
+- **The drives:** each carries `CoffeeLounge\drive.json` with its id and letter (A, B … in the order first seen); every run records the drive.
+- **Test restore:** with Sunday's dump (`backup:dump` on Sundays, shop clock; `admin backup-now --test-restore` on request): the dump is restored into the scratch database with `pg_restore --single-transaction --exit-on-error` and the six checks of §4 run there; the result is its own run. **Change from §4:** the private key is never on the PC, so the check restores the dump as it is made, just before it is encrypted; that the encrypted file opens is proven by the owner's key check (DRILL-4) and the restore drill. A failed check shows on every device ("The weekly test restore found a problem") and on the health page with what failed.
+- **Retention (§2):** after each watch, on the drive plugged in only and only if its newest dump is verified: dumps kept 14 daily + 8 Mondays + 12 firsts of the month (shop dates), base backups the latest 2, WAL newer than the oldest kept base backup (less an hour). Pruned runs keep their row with `pruned_at`.
+- **Off-site copy (P7-2):** every 15 minutes (`backup:offsite`) the newest dump, if not copied yet, is PUT to the owner's bucket (AWS Signature V4, path style, HTTPS only, checked against AWS's published example). While it cannot be reached it waits, shown as "Waiting for internet" on the health page, not as an alarm. The bucket key is typed by the owner (Settings → Off-site copy) and sealed with the mailbox key.
+
+## 11. As built (Phase 7 step 7.3): restoring
+
+Every restore needs the owner's USB key (its `coffee-lounge-backup-key.txt`); nothing on the PC opens a backup alone.
+
+- **Replacement PC (§5.1, §5.2):** run the installer with `-CaExportDir <owner USB> -RestoreFrom latest` (or a dump file, e.g. from the off-site copy), the backup drive plugged in at `B:`. It installs as on a first visit but reuses the **shop root** from the USB key (staff devices keep trusting the new server certificate) and the **backup key** (old and new backups open with the same key), then restores the newest dump (`admin restore-dump`) and runs the integrity checks. Refused if the database already holds trading. Then: static IP 192.168.100.250 (so the printed QR codes keep working), re-register the counter app, test print.
+- **Point in time on this PC (§5.3, §5.4):** `setup\restore.ps1 -KeyFile <USB>\coffee-lounge-backup-key.txt [-PointInTime "2026-11-02 14:30"]`, as Administrator, after typing RESTORE. It stops the services, renames the database folder to `pgdata-before-restore-<time>` (never deleted), unpacks the newest base backup before the time (`admin restore-prepare`), lets PostgreSQL replay the archived WAL to the time (`wal-fetch.js` as restore_command, with a copy of the key readable by PostgreSQL's account only for the replay, deleted after), runs the integrity checks (`admin integrity-check`) and starts the services. **Change from §5.4:** owner-only is enforced by needing the owner's USB key and the typed confirmation on the PC itself, not the owner's password, which lives in the database being replaced.
+- **One WAL folder per database cluster:** `B:\\CoffeeLounge\\wal\\<system id>` (`BACKUP_WAL_DIR`). A replacement PC's new cluster starts its WAL names again; in a shared folder they would meet the old PC's files and archiving would stop (found by the drill). A point-in-time restore keeps its cluster's id and folder.
+- **Rehearsed in Windows CI on every build:** marker A before the chosen time and marker B after: A comes back, B does not, the old folder is kept, the API is ready; then everything removed and a Restore-mode install from the dump: users, records, shop root and backup key all back, integrity checks pass (DRILL-1, AT-22). The timed drill on a real spare PC (AC-REC-2, ≤ 2 h) is part of the visit (step 7.7).

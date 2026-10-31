@@ -8,7 +8,7 @@ import type { Runner } from 'graphile-worker';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
-import { DEV_MAIL_KEY_FILE, MIGRATIONS_DIR } from './platform/paths.ts';
+import { DEV_FILES_DIR, DEV_MAIL_KEY_FILE, MIGRATIONS_DIR } from './platform/paths.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
 import { Heartbeat } from './worker/maintenance.ts';
@@ -71,6 +71,19 @@ if (!stop.signal.aborted) {
     pool,
     logDir: config.LOG_DIR,
     mail: { keyFile: config.MAIL_KEY_FILE ?? DEV_MAIL_KEY_FILE },
+    ...(config.BACKUP_DRIVE_PATH && config.BACKUP_PUBLIC_KEY_FILE
+      ? {
+          backup: {
+            driveRoot: config.BACKUP_DRIVE_PATH,
+            publicKeyFile: config.BACKUP_PUBLIC_KEY_FILE,
+            pgBinDir: config.PG_BIN_DIR,
+            connectionString: config.DATABASE_URL,
+            filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+            replicationUrl: config.BACKUP_REPLICATION_URL,
+            restoreTestUrl: config.RESTORE_TEST_DATABASE_URL,
+          },
+        }
+      : {}),
   });
   log('info', 'worker started');
   await runner.promise;

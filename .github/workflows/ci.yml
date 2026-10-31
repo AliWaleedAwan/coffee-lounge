@@ -42,6 +42,15 @@ jobs:
         run: |
           corepack enable
           corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: PostgreSQL 17 client tools for the backup tests (pg_dump must match the server)
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          echo "PG_BIN_DIR=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
+      - name: Let the test login make base backups (replication from the runner)
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c "echo 'host replication all all scram-sha-256' >> /var/lib/postgresql/data/pg_hba.conf"
+          docker exec ${{ job.services.postgres.id }} psql -U cl_ci -d postgres -c 'SELECT pg_reload_conf()'
       - name: Audit the production dependencies (fails on high or critical advisories; P6-3)
         run: corepack pnpm audit --prod --audit-level high
       - name: Verify (format, lint, types, architecture, traceability, tests)
@@ -49,8 +58,13 @@ jobs:
 
   windows:
     name: Install on Windows (AT-47)
+    env:
+      # One shop CA passphrase for the whole job: the restore drill reuses the root (step 7.3).
+      CL_CA_PASSPHRASE: ci-ca-${{ github.run_id }}-${{ github.run_attempt }}-passphrase
+      # The test owner's password, for the load script too (step 7.5).
+      CL_OWNER_PASSWORD: ci-owner-${{ github.run_id }}-${{ github.run_attempt }}-password
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: powershell
@@ -82,9 +96,11 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
       - name: Install with CoffeeLounge-Setup.exe (unattended)
         run: |
-          $env:CL_CA_PASSPHRASE = 'ci-' + [guid]::NewGuid().ToString('N')
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
-          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb") -Wait -PassThru
+          # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
+          New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
+          icacls 'C:\cl-test-drive' /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb", '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
           Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
       - name: Check the counter app's fuses
@@ -94,11 +110,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
-          $env:CL_OWNER_PASSWORD = 'ci-owner-' + [guid]::NewGuid().ToString('N')
           & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
-        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb"
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
+      - name: Load and power cut (AC-PERF-1/2, AT-56; step 7.5)
+        run: |
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\power-cut-drill.ps1 -OwnerPassword $env:CL_OWNER_PASSWORD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Restore drills (DRILL-1 point in time, AT-22 replacement PC; step 7.3)
+        run: |
+          $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\restore-drill.ps1 -UsbDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive' -Setup $setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Uninstall keeps the data; reinstalling picks it up
         run: |
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
@@ -109,15 +133,19 @@ jobs:
           if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge') { throw 'Add/Remove Programs entry left behind' }
           if (-not (Test-Path 'C:\ProgramData\CoffeeLounge\pgdata\PG_VERSION')) { throw 'database removed' }
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
-          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings') -Wait -PassThru
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
-          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -BackupDrive 'C:\cl-test-drive'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $url = (Get-Content 'C:\ProgramData\CoffeeLounge\config\server.env' | Where-Object { $_ -like 'DATABASE_URL=*' }).Substring(13)
           $env:PGPASSWORD = ([Uri]$url).UserInfo.Split(':')[1]
           $owners = & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h 127.0.0.1 -U cl_service -d coffee_lounge -At -c 'SELECT count(*) FROM cl.users WHERE is_owner'
           if ($owners -ne '1') { throw "owner not kept across reinstall: $owners" }
           Write-Host 'Owner account kept across uninstall and reinstall.'
+      - name: Upgrade drills (W-1 watchdog, AT-45 upgrade and rollback; step 7.4)
+        run: |
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\upgrade-drill.ps1 -BackupDrive 'C:\cl-test-drive'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Keep the logs when something failed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
