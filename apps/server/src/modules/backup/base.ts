@@ -1,11 +1,12 @@
 /**
  * Base backups (BACKUP_RECOVERY.md §1, §3; step 7.2): `pg_basebackup` as the backup login
- * (REPLICATION), tar with the WAL it needs (`-X fetch`), compressed and encrypted in memory to
+ * (REPLICATION), tar with the WAL it needs (`-X fetch`), compressed and encrypted to
  * `<drive>\CoffeeLounge\base\<time>\base.tar.gz.age`. Made every Monday at 04:50 and whenever a
  * different drive is plugged in, so each drive can be restored to the latest minute with its
  * own WAL.
  */
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { Queryable } from '../../platform/db/pool.ts';
@@ -33,13 +34,23 @@ export async function runBaseBackup(
   try {
     const drive = await identifyDrive(db, c.driveRoot);
     if (!drive) throw new Error('The backup drive is not plugged in');
-    const tar = await runTool(c, 'pg_basebackup', [
-      '--format=tar',
-      '--wal-method=fetch',
-      '--checkpoint=fast',
-      '--pgdata=-',
-      `--dbname=${c.replicationUrl}`,
-    ]);
+    // To a private temporary folder, not standard output: on Windows pg_basebackup's output
+    // through a pipe is not binary-safe (found by the restore drill, step 7.3). The folder is
+    // the service account's own, and removed as soon as the backup is encrypted.
+    const scratch = mkdtempSync(join(tmpdir(), 'cl-base-'));
+    let tar: Buffer;
+    try {
+      await runTool(c, 'pg_basebackup', [
+        '--format=tar',
+        '--wal-method=fetch',
+        '--checkpoint=fast',
+        `--pgdata=${scratch}`,
+        `--dbname=${c.replicationUrl}`,
+      ]);
+      tar = readFileSync(join(scratch, 'base.tar'));
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
     const sealed = await encrypt(readRecipient(c.publicKeyFile), gzipSync(tar));
     const dir = join(backupRoot(c.driveRoot), 'base', stampOf(at));
     mkdirSync(dir, { recursive: true });
