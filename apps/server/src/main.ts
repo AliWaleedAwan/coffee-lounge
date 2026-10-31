@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 /**
  * API service entry point (Windows service `coffeelounge-api`, WINDOWS_DEPLOYMENT.md §2).
  * Starts both listeners immediately; business routes answer 503 until startup checks pass,
@@ -55,6 +56,7 @@ const health = new HealthMonitor({
   version: SERVER_VERSION,
   ...(config.DISK_CHECK_PATH ? { diskPath: config.DISK_CHECK_PATH } : {}),
   ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
+  ...(config.LOG_DIR ? { watchdogLogFile: join(config.LOG_DIR, 'pg-watchdog.log') } : {}),
   backup: new BackupWatch({
     db: pool,
     driveRoot: config.BACKUP_DRIVE_PATH,

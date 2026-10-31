@@ -36,6 +36,9 @@ if (-not $Unattended) {
   if ($typed -ne 'RESTORE') { throw 'Not confirmed; nothing was changed.' }
 }
 
+# The watchdog must not start PostgreSQL while the restore has it stopped.
+$flag = Join-Path $DataDir 'maintenance.flag'
+New-Item -ItemType File -Force -Path $flag | Out-Null
 Write-Step 'Stopping the services'
 foreach ($s in $AppServices) { Stop-Service -Name $s -ErrorAction SilentlyContinue }
 Stop-Service -Name $PgService
@@ -82,4 +85,5 @@ try {
 Write-Step 'Integrity checks (BACKUP_RECOVERY.md §4)'
 Invoke-Native -FilePath $Node -Arguments @("--env-file=$EnvFile", $Admin, 'integrity-check') | Out-Null
 foreach ($s in $AppServices) { Start-Service -Name $s }
+Remove-Item -Force $flag -ErrorAction SilentlyContinue
 Write-Step "Restored to $PointInTime. The folder from before is $kept; remove it only once the shop has checked its records."

@@ -99,6 +99,12 @@ A 15-year-old iMac may lose its clock setting after power cuts if its internal c
 | Compatibility | Migrations follow expand → migrate → contract across releases, so a rollback within one version is always possible |
 | No auto-update | Electron and services never self-update; updates are delivered as a new installer |
 
+### 7.1 As built (step 7.4)
+
+- The installer upgrades when it finds the shop installed: it **refuses while bills or a cash shift are open** (`-Force` when the owner decides otherwise), puts down `maintenance.flag`, takes a pre-upgrade dump of the whole database (`C:\ProgramData\CoffeeLounge\pre-upgrade\`, protected folder, last three kept, checked with `pg_restore --list`; not encrypted, as it never leaves this PC's data folder) and keeps the current program in `previous-version\` (the plan said `tools\previous\`).
+- If anything then fails (copying, migrations, starting, the health checks), it **rolls back by itself**: the previous program files, the database recreated from the pre-upgrade dump, the old version started and its health checked, and the log says `ROLLED BACK`.
+- Rehearsed in Windows CI on every build: an upgrade with one more migration; the refusal with a shift open; a failing migration rolled back to the version and data from before.
+
 ## 8. Uninstall
 
 Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (database, logs, files) and the backup drive unless the owner explicitly chooses "remove data" and types the shop name to confirm.
@@ -160,7 +166,7 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 
 | # | Point | Proposal |
 |---|---|---|
-| W-1 | If the PostgreSQL **postmaster itself** dies, `pg_ctl`'s service wrapper reports a clean stop, so Windows does not apply the recovery actions; the database stays down until a restart or reboot (the health page shows it). A crashed database *process* is handled by PostgreSQL itself (tested) | Decide at the iMac dry run: either accept (very rare event), or run `postgres.exe` under WinSW like the API so Windows restarts it |
+| W-1 | If the PostgreSQL **postmaster itself** dies, `pg_ctl`'s service wrapper reports a clean stop, so Windows does not apply the recovery actions; the database stays down until a restart or reboot (the health page shows it). A crashed database *process* is handled by PostgreSQL itself (tested) | Decide at the iMac dry run: either accept (very rare event), or run `postgres.exe` under WinSW like the API so Windows restarts it **Done (step 7.4, P7-5):** the database watchdog (a scheduled task, SYSTEM, every minute) starts PostgreSQL again and writes `logs\pg-watchdog.log`, shown on the health page; it stands aside while `maintenance.flag` is down (upgrades, restores) |
 | W-2 | The CI machine is Windows Server 2022, not Windows 10, has no Boot Camp and cannot reboot or lose power | The iMac dry run covers Windows 10, auto-login, power cuts and the clock |
 | W-3 | WinSW rolls logs daily but does not delete old ones | **Done (step 3.6):** the worker deletes files in `LOG_DIR` older than 30 days, daily at 03:30 |
 | W-4 | Not automated: static IP and network profile (H-1, H-2), setup sheet. The test print exists (step 3.6): Settings → Printers → Test print, or `admin printer-add` and `admin test-print` on the PC | Phase 7 (site setup) |

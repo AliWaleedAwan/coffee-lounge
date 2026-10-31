@@ -9,6 +9,7 @@ import { api, messageOf } from '../api/client.ts';
 export interface SystemHealth {
   api: 'ok' | 'degraded';
   database: 'ok' | 'unreachable';
+  databaseRestarts?: { last: string | null; lastWeek: number };
   worker: { status: 'ok' | 'stale' | 'down'; lastHeartbeatAt: string | null };
   printer: { status: 'ok' | 'error' | 'unknown'; openJobs: number };
   backup: {
@@ -59,6 +60,11 @@ export function healthRows(h: SystemHealth): Row[] {
       label: 'Database',
       value: h.database === 'ok' ? 'Connected' : 'Not reachable',
       tone: h.database === 'ok' ? 'ok' : 'danger',
+      ...(h.databaseRestarts?.last
+        ? {
+            note: `Restarted by itself ${String(h.databaseRestarts.lastWeek)} times this week; last ${when(h.databaseRestarts.last)}`,
+          }
+        : {}),
     },
     {
       label: 'Background worker',

@@ -137,6 +137,10 @@ jobs:
           $owners = & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h 127.0.0.1 -U cl_service -d coffee_lounge -At -c 'SELECT count(*) FROM cl.users WHERE is_owner'
           if ($owners -ne '1') { throw "owner not kept across reinstall: $owners" }
           Write-Host 'Owner account kept across uninstall and reinstall.'
+      - name: Upgrade drills (W-1 watchdog, AT-45 upgrade and rollback; step 7.4)
+        run: |
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\upgrade-drill.ps1 -BackupDrive 'C:\cl-test-drive'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Keep the logs when something failed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

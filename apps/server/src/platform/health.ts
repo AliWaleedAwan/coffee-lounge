@@ -7,6 +7,7 @@
  * page. Probes are cached briefly: health URLs are unauthenticated and must not let a
  * client multiply load on the database.
  */
+import { existsSync, readFileSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
 import net from 'node:net';
 import { parse } from 'node:path';
@@ -190,6 +191,24 @@ export interface HealthProbes {
   internet: () => Promise<InternetStatus>;
 }
 
+/** What the database watchdog wrote: its lines start with the time of each restart. */
+export function watchdogRestarts(
+  file: string | undefined,
+  now: Date,
+): SystemHealth['databaseRestarts'] {
+  if (!file || !existsSync(file)) return { last: null, lastWeek: 0 };
+  const times = readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .filter((l) => l.includes('started it again'))
+    .map((l) => new Date(l.split(' ')[0] ?? ''))
+    .filter((d) => !Number.isNaN(d.getTime()));
+  const week = now.getTime() - 7 * 86400_000;
+  return {
+    last: times.at(-1)?.toISOString() ?? null,
+    lastWeek: times.filter((t) => t.getTime() >= week).length,
+  };
+}
+
 /** The backups' state (modules/backup BackupWatch, step 7.1); at least these fields. */
 export interface BackupReport {
   usbDrivePresent: boolean;
@@ -207,6 +226,8 @@ export interface HealthOptions {
   /** Volume to watch (the one holding the database). Default: root of the working directory. */
   diskPath?: string;
   backupDrivePath?: string;
+  /** logs\\pg-watchdog.log (step 7.4): when the watchdog started PostgreSQL again. */
+  watchdogLogFile?: string | undefined;
   /** The backup watch (step 7.1); without it only the drive's presence is reported. */
   backup?: { status(): Promise<BackupReport> };
   internetTarget?: InternetTarget | null;
@@ -217,6 +238,8 @@ export interface HealthOptions {
 export interface SystemHealth {
   api: 'ok' | 'degraded';
   database: DatabaseStatus;
+  /** Restarts by the database watchdog (W-1, step 7.4) in the last 7 days. */
+  databaseRestarts: { last: string | null; lastWeek: number };
   worker: { status: WorkerStatus['status']; lastHeartbeatAt: string | null };
   printer: { status: 'ok' | 'error' | 'unknown'; openJobs: number };
   backup: BackupReport;
@@ -234,6 +257,7 @@ export class HealthMonitor {
   private readonly disk: Cached<DiskStatus>;
   private readonly backupDrive: Cached<boolean>;
   private readonly backupWatch: HealthOptions['backup'];
+  private readonly watchdogLogFile: string | undefined;
   private readonly internet: Cached<InternetStatus>;
   private readonly worker: () => Promise<WorkerStatus>;
   private readonly printer: () => Promise<{ status: 'ok' | 'error' | 'unknown'; openJobs: number }>;
@@ -244,6 +268,7 @@ export class HealthMonitor {
     const target = options.internetTarget === undefined ? null : options.internetTarget;
     this.readiness = options.readiness;
     this.backupWatch = options.backup;
+    this.watchdogLogFile = options.watchdogLogFile;
     this.version = options.version ?? '0.0.0';
     this.database = new Cached(1_000, probes.database ?? (() => probeDatabase(db)));
     this.disk = new Cached(10_000, probes.disk ?? (() => probeDisk(diskPath)));
@@ -294,6 +319,7 @@ export class HealthMonitor {
     return {
       api: healthy ? 'ok' : 'degraded',
       database,
+      databaseRestarts: watchdogRestarts(this.watchdogLogFile, new Date()),
       worker: {
         status: worker.status,
         lastHeartbeatAt: worker.lastHeartbeatAt?.toISOString() ?? null,

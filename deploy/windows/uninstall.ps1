@@ -25,6 +25,7 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
     Write-Step "Removed service $s"
   }
 }
+Unregister-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Confirm:$false -ErrorAction SilentlyContinue
 if (Get-Service -Name 'postgresql-x64-17' -ErrorAction SilentlyContinue) {
   Stop-Service -Name 'postgresql-x64-17' -Force
   Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @('unregister', '-N', 'postgresql-x64-17') | Out-Null
@@ -33,6 +34,7 @@ if (Get-Service -Name 'postgresql-x64-17' -ErrorAction SilentlyContinue) {
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
 Unregister-ScheduledTask -TaskName 'Coffee Lounge counter app' -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk')
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge'
 Write-Step 'Removed the counter app start-up task, shortcut and Add/Remove Programs entry'

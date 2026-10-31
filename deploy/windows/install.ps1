@@ -24,6 +24,8 @@ param(
   # Restore mode on a replacement PC (BACKUP_RECOVERY.md §5.1, step 7.3): 'latest' or a dump file,
   # with the owner's USB key in -CaExportDir (its backup key and shop root are reused).
   [string]$RestoreFrom = '',
+  # Upgrade even while bills or a cash shift are open (the owner's decision; step 7.4).
+  [switch]$Force,
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
   [switch]$Unattended
@@ -50,7 +52,45 @@ $script:LogFile = Join-Path $DataDir ("logs\install-{0}.log" -f (Get-Date -Forma
 # Any failure from here on is written to the install log too (the console may close).
 trap {
   Write-Step ("INSTALL FAILED: {0}`n{1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+  if ($script:UpgradeArmed) { Invoke-Rollback }
   exit 1
+}
+$script:UpgradeArmed = $false
+$MaintenanceFlag = Join-Path $DataDir 'maintenance.flag'
+$Previous = Join-Path $DataDir 'previous-version'
+$PreUpgradeDir = Join-Path $DataDir 'pre-upgrade'
+
+# WINDOWS_DEPLOYMENT.md §7 (step 7.4): if an upgrade fails at any point, the previous program
+# files and the database as it was just before are put back, and the old version is started.
+function Invoke-Rollback {
+  $script:UpgradeArmed = $false
+  try {
+    Write-Step 'Rolling back to the previous version'
+    foreach ($s in $AppServices) { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
+    foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) {
+      & robocopy.exe (Join-Path $Previous $part) (Join-Path $InstallDir $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    }
+    Copy-Item (Join-Path $Previous 'VERSION.txt') $InstallDir -Force
+    & robocopy.exe (Join-Path $Previous 'pgsql') $PgDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ((Get-Service -Name $PgService).Status -ne 'Running') { Start-Service -Name $PgService }
+    $dump = Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -Last 1
+    $super = Unprotect-FromFile (Join-Path $Config 'postgres.secret')
+    $env:PGPASSWORD = $super
+    try {
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS $Database WITH (FORCE)" | Out-Null
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $Database OWNER cl_migrator ENCODING 'UTF8' TEMPLATE template0" | Out-Null
+      & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "REVOKE CONNECT ON DATABASE $Database FROM PUBLIC; GRANT CONNECT ON DATABASE $Database TO cl_service" | Out-Null
+      & (Join-Path $PgDir 'bin\pg_restore.exe') -h 127.0.0.1 -p $PgPort -U postgres -d $Database --exit-on-error $dump.FullName
+      if ($LASTEXITCODE -ne 0) { throw "pg_restore of $($dump.FullName) failed" }
+    } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+    foreach ($s in $AppServices) { Start-Service -Name $s }
+    & (Join-Path $InstallDir 'runtime\node.exe') (Join-Path $InstallDir 'setup\wait-ready.mjs') 'https://127.0.0.1:8443/health/ready' (Join-Path $Tls 'coffee-lounge-root.pem') '180'
+    Write-Step "ROLLED BACK: the previous version runs again with the data as it was before the upgrade ($($dump.Name))."
+  } catch {
+    Write-Step "ROLLBACK FAILED: $($_.Exception.Message). Restore with setup\restore.ps1 or the dump in $PreUpgradeDir."
+  } finally {
+    Remove-Item -Force $MaintenanceFlag -ErrorAction SilentlyContinue
+  }
 }
 Write-Step "Coffee Lounge install from $Source"
 Write-Step (Get-Content -Raw (Join-Path $Source 'VERSION.txt'))
@@ -74,6 +114,43 @@ if ($pgServiceObj) {
   if ($imagePath -notlike "*$PgData*") { throw "A different $PgService service exists ($imagePath). Remove it first." }
 } elseif (-not (Test-PortFree $PgPort)) {
   throw "Port $PgPort is in use (another PostgreSQL?)."
+}
+
+# ------------------------------------------------------------------ 1b. upgrade (step 7.4)
+$upgrading = (-not $firstInstall) -and (Test-Path (Join-Path $InstallDir 'app')) -and $pgServiceObj -and ($pgServiceObj.Status -eq 'Running')
+if ($upgrading) {
+  $superNow = Unprotect-FromFile (Join-Path $Config 'postgres.secret')
+  $env:PGPASSWORD = $superNow
+  try {
+    $openWork = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d $Database -At -c "SELECT (SELECT count(*) FROM cl.invoices WHERE status <> 'settled' AND total > 0) + (SELECT count(*) FROM cl.cash_shifts WHERE status = 'open')").Trim()
+  } finally { Remove-Item Env:\PGPASSWORD }
+  if ($openWork -ne '0' -and -not $Force) {
+    throw "Upgrade refused: $openWork open bills or cash shifts. Settle them and close the shift first (or run with -Force if the owner decides so)."
+  }
+  New-Item -ItemType File -Force -Path $MaintenanceFlag | Out-Null
+  # The database just before (in this PC's protected data folder; the last three are kept).
+  New-Item -ItemType Directory -Force -Path $PreUpgradeDir | Out-Null
+  Set-RestrictedAcl -Path $PreUpgradeDir
+  $preDump = Join-Path $PreUpgradeDir ("pre-upgrade-{0}.dump" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  $env:PGPASSWORD = $superNow
+  try {
+    & (Join-Path $PgDir 'bin\pg_dump.exe') -h 127.0.0.1 -p $PgPort -U postgres -d $Database --format=custom --file=$preDump
+    if ($LASTEXITCODE -ne 0) { throw 'The pre-upgrade dump failed: nothing was changed.' }
+    & (Join-Path $PgDir 'bin\pg_restore.exe') --list $preDump | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'The pre-upgrade dump does not read back: nothing was changed.' }
+  } finally { Remove-Item Env:\PGPASSWORD }
+  Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -SkipLast 3 | Remove-Item -Force
+  Write-Step "Pre-upgrade dump: $preDump"
+  # The program as it is now, to go back to.
+  foreach ($s in $AppServices) { if (Get-Service -Name $s -ErrorAction SilentlyContinue) { Stop-Service -Name $s -Force } }
+  foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) {
+    & robocopy.exe (Join-Path $InstallDir $part) (Join-Path $Previous $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw 'Could not keep a copy of the current version: nothing was changed.' }
+  }
+  Copy-Item (Join-Path $InstallDir 'VERSION.txt') $Previous -Force
+  & robocopy.exe $PgDir (Join-Path $Previous 'pgsql') /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+  Write-Step "The current version is kept in $Previous"
+  $script:UpgradeArmed = $true
 }
 
 # ------------------------------------------------------------------ 2. program files
@@ -365,6 +442,11 @@ foreach ($s in $AppServices) {
   }
 }
 
+# ------------------------------------------------------------------ 7b. database watchdog (W-1, P7-5)
+$watchdogCmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'setup\watchdog.ps1') + '"'
+Invoke-Native -FilePath 'schtasks.exe' -Arguments @('/Create', '/TN', 'Coffee Lounge database watchdog', '/SC', 'MINUTE', '/MO', '1', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', $watchdogCmd, '/F') | Out-Null
+Write-Step 'Database watchdog: PostgreSQL is started again within a minute if it stops by itself'
+
 # ------------------------------------------------------------------ 8. firewall (H-3)
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName 'CoffeeLounge Customer' -Direction Inbound -Protocol TCP -LocalPort 8080 -RemoteAddress LocalSubnet -Profile Private -Action Allow | Out-Null
@@ -437,4 +519,7 @@ if ($firstInstall -and -not $Unattended) {
   & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner
   if ($LASTEXITCODE -ne 0) { throw 'Creating the owner failed.' }
 }
+$script:UpgradeArmed = $false
+Remove-Item -Force $MaintenanceFlag -ErrorAction SilentlyContinue
+if ($upgrading) { Write-Step 'Upgrade finished: health checks green.' }
 Write-Step 'Install finished.'

@@ -192,6 +192,7 @@ describe('GET /api/staff/v1/system/health (AT-120, foundation parts)', () => {
     expect(first).toEqual({
       api: 'ok',
       database: 'ok',
+      databaseRestarts: { last: null, lastWeek: 0 },
       worker: { status: 'down', lastHeartbeatAt: null },
       printer: { status: 'unknown', openJobs: 0 },
       backup: { lastSuccessAt: null, lastVerifiedAt: null, usbDrivePresent: true },
