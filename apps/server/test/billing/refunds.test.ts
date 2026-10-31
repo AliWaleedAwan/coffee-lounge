@@ -691,6 +691,46 @@ describe('the shift', () => {
     expect(await findLedgerMismatches(fx.pool)).toEqual([]);
   });
 
+  it('a correction out of cash needs that cash still in the till (found by the ×100 run, step 6.7)', async () => {
+    const sale = await paidBill(1, { method: 'cash', tendered: '500' });
+    const shift = String(
+      ((await staff(cashier, 'GET', '/cash-shifts/current')).body['shift'] as Body)['id'],
+    );
+    const expected = async () =>
+      String(
+        ((await staff(cashier, 'GET', '/cash-shifts/current')).body['shift'] as Body)[
+          'expectedCash'
+        ],
+      );
+    const all = await expected();
+    // Everything but Rs 100 goes to the bank; the Rs 500 sale cannot leave the cash total now.
+    const out = (Number(all) - 100).toFixed(2);
+    await staff(cashier, 'POST', `/cash-shifts/${shift}/movements`, {
+      kind: 'paid_out',
+      amount: out,
+      reason: 'To the bank',
+    });
+    const correct = async () =>
+      staff(cashier, 'POST', `/invoices/${sale.invoiceId}/refunds`, {
+        kind: 'method_correction',
+        paymentId: sale.paymentId,
+        method: 'card_manual',
+        reason: 'Was card',
+        stepUpId: await approved(cashier, sale.invoiceId, 'payment.correct'),
+      });
+    const refused = await correct();
+    expect(refused.status).toBe(400);
+    expect(String(refused.body['detail'])).toContain('Only Rs 100.00 should be in the till');
+    expect(await expected()).toBe('100.00');
+    await staff(cashier, 'POST', `/cash-shifts/${shift}/movements`, {
+      kind: 'paid_in',
+      amount: out,
+      reason: 'Back from the bank',
+    });
+    expect((await correct()).status).toBe(201);
+    expect(await expected()).toBe((Number(all) - 500).toFixed(2));
+  });
+
   it('finds settled bills to refund by number or table', async () => {
     const found = await staff(cashier, 'GET', '/refunds/bills?q=Refund 1');
     const bills = found.body['bills'] as Body[];

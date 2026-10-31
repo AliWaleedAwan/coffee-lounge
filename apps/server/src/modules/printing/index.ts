@@ -1,9 +1,12 @@
 /** Public interface of the printing module (other modules import only from here). */
 export {
+  renderDayEnd,
   renderKitchenTicket,
   renderReceipt,
   renderShiftReport,
   renderTestPage,
+  shopTime,
+  type DayEndPrintData,
   type KitchenTicketData,
   type PrintOptions,
   type ReceiptData,

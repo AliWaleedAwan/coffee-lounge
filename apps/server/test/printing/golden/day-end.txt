@@ -1,0 +1,35 @@
+DAY-END
+Business date 2026-10-19
+------------------------------------------------
+Gross sales                            31,500.00
+Discounts                              -1,250.00
+Refunds                                  -650.00
+NET SALES                              29,600.00
+Cash rounding                              -3.00
+Orders                                        42
+Average order                             720.24
+  Dine-in (30)                         22,000.00
+  Takeaway (9)                          5,100.00
+  Delivery (3)                          2,500.00
+------------------------------------------------
+Collected by method:
+  Cash                                 14,850.00
+  Card                                  9,100.00
+  JazzCash                              5,000.00
+------------------------------------------------
+Open bills (2)                          1,700.00
+  COD with Bilal                        1,250.00
+Shift Counter, Sara: approved         var -20.00
+Voids (3)                               1,100.00
+Waste records                                  2
+------------------------------------------------
+Top items:
+  Cappuccino Regular                          18
+  Chicken club sandwich                        7
+------------------------------------------------
+Alerts open at day end:
+  Stock low                                    2
+------------------------------------------------
+Costs and margins are on the day-end PDF.
+Made 20 Oct 2026 04:25
+================================================

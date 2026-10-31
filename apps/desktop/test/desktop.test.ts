@@ -9,8 +9,10 @@ import { ConfigError, loadDesktopConfig, parseDesktopConfig } from '../src/confi
 import { chainOf, chromiumAcceptable, pinnedVerdict } from '../src/pinning.ts';
 import {
   classifyLoadFailure,
+  isAllowedDownload,
   isAllowedRequest,
   isServerPage,
+  safeFileName,
   WEB_CSP,
   withCsp,
 } from '../src/policy.ts';
@@ -233,6 +235,36 @@ describe('navigation and network lock', () => {
     });
     const own = { 'content-security-policy': ["default-src 'none'"] };
     expect(withCsp(own)).toEqual({ headers: own, added: false });
+  });
+
+  it('downloads only the app’s own exports and attached bills, from the server (P6-7)', () => {
+    const ok = (...urls: string[]) => isAllowedDownload(urls, origin);
+    expect(
+      ok(`${origin}/api/staff/v1/reports/sales-by-day/export?format=csv&from=2026-10-01`),
+    ).toBe(true);
+    expect(ok(`${origin}/api/staff/v1/reports/day-end/export?format=pdf`)).toBe(true);
+    expect(ok(`${origin}/api/staff/v1/expenses/42/attachment`)).toBe(true);
+    expect(ok(`${origin}/api/staff/v1/reports/sales-by-day?from=2026-10-01`)).toBe(false);
+    expect(ok(`${origin}/api/staff/v1/expenses/42/attachment/../../auth/me`)).toBe(false);
+    expect(ok('https://example.com/api/staff/v1/reports/bills/export')).toBe(false);
+    expect(ok('http://127.0.0.1:8443/api/staff/v1/reports/bills/export')).toBe(false);
+    expect(ok('blob:https://127.0.0.1:8443/1234')).toBe(false);
+    expect(ok('data:application/pdf;base64,AAAA')).toBe(false);
+    // A redirect away from the list is refused even if it started on it.
+    expect(ok(`${origin}/api/staff/v1/reports/bills/export`, 'https://example.com/file.exe')).toBe(
+      false,
+    );
+    expect(ok()).toBe(false);
+  });
+
+  it('saves under a name safe on Windows', () => {
+    expect(safeFileName('sales-by-day_2026-10-01.csv')).toBe('sales-by-day_2026-10-01.csv');
+    expect(safeFileName('..\\..\\Windows\\evil.exe')).toBe('evil.exe');
+    expect(safeFileName('../../.bashrc')).toBe('bashrc');
+    expect(safeFileName('bill: <March>?.pdf')).toBe('bill_ _March__.pdf');
+    expect(safeFileName('CON.csv')).toBe('_CON.csv');
+    expect(safeFileName('')).toBe('download');
+    expect(safeFileName(`${'x'.repeat(300)}.pdf`)).toHaveLength(120);
   });
 
   it('tells unreachable servers from certificate problems', () => {

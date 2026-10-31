@@ -55,11 +55,12 @@ describe('route × role matrix (SEC-ALL)', () => {
           url: concrete(route.url),
           ...(route.method === 'GET' || route.method === 'DELETE' ? {} : { payload: {} }),
         });
-        const allowed = entry.permissions.has(permission);
+        const also = route.config.alsoNeeds;
+        const allowed = entry.permissions.has(permission) && (!also || entry.permissions.has(also));
         results.push(`${route.method} ${route.url} ${role}`);
         expect(
           isForbidden(res),
-          `${route.method} ${route.url} as ${role} (${allowed ? 'has' : 'lacks'} ${permission}): ${res.body}`,
+          `${route.method} ${route.url} as ${role} (${allowed ? 'has' : 'lacks'} ${permission}${also ? ` + ${also}` : ''}): ${res.body}`,
         ).toBe(!allowed);
       }
     }
@@ -114,6 +115,8 @@ describe('no route forgets its permission', () => {
       'GET /api/staff/v1/events',
       // The shop's name and brand colour for every screen's header (step 3.12): nothing private.
       'GET /api/staff/v1/branding',
+      // The names of the reports the caller's own permissions open (step 6.1): no figures.
+      'GET /api/staff/v1/reports',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

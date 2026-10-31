@@ -1118,3 +1118,56 @@ kbd {
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
 }
+
+/* Reports overview (step 6.2): headline tiles, charts with their numbers, wide tables. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.tile:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.tile-label {
+  color: var(--text-muted);
+}
+.overview-row {
+  align-items: stretch;
+}
+.overview-row > section {
+  flex: 1 1 320px;
+}
+.chart-svg {
+  width: 100%;
+  height: 140px;
+}
+.chart-bar {
+  fill: var(--brand-primary);
+}
+.chart-label {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--brand-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

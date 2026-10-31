@@ -259,5 +259,6 @@ describe('stock ledger invariants under random sequences (PT-01)', () => {
       expect(seen).toContain('reserve');
       expect(seen).toContain('receipt');
     }
-  });
+    // ×100 under the full suite's load takes over 20 s (the CI runner is slower still).
+  }, 300_000);
 });

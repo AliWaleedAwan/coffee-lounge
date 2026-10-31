@@ -1,6 +1,6 @@
 /**
  * Printed documents (PRINTING_HARDWARE.md §4): the kitchen ticket, the customer receipt,
- * the cash shift report and a test page, each rendered to ESC/POS for a given line width (48 on 80 mm paper).
+ * the cash shift report, the day-end summary and a test page, each rendered to ESC/POS for a given line width (48 on 80 mm paper).
  *
  * The kitchen ticket is rendered from `KitchenTicketData`, which has no field for a
  * price, a payment or a guest's details: such things cannot reach the kitchen (AT-99,
@@ -379,6 +379,84 @@ export function renderShiftReport(r: ShiftReportData, o: PrintOptions): Buffer {
         doc.line(line);
     }
   }
+  doc.line(rule(w, '='));
+  return doc.cut(o.canCut).bytes();
+}
+
+// ---------------------------------------------------------------- day-end summary
+
+/** The 80 mm day-end (FINANCE_REPORTING.md §7, P6-9): sales and cash only, no costs. */
+export interface DayEndPrintData {
+  date: string;
+  generatedAt: Date;
+  sales: {
+    orders: number;
+    gross: string;
+    discounts: string;
+    refunds: string;
+    net_sales: string;
+    rounding: string;
+    aov: string | null;
+  };
+  byOrderType: { label: string; orders: number; net_sales: string }[];
+  payments: { method: string; collected: string }[];
+  openBills: { count: number; value: string };
+  cod: { rider: string; amount: string }[];
+  shifts: { till: string; cashier: string; status: string; variance: string | null }[];
+  voids: { events: number; value: string };
+  waste: { records: number };
+  topItems: { item: string; items: number }[];
+  alerts: { label: string; open: number }[];
+}
+
+export function renderDayEnd(r: DayEndPrintData, o: PrintOptions): Buffer {
+  const w = o.width;
+  const doc = new EscPos();
+  reprintBanner(doc, o.copyNo);
+  doc.align('center').bold(true).size({ width: true }).line('DAY-END').size({}).bold(false);
+  doc.line(`Business date ${r.date}`);
+  doc.align('left').line(rule(w));
+  doc.line(twoCols('Gross sales', amount(r.sales.gross), w));
+  doc.line(twoCols('Discounts', minus(r.sales.discounts), w));
+  doc.line(twoCols('Refunds', minus(r.sales.refunds), w));
+  doc
+    .bold(true)
+    .line(twoCols('NET SALES', amount(r.sales.net_sales), w))
+    .bold(false);
+  doc.line(twoCols('Cash rounding', amount(r.sales.rounding), w));
+  doc.line(twoCols('Orders', String(r.sales.orders), w));
+  doc.line(twoCols('Average order', r.sales.aov === null ? '-' : amount(r.sales.aov), w));
+  for (const t of r.byOrderType)
+    doc.line(twoCols(`  ${t.label} (${String(t.orders)})`, amount(t.net_sales), w));
+  doc.line(rule(w));
+  doc.line('Collected by method:');
+  for (const p of r.payments) doc.line(twoCols(`  ${p.method}`, amount(p.collected), w));
+  doc.line(rule(w));
+  doc.line(twoCols(`Open bills (${String(r.openBills.count)})`, amount(r.openBills.value), w));
+  for (const c of r.cod) doc.line(twoCols(`  COD with ${c.rider}`, amount(c.amount), w));
+  for (const s of r.shifts) {
+    for (const line of columns(
+      `Shift ${s.till}, ${s.cashier}: ${s.status}`,
+      s.variance === null ? 'open' : `var ${amount(s.variance)}`,
+      w,
+    ))
+      doc.line(line);
+  }
+  doc.line(twoCols(`Voids (${String(r.voids.events)})`, amount(r.voids.value), w));
+  doc.line(twoCols('Waste records', String(r.waste.records), w));
+  if (r.topItems.length > 0) {
+    doc.line(rule(w));
+    doc.line('Top items:');
+    for (const i of r.topItems) doc.line(twoCols(`  ${i.item}`, String(i.items), w));
+  }
+  if (r.alerts.length > 0) {
+    doc.line(rule(w));
+    doc.line('Alerts open at day end:');
+    for (const a of r.alerts) doc.line(twoCols(`  ${a.label}`, String(a.open), w));
+  }
+  doc.line(rule(w));
+  for (const text of wrap('Costs and margins are on the day-end PDF.', w)) doc.line(text);
+  doc.line(`Made ${shopTime(r.generatedAt, o.timeZone)}`);
   doc.line(rule(w, '='));
   return doc.cut(o.canCut).bytes();
 }

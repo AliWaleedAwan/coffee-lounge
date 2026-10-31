@@ -171,10 +171,12 @@ describe('job queue', () => {
     expect(await count('cl.outbox_events')).toBe(1);
   });
 
-  it('schedules every task with a handler: housekeeping, printing, order and stock alerts, the nightly stock check', () => {
+  it('schedules every task with a handler: housekeeping, printing, order and stock alerts, the nightly checks and the day-end', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
       'ledger:reconcile',
+      'mail:schedule_scan',
+      'mail:send',
       'maintenance:prune_idempotency_keys',
       'maintenance:prune_logs',
       'maintenance:prune_outbox',
@@ -184,6 +186,7 @@ describe('job queue', () => {
       'print:dispatch',
       'print:sweep',
       'privacy:redact_delivery',
+      'reports:day_end',
       'sessions:stale_scan',
       'stock:expiry_scan',
       'stock:reconcile',
@@ -214,6 +217,9 @@ describe('job queue', () => {
       'stock:reconcile': '10 4 * * *',
       'ledger:reconcile': '15 4 * * *',
       'privacy:redact_delivery': '20 4 * * *',
+      'reports:day_end': '25 4 * * *',
+      'mail:schedule_scan': '*/5 * * * *',
+      'mail:send': '* * * * *',
     });
     for (const line of CRONTAB.split('\n')) expect(tasks[line.split(' ')[5] ?? '']).toBeDefined();
   });

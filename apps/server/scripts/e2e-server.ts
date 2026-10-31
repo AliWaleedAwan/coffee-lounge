@@ -79,7 +79,7 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 29; i++) {
+for (let i = 1; i <= 30; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },
@@ -139,6 +139,7 @@ const apps = buildApps(
         health,
         guestBaseUrl: `http://127.0.0.1:${String(CUSTOMER_PORT)}`,
         filesDir: mkdtempSync(join(tmpdir(), 'cl-e2e-files-')),
+        mail: { keyFile: join(mkdtempSync(join(tmpdir(), 'cl-e2e-mail-')), 'mail.key') },
       }),
   },
 );

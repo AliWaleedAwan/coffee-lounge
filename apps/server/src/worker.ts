@@ -8,7 +8,7 @@ import type { Runner } from 'graphile-worker';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
-import { MIGRATIONS_DIR } from './platform/paths.ts';
+import { DEV_MAIL_KEY_FILE, MIGRATIONS_DIR } from './platform/paths.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
 import { Heartbeat } from './worker/maintenance.ts';
@@ -67,7 +67,11 @@ if (!stop.signal.aborted) {
       err: error instanceof Error ? error.message : String(error),
     });
   });
-  runner = await startRunner({ pool, logDir: config.LOG_DIR });
+  runner = await startRunner({
+    pool,
+    logDir: config.LOG_DIR,
+    mail: { keyFile: config.MAIL_KEY_FILE ?? DEV_MAIL_KEY_FILE },
+  });
   log('info', 'worker started');
   await runner.promise;
 }

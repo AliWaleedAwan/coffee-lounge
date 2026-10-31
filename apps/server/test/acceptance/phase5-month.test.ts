@@ -11,6 +11,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { findLedgerMismatches } from '../../src/modules/ledger/index.ts';
+import { businessDateOf } from '../../src/platform/settings.ts';
 import { makeTasks } from '../../src/worker/runner.ts';
 import { identityFixture, OWNER, type IdentityFixture } from '../support/identity.ts';
 import { Random } from '../support/random.ts';
@@ -19,20 +20,22 @@ import { TradingShop, type Method, type Provider } from '../support/trading.ts';
 const DAYS = 30;
 let fx: IdentityFixture;
 let shop: TradingShop;
-// Noon in Karachi on the day being traded; the API takes its business dates from it.
+// Noon in Karachi on the day being traded; the API takes its business dates from it. The
+// last day is the shop's business date now (not the UTC date): entries the database stamps
+// with its own clock (cash paid in and out) fall on that day, also between 04:00 and 05:00
+// in Karachi, when the UTC date is still the day before.
 let clock = new Date();
-const start = new Date();
-start.setUTCDate(start.getUTCDate() - (DAYS - 1));
-start.setUTCHours(7, 0, 0, 0);
+let today = '';
 const dayOf = (n: number) => {
-  const d = new Date(start);
-  d.setUTCDate(d.getUTCDate() + n);
+  const d = new Date(`${today}T07:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - (DAYS - 1) + n);
   return d;
 };
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 beforeAll(async () => {
   fx = await identityFixture({ sessionRole: 'cl_app', now: () => clock });
+  today = await businessDateOf(fx.pool, new Date());
   const owner = await fx.loggedIn(OWNER.username, OWNER.password);
   await fx.addUser('mo-cash', ['cashier']);
   await fx.addUser('mo-partner', ['owner'], { pin: '1357' });

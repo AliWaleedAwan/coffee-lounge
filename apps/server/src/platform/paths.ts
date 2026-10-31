@@ -27,3 +27,5 @@ export const MIGRATIONS_DIR = join(SERVER_ROOT, 'migrations');
 export const DEV_WEB_DIST = join(SERVER_ROOT, '..', 'web', 'dist');
 /** Attached files in a development checkout (installed: FILES_DIR). */
 export const DEV_FILES_DIR = join(SERVER_ROOT, '..', '..', '.local', 'files');
+/** The mailbox key in a development checkout (installed: MAIL_KEY_FILE). */
+export const DEV_MAIL_KEY_FILE = join(SERVER_ROOT, '..', '..', '.local', 'mail.key');

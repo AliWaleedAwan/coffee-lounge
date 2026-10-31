@@ -44,6 +44,7 @@ describe('access seed matches docs/RBAC.md', () => {
       'backup.restore',
       'roles.manage',
       'settings.financial',
+      'settings.mailbox',
     ]);
   });
 

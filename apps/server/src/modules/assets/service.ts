@@ -18,7 +18,7 @@ import type { Queryable } from '../../platform/db/pool.ts';
 import type { Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { publish } from '../../platform/outbox.ts';
-import { businessDateOf, readSetting } from '../../platform/settings.ts';
+import { readSetting, shopDateOf } from '../../platform/settings.ts';
 
 export const CONDITIONS = ['new', 'good', 'fair', 'poor'] as const;
 export const ACTIVE_STATUSES = ['in_use', 'in_repair', 'retired'] as const;
@@ -217,7 +217,7 @@ export async function registerAsset(
   by: By,
   input: AssetInput,
 ): Promise<{ id: string; assetTag: string }> {
-  await checkRefs(tx, input, await businessDateOf(tx, by.now));
+  await checkRefs(tx, input, await shopDateOf(tx, by.now));
   let tag = clean(input.assetTag);
   if (tag === null) {
     // The next free AST-NNNN; a tag someone typed in that form is skipped.
@@ -328,7 +328,7 @@ export async function changeAsset(
       version: old.version,
     });
   }
-  await checkRefs(tx, changes, await businessDateOf(tx, by.now));
+  await checkRefs(tx, changes, await shopDateOf(tx, by.now));
   const reason = options.reason?.trim() || null;
   const next = {
     asset_tag: changes.assetTag !== undefined ? changes.assetTag.trim() : old.asset_tag,
@@ -456,7 +456,8 @@ export async function recordMaintenance(
   },
 ): Promise<{ id: string }> {
   const asset = await lockAsset(tx, id);
-  const today = await businessDateOf(tx, by.now);
+  // The calendar date: a machine serviced at 01:00 was serviced that day, not the day before.
+  const today = await shopDateOf(tx, by.now);
   if (input.performedOn > today)
     throw new AppError('VALIDATION_FAILED', 'Maintenance is recorded once it is done');
   if (input.nextDue && input.nextDue <= input.performedOn) {

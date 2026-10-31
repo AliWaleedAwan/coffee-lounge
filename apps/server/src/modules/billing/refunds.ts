@@ -356,6 +356,10 @@ export async function recordRefund(
         'This payment was taken in an earlier shift, which is closed. A correction to or from cash can only be made in the shift it was taken in; the difference stays as that shift’s variance.',
       );
     }
+    // Out of cash: the till gives that cash up, so it must still hold it (as for a refund).
+    if (input.kind === 'method_correction' && payment.method === 'cash') {
+      await assertCashInTill(tx, shiftId, amount, 'moving this payment out of cash');
+    }
   }
 
   const businessDate = await businessDateOf(tx, ctx.now);

@@ -33,14 +33,20 @@ describe('RBAC review (step 5.6)', () => {
       .map((r) => ({
         method: r.method,
         url: r.url.replace(/^\/api\/staff\/v1/, ''),
-        access: r.config.permission ? `\`${r.config.permission}\`` : (r.config.auth ?? 'session'),
+        access: r.config.permission
+          ? `\`${r.config.permission}\`${r.config.alsoNeeds ? ` + \`${r.config.alsoNeeds}\`` : ''}`
+          : (r.config.auth ?? 'session'),
         permission: r.config.permission,
+        alsoNeeds: r.config.alsoNeeds,
       }))
       .sort((a, b) => a.url.localeCompare(b.url) || a.method.localeCompare(b.method));
     for (const r of routes) {
       if (r.permission) expect(known, `${r.method} ${r.url}`).toContain(r.permission);
+      if (r.alsoNeeds) expect(known, `${r.method} ${r.url}`).toContain(r.alsoNeeds);
     }
-    const used = new Set(routes.flatMap((r) => (r.permission ? [r.permission] : [])));
+    const used = new Set(
+      routes.flatMap((r) => [r.permission, r.alsoNeeds].filter((p) => p !== undefined)),
+    );
     const { rows: grantable } = await fx.pool.query<{ role: string; keys: string[] }>(
       `SELECT r.key AS role, array_agg(p.permission_key ORDER BY p.permission_key) AS keys
          FROM cl.role_permission_policy p JOIN cl.roles r ON r.id = p.role_id

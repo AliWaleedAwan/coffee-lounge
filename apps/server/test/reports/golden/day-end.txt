@@ -1,0 +1,119 @@
+Coffee Lounge
+12 Main Boulevard, Gulberg
+Day-end report
+Business date 2026-10-19
+Sales
+Gross sales
+31,500.00
+Orders
+42
+Promotions
+500.00
+Items sold
+77
+Manual discounts
+600.00
+Average order
+720.24
+Comps
+150.00
+Cash rounding
+-3.00
+Refunds
+650.00
+Collected
+28,947.00
+Net sales
+29,600.00
+By order type
+Order type
+Orders
+Net sales
+Dine-in
+30
+22,000.00
+Takeaway
+9
+5,100.00
+Delivery
+3
+2,500.00
+Payment mix
+Method
+Payments
+Taken
+Refunded
+Collected
+Cash
+20
+15,500.00
+650.00
+14,850.00
+Card
+12
+9,100.00
+0.00
+9,100.00
+Still open when the day ended
+Open bills
+2
+Left to pay on them
+1,700.00
+COD with Bilal (1)
+1,250.00
+Cash shifts
+Till
+Cashier
+Status
+Expected
+Counted
+Variance
+Reason / approved by
+Counter
+Sara
+approved
+19,850.00
+19,830.00
+-20.00
+Change given twice · approved by Owner
+Voids and waste
+Voids and cancellations
+3 (4 items)
+Value of voided items
+1,100.00
+Waste records
+2
+Waste cost
+310.50
+Top 10 items
+Item
+Sold
+Net sales
+Margin
+Cappuccino Regular
+18
+11,700.00
+72.10 %
+Costs and margin
+COGS
+8,120.25
+COGS coverage
+97.50 %
+Waste
+310.50
+Stock variance
+45.00
+Gross profit after waste
+21,124.25
+Gross margin
+71.36 %
+Recorded operating result
+9,124.25
+Alerts open at day end
+Stock low
+2
+About this report
+Business date 2026-10-19. A business day runs from 04:00 to 03:59 the next morning (Asia/Karachi, D-22). Sales count on the date the bill was 
+settled, refunds on their own date. Made once, after the day ended; later changes to that day appear in the reports, not here.
+Made 20 Oct 2026 04:25 (shop clock).
+Page 1 of 1

@@ -17,6 +17,8 @@ import { assetRoutes } from './modules/assets/index.ts';
 import { auditRoutes } from './modules/audit/index.ts';
 import { expenseRoutes } from './modules/expenses/index.ts';
 import { ledgerRoutes } from './modules/ledger/index.ts';
+import { mailRoutes, type MailDeps } from './modules/mail/index.ts';
+import { reportRoutes } from './modules/reports/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -39,6 +41,8 @@ export interface StaffRouteDeps {
   customerPort?: number | undefined;
   /** Where attached bills are kept (FILES_DIR). */
   filesDir: string;
+  /** The mailbox key (MAIL_KEY_FILE) and, in tests, the test mail server's TLS trust. */
+  mail: MailDeps;
 }
 
 export async function registerStaffRoutes(
@@ -66,7 +70,13 @@ export async function registerStaffRoutes(
   await importRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await ledgerRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await auditRoutes(app, { pool: deps.pool });
+  await reportRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await assetRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await mailRoutes(app, {
+    pool: deps.pool,
+    mail: deps.mail,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   await expenseRoutes(app, {
     pool: deps.pool,
     filesDir: deps.filesDir,

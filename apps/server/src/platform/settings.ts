@@ -30,6 +30,22 @@ export function shopTimeZone(db: Queryable): Promise<string> {
  * The business date of an instant: shop-local date shifted back by the day cutoff
  * (D-22: 04:00), as `YYYY-MM-DD`. Written once with a record and never recomputed.
  */
+/**
+ * The shop's calendar date at `at` (its own time zone, no business-day cutoff): for dates
+ * people write down, such as when a machine was serviced, which may be after midnight but
+ * before the 04:00 cutoff.
+ */
+export async function shopDateOf(db: Queryable, at: Date): Promise<string> {
+  const timeZone = await shopTimeZone(db);
+  const { rows } = await db.query<{ d: string }>(
+    'SELECT ($1::timestamptz AT TIME ZONE $2)::date::text AS d',
+    [at, timeZone],
+  );
+  const d = rows[0]?.d;
+  if (d === undefined) throw new Error('shop date not computed');
+  return d;
+}
+
 export async function businessDateOf(db: Queryable, at: Date): Promise<string> {
   const timeZone = await shopTimeZone(db);
   const cutoff = await readSetting(

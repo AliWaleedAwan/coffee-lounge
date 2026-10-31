@@ -5,7 +5,7 @@
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
 import {
   createOwner,
@@ -32,7 +32,7 @@ export interface Client {
 export interface CollectedRoute {
   method: string;
   url: string;
-  config: { auth?: string; permission?: string };
+  config: { auth?: string; permission?: string; alsoNeeds?: string };
 }
 
 export interface FixtureOptions {
@@ -46,6 +46,8 @@ export interface FixtureOptions {
   /** Clock for time-dependent reads such as promotions. */
   now?: () => Date;
   customerLimits?: { perIp?: number; submissions?: number };
+  /** TLS trust for the test mail server (the key file is always this fixture's own). */
+  mailTls?: StaffRouteDeps['mail']['tls'];
 }
 
 export interface IdentityFixture extends PlatformFixture {
@@ -61,6 +63,8 @@ export interface IdentityFixture extends PlatformFixture {
   recoveryCode: string;
   /** This fixture's FILES_DIR (attached bills), removed on close. */
   filesDir: string;
+  /** This fixture's mailbox key and mail TLS settings (MAIL_KEY_FILE). */
+  mail: StaffRouteDeps['mail'];
   /** Registers a new device through the API and returns a client holding its cookie. */
   newDevice(kind?: DeviceKind, name?: string): Promise<Client>;
   /** Creates a user with the given roles (and optional PIN) directly in the database. */
@@ -100,6 +104,10 @@ function clientFor(app: FastifyInstance, initial: Record<string, string> = {}): 
 export async function identityFixture(options: FixtureOptions = {}): Promise<IdentityFixture> {
   const base = await platformFixture(20, options.sessionRole);
   const filesDir = mkdtempSync(join(tmpdir(), 'cl-files-'));
+  const mail: StaffRouteDeps['mail'] = {
+    keyFile: join(filesDir, '..', `${basename(filesDir)}-mail.key`),
+    ...(options.mailTls ? { tls: options.mailTls } : {}),
+  };
   const routes: CollectedRoute[] = [];
   const hub =
     options.makeHub?.(base.pool) ??
@@ -143,6 +151,7 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
           hub,
           health,
           filesDir,
+          mail,
           ...(options.live ? { live: options.live } : {}),
           ...(options.now ? { now: options.now } : {}),
         });
@@ -184,8 +193,10 @@ export async function identityFixture(options: FixtureOptions = {}): Promise<Ide
     async close() {
       await base.close();
       rmSync(filesDir, { recursive: true, force: true });
+      rmSync(mail.keyFile, { force: true });
     },
     filesDir,
+    mail,
     staff,
     customer,
     readiness,

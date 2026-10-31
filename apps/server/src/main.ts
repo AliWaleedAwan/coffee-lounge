@@ -9,7 +9,12 @@ import { ClockJumpDetector } from './platform/clock.ts';
 import { loadConfig } from './platform/config.ts';
 import { loadMigrations } from './platform/db/migrate.ts';
 import { createPool } from './platform/db/pool.ts';
-import { DEV_FILES_DIR, DEV_WEB_DIST, MIGRATIONS_DIR } from './platform/paths.ts';
+import {
+  DEV_FILES_DIR,
+  DEV_MAIL_KEY_FILE,
+  DEV_WEB_DIST,
+  MIGRATIONS_DIR,
+} from './platform/paths.ts';
 import { HealthMonitor, parseInternetTarget } from './platform/health.ts';
 import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
@@ -75,6 +80,7 @@ const { customer, staff } = buildApps(
         guestBaseUrl: config.GUEST_BASE_URL,
         customerPort: config.CUSTOMER_PORT,
         filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+        mail: { keyFile: config.MAIL_KEY_FILE ?? DEV_MAIL_KEY_FILE },
       }),
   },
 );

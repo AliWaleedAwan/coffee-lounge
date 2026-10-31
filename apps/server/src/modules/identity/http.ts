@@ -31,6 +31,8 @@ export interface AccessConfig {
   auth?: 'public' | 'device' | 'session';
   /** Required permission key (implies a session). */
   permission?: string;
+  /** A second permission needed as well (e.g. `reports.export` on a report's export). */
+  alsoNeeds?: string;
 }
 
 declare module 'fastify' {
@@ -134,12 +136,13 @@ export async function registerStaffAuth(
     const permissions = await loadEffectivePermissions(options.pool, session.user.id);
     request.auth = { ...session, device, permissions };
 
-    if (config.permission && !permissions.has(config.permission)) {
+    for (const needed of [config.permission, config.alsoNeeds]) {
+      if (!needed || permissions.has(needed)) continue;
       await auditAccessDenied(options.pool, request.auth, factsOf(request), {
-        permission: config.permission,
+        permission: needed,
         route: `${request.method} ${request.routeOptions.url ?? request.url}`,
       });
-      throw new AppError('FORBIDDEN', `You need the ${config.permission} permission for this`);
+      throw new AppError('FORBIDDEN', `You need the ${needed} permission for this`);
     }
   });
 }
