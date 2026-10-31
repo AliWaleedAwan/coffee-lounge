@@ -24,4 +24,3 @@ export {
   restoreDump,
   type PreparedRestore,
 } from './restore.ts';
-export { extractTar } from './tar.ts';

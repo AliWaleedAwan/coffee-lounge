@@ -11,12 +11,12 @@
  *   make PostgreSQL replay the WAL up to that time (or to the end) and then open; the old
  *   folder is kept. The Windows script restore.ps1 stops and starts the services around it.
  */
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import pg from 'pg';
 import { decrypt } from './keys.ts';
-import { extractTar } from './tar.ts';
 import { backupRoot, runTool, type BackupConfig } from './tools.ts';
 import { integrityChecks, type IntegrityReport } from './verify.ts';
 
@@ -82,6 +82,13 @@ export async function restoreDump(
   }
 }
 
+function countFiles(dir: string): number {
+  let n = 0;
+  for (const e of readdirSync(dir, { withFileTypes: true }))
+    n += e.isDirectory() ? countFiles(join(dir, e.name)) : 1;
+  return n;
+}
+
 /** The base backups on the drive, oldest first, with when each was made (from its folder name). */
 export function baseBackups(driveRoot: string): { at: Date; file: string }[] {
   const dir = join(backupRoot(driveRoot), 'base');
@@ -122,7 +129,18 @@ export async function prepareBaseRestore(input: {
   const base = candidates.at(-1);
   if (!base) throw new Error('No base backup on this drive from before that time');
   const tar = gunzipSync(await open(input.keyText, base.file));
-  const files = extractTar(tar, input.dataDir);
+  // The system's tar (built into Windows 10 and later, macOS and Linux) unpacks it; like any
+  // bsdtar or GNU tar it refuses paths that would leave the folder.
+  mkdirSync(input.dataDir, { recursive: true });
+  const unpack = spawnSync('tar', ['-xf', '-', '-C', input.dataDir], {
+    input: tar,
+    maxBuffer: 1 << 20,
+  });
+  if (unpack.status !== 0)
+    throw new Error(
+      `tar could not unpack the base backup: ${unpack.stderr.toString().trim().slice(0, 300)}`,
+    );
+  const files = countFiles(input.dataDir);
   const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
   const settings = [
     '',

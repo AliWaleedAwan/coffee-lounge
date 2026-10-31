@@ -2,8 +2,7 @@
  * Restores, step 7.3 (BACKUP_RECOVERY.md §5; AT-22): a nightly dump into a fresh database (the
  * replacement PC) with every integrity check passing and the application role's rights back;
  * refusals (wrong key, missing key, a database already trading); a base backup unpacked and
- * set to replay the WAL to a chosen time; the WAL fetch command PostgreSQL calls; and the tar
- * reader refusing a path that would leave its folder. The point-in-time replay itself needs a
+ * set to replay the WAL to a chosen time; and the WAL fetch command PostgreSQL calls. The point-in-time replay itself needs a
  * PostgreSQL this test may stop and start: it runs in Windows CI (restore.ps1).
  */
 import { spawnSync } from 'node:child_process';
@@ -17,7 +16,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   archiveWal,
   encrypt,
-  extractTar,
   latestDump,
   makeBackupKeys,
   prepareBaseRestore,
@@ -201,17 +199,6 @@ describe('a point in time from a base backup and the WAL (§5.3, §5.4)', () => 
         restoreCommand: 'x',
       }),
     ).rejects.toThrow(/No base backup on this drive from before that time/);
-  });
-
-  it('a tar entry that would leave its folder is refused', () => {
-    const header = Buffer.alloc(512);
-    header.write('../evil.txt', 0);
-    header.write('0000644\0', 100);
-    header.write('00000000004\0', 124);
-    header.write('0', 156);
-    const tar = Buffer.concat([header, Buffer.from('evil'.padEnd(512, '\0')), Buffer.alloc(1024)]);
-    expect(() => extractTar(tar, join(work, 'tar-target'))).toThrow(/outside its folder/);
-    expect(existsSync(join(work, 'evil.txt'))).toBe(false);
   });
 
   it('the WAL fetch command opens an archived segment with the owner key; a missing one ends the replay', async () => {

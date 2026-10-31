@@ -20,6 +20,7 @@ import {
   integrityChecks,
   makeBackupKeys,
   PRIVATE_KEY_FILE,
+  prepareBaseRestore,
   pruneBackups,
   runBaseBackup,
   runDump,
@@ -201,6 +202,17 @@ describe('the two drives (BACKUP_RECOVERY.md §3)', () => {
     expect(r.status, String(r.error)).toBe('succeeded');
     const tar = gunzipSync(await decrypt(keyText, readFileSync(r.path ?? '')));
     expect(tar.includes(Buffer.from('PG_VERSION'))).toBe(true);
+    // And it unpacks into a whole data folder, as a point-in-time restore does (step 7.3).
+    const prepared = await prepareBaseRestore({
+      driveRoot: drive,
+      keyText,
+      dataDir: join(work, 'pgdata-from-base'),
+      target: 'latest',
+      restoreCommand: 'x',
+    });
+    expect(prepared.files).toBeGreaterThan(500);
+    expect(readFileSync(join(work, 'pgdata-from-base', 'PG_VERSION'), 'utf8').trim()).toBe('17');
+    expect(readFileSync(join(work, 'pgdata-from-base', 'global', 'pg_control')).length).toBe(8192);
     expect(await baseBackupDue(fx.pool, drive)).toBe(false);
   }, 300_000);
 });
