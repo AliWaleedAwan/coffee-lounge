@@ -9,18 +9,24 @@
  *   printer-add         --name "<printer>" --connection spooler|tcp --address <queue name or host:port>
  *                       (also makes it the kitchen station's printer)
  *   test-print          --name "<printer>"                         (W-4: the worker prints a test page)
+ *   backup-keygen       --out <owner's USB folder>                 (step 7.1: the backup key pair, once;
+ *                       the public key goes to BACKUP_PUBLIC_KEY_FILE)
+ *   backup-now                                                     (a dump now, as the nightly one)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
  * Usage (from apps/server): corepack pnpm admin <command> [options]
  */
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { lineReader, secret } from './input.ts';
 import { loadConfig } from '../platform/config.ts';
 import { createPool } from '../platform/db/pool.ts';
 import { withTransaction } from '../platform/db/tx.ts';
 import { AppError } from '../platform/errors.ts';
+import { makeBackupKeys, PRIVATE_KEY_FILE, runDump } from '../modules/backup/index.ts';
 import { requestPrint } from '../modules/printing/index.ts';
+import { DEV_FILES_DIR } from '../platform/paths.ts';
 import {
   createOwner,
   createRegistrationCode,
@@ -40,6 +46,7 @@ const { positionals, values } = parseArgs({
     ownership: { type: 'string' },
     connection: { type: 'string' },
     address: { type: 'string' },
+    out: { type: 'string' },
   },
 });
 
@@ -128,9 +135,37 @@ try {
       });
     });
     console.log(`Test print ${String(jobId)} queued; the worker service prints it.`);
+  } else if (command === 'backup-keygen') {
+    const publicFile = required(
+      config.BACKUP_PUBLIC_KEY_FILE,
+      'BACKUP_PUBLIC_KEY_FILE in the config',
+    );
+    const recipient = await makeBackupKeys(required(values.out, 'out'), publicFile);
+    console.log(
+      `Backup key made. Private key: ${join(required(values.out, 'out'), PRIVATE_KEY_FILE)} (keep it, print it, take it away from this PC). Public key ${recipient} in ${publicFile}.`,
+    );
+  } else if (command === 'backup-now') {
+    const r = await runDump(
+      pool,
+      {
+        driveRoot: required(config.BACKUP_DRIVE_PATH, 'BACKUP_DRIVE_PATH in the config'),
+        publicKeyFile: required(
+          config.BACKUP_PUBLIC_KEY_FILE,
+          'BACKUP_PUBLIC_KEY_FILE in the config',
+        ),
+        pgBinDir: config.PG_BIN_DIR,
+        connectionString: config.DATABASE_URL,
+        filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+      },
+      new Date(),
+    );
+    if (r.status !== 'succeeded') throw new Error(`backup failed: ${String(r.error)}`);
+    console.log(
+      `Backup written: ${String(r.path)} (${String(r.sizeBytes)} bytes, ${String(r.filesCopied)} files copied).`,
+    );
   } else {
     console.log(
-      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print (see the header of src/cli/admin.ts)',
+      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now (see the header of src/cli/admin.ts)',
     );
     process.exitCode = 2;
   }

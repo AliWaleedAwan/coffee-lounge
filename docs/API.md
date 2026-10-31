@@ -206,7 +206,8 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /print-jobs/{jobId}/retry`, `POST /printers/{id}/retry-all` | `kitchen.reprint` | Back to the queue (same job, not a reprint); printed in order, once |
 | `POST /print-jobs/{jobId}/resolve-uncertain` | `kitchen.reprint` | `printed` (mark sent) or `reprint` (new labelled copy) |
 | `POST /tickets/{ticketId}/reprint` | `kitchen.reprint` | K5: a new copy labelled `REPRINT #n` |
-| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups, disk, internet (§5.8) |
+| `GET /system/health` | `system.health` | Services, DB, worker heartbeat, printer, backups (drive and free space, last dump and its error, WAL archiving, the problem in words; step 7.1), disk, internet (§5.8) |
+| `GET /system/backup-status` | session | Step 7.1 (AT-80): `{problem, message, since}` for the banner on every device; `problem` is `drive_missing` (5 minutes without the drive), `archive_failing`, `dump_failed`, `dump_overdue` (no dump for 26 hours) or null; always null where backups are not set up |
 | `GET /branding` | any signed-in staff | `{shopName, primary}` for every screen's header and buttons (step 3.12) |
 | `GET /settings` | `settings.manage` | Every owner setting with its value, `version`, label, group, hint and whether it can be changed here (time zone and business-day cutoff are set at installation), and the branding with its `version` |
 | `PATCH /settings/{key}` | `settings.manage` | `{value, expectedVersion}`; checked against the setting's rule, audited (`settings.update` with before and after), effective at once (AT-130). Money and control settings (cash rounding, stock-count approval thresholds; `financial: true` in the list) also need the owner-only `settings.financial` (`403`, RBAC review F-4). List settings (`refunds.reasons`, `assets.categories`, `assets.locations`, step 5.6) take 1–30 names, each once |

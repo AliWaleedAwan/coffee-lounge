@@ -42,6 +42,11 @@ jobs:
         run: |
           corepack enable
           corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: PostgreSQL 17 client tools for the backup tests (pg_dump must match the server)
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          echo "PG_BIN_DIR=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
       - name: Audit the production dependencies (fails on high or critical advisories; P6-3)
         run: corepack pnpm audit --prod --audit-level high
       - name: Verify (format, lint, types, architecture, traceability, tests)
@@ -84,7 +89,10 @@ jobs:
         run: |
           $env:CL_CA_PASSPHRASE = 'ci-' + [guid]::NewGuid().ToString('N')
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
-          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb") -Wait -PassThru
+          # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
+          New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
+          icacls 'C:\cl-test-drive' /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb", '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
           Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
       - name: Check the counter app's fuses
@@ -98,7 +106,7 @@ jobs:
           & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
-        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb"
+        run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
       - name: Uninstall keeps the data; reinstalling picks it up
         run: |
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
@@ -109,9 +117,9 @@ jobs:
           if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge') { throw 'Add/Remove Programs entry left behind' }
           if (-not (Test-Path 'C:\ProgramData\CoffeeLounge\pgdata\PG_VERSION')) { throw 'database removed' }
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
-          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings') -Wait -PassThru
+          $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
-          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1
+          powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -BackupDrive 'C:\cl-test-drive'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $url = (Get-Content 'C:\ProgramData\CoffeeLounge\config\server.env' | Where-Object { $_ -like 'DATABASE_URL=*' }).Substring(13)
           $env:PGPASSWORD = ([Uri]$url).UserInfo.Split(':')[1]

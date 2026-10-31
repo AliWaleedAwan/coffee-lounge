@@ -174,6 +174,7 @@ describe('job queue', () => {
   it('schedules every task with a handler: housekeeping, printing, order and stock alerts, the nightly checks and the day-end', () => {
     const tasks = makeTasks(fx.pool);
     expect(Object.keys(tasks).sort()).toEqual([
+      'backup:dump',
       'ledger:reconcile',
       'mail:schedule_scan',
       'mail:send',
@@ -218,6 +219,7 @@ describe('job queue', () => {
       'ledger:reconcile': '15 4 * * *',
       'privacy:redact_delivery': '20 4 * * *',
       'reports:day_end': '25 4 * * *',
+      'backup:dump': '35 4 * * *',
       'mail:schedule_scan': '*/5 * * * *',
       'mail:send': '* * * * *',
     });

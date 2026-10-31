@@ -18,6 +18,7 @@ import {
 import { HealthMonitor, parseInternetTarget } from './platform/health.ts';
 import { LiveHub } from './platform/live-hub.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
+import { BackupWatch } from './modules/backup/index.ts';
 import { SERVER_VERSION } from './platform/version.ts';
 import { webAppAvailable } from './platform/web-app.ts';
 import { registerCustomerRoutes } from './customer-routes.ts';
@@ -54,6 +55,11 @@ const health = new HealthMonitor({
   version: SERVER_VERSION,
   ...(config.DISK_CHECK_PATH ? { diskPath: config.DISK_CHECK_PATH } : {}),
   ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
+  backup: new BackupWatch({
+    db: pool,
+    driveRoot: config.BACKUP_DRIVE_PATH,
+    publicKeyFile: config.BACKUP_PUBLIC_KEY_FILE,
+  }),
   internetTarget: parseInternetTarget(config.INTERNET_CHECK_TARGET),
 });
 const webRoot = config.WEB_DIST_DIR ?? DEV_WEB_DIST;

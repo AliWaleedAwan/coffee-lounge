@@ -19,6 +19,8 @@ param(
   [int]$PgPort = 5432,
   # Windows account the counter app starts for at login (H-9, H-11).
   [string]$CounterUser = 'Counter',
+  # The backup drive's root (BACKUP_RECOVERY.md §3: the CL-BACKUP drive at B:\). Tests use a folder.
+  [string]$BackupDrive = 'B:\',
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
   [switch]$Unattended
@@ -225,6 +227,7 @@ if (-not (Test-Path $mailKey)) {
   try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
   Set-Content -Path $mailKey -Encoding ASCII -Value ([Convert]::ToBase64String($keyBytes))
 }
+$backupPub = Join-Path $Config 'backup.pub'
 $envFile = Join-Path $Config 'server.env'
 Set-Content -Path $envFile -Encoding ASCII -Value @"
 DATABASE_URL=postgres://cl_service:$servicePassword@127.0.0.1:$PgPort/$Database
@@ -235,12 +238,47 @@ STAFF_TLS_CERT=$Tls\server.pem
 STAFF_TLS_KEY=$Tls\server.key
 WEB_DIST_DIR=$InstallDir\web
 DISK_CHECK_PATH=$env:SystemDrive\
-BACKUP_DRIVE_PATH=B:\
+BACKUP_DRIVE_PATH=$BackupDrive
+BACKUP_PUBLIC_KEY_FILE=$backupPub
+PG_BIN_DIR=$PgDir\bin
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
 MAIL_KEY_FILE=$mailKey
 LOG_LEVEL=info
 "@
+
+# ------------------------------------------------------------------ 6b. backups (BACKUP_RECOVERY.md §1; step 7.1)
+# The backup key pair, once: the private key goes to the owner's USB key with the CA key
+# and is never kept here; this PC keeps only the public key to encrypt with.
+if (-not (Test-Path $backupPub)) {
+  if ($CaExportDir) {
+    & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') backup-keygen --out $CaExportDir
+    if ($LASTEXITCODE -ne 0) { throw 'Could not make the backup key' }
+    Write-Step "Backup key made: the private key is on $CaExportDir. Print it and keep both away from this PC."
+  } else {
+    Write-Step 'No backup key yet: run the installer again with -CaExportDir <owner USB> to make one.'
+  }
+}
+if (Test-Path $backupPub) {
+  # WAL archiving every 5 minutes at most, to the backup drive, through wal-archive.js
+  # (as the PostgreSQL service account: it needs only the public key).
+  # No backslash right before a closing quote: Windows would read it as an escaped quote.
+  $driveArg = $BackupDrive.TrimEnd('\') + '\.'
+  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + (Join-Path $BackupDrive 'CoffeeLounge\wal') + '" --key "' + $backupPub + '" "%p" "%f"'
+  $superForArchive = Unprotect-FromFile $superSecret
+  Invoke-Sql 'postgres' $superForArchive 'postgres' @"
+ALTER SYSTEM SET archive_mode = 'on';
+ALTER SYSTEM SET archive_timeout = '300';
+ALTER SYSTEM SET archive_command = '$($walCmd.Replace("'", "''"))';
+"@ @($superForArchive)
+  Restart-Service -Name $PgService
+  for ($i = 0; $i -lt 30; $i++) {
+    & (Join-Path $PgDir 'bin\pg_isready.exe') -h 127.0.0.1 -p $PgPort | Out-Null
+    if ($LASTEXITCODE -eq 0) { break }
+    Start-Sleep -Seconds 2
+  }
+  Write-Step "WAL archiving to $BackupDrive every 5 minutes at most; nightly backup at 04:35"
+}
 
 # ------------------------------------------------------------------ 7. services
 $servicesDir = Join-Path $InstallDir 'services'
@@ -261,6 +299,8 @@ foreach ($s in $AppServices) {
 }
 $serviceAccounts = $AppServices | ForEach-Object { "NT SERVICE\$_" }
 Set-RestrictedAcl -Path $Config -Read $serviceAccounts
+# PostgreSQL's own account reads the backup public key for WAL archiving (nothing secret).
+if (Test-Path $backupPub) { Set-RestrictedAcl -Path $backupPub -Read ($serviceAccounts + @('NT AUTHORITY\NETWORK SERVICE')) }
 Set-RestrictedAcl -Path (Join-Path $DataDir 'logs') -Modify $serviceAccounts
 Set-RestrictedAcl -Path (Join-Path $DataDir 'files') -Modify $serviceAccounts
 foreach ($s in $AppServices) {

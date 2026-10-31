@@ -8,6 +8,7 @@ import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-route
 import { api, ApiError } from '../api/client.ts';
 import { permissionSet, recentUsers, roleLabel, useMe, type Me } from '../auth/session.ts';
 import { savedBranding, useBranding } from '../branding/brand.ts';
+import { BackupBanner } from '../connection/BackupBanner.tsx';
 import { ConnectionBanner } from '../connection/ConnectionBanner.tsx';
 import { LiveUpdates } from '../live/LiveUpdates.tsx';
 import { PrinterBanner } from './printing/PrinterBanner.tsx';
@@ -116,6 +117,7 @@ function Shell({ me }: { me: Me }) {
       </header>
       <div className="status-banners">
         <ConnectionBanner />
+        <BackupBanner canSeeHealth={permissions.has('system.health')} />
         <PrinterBanner
           canSee={permissions.has('kitchen.read')}
           canFix={permissions.has('kitchen.reprint')}

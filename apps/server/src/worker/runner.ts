@@ -7,6 +7,7 @@ import type pg from 'pg';
 import { redactDeliveryDetails } from '../modules/delivery/index.ts';
 import { scanStaleSessions } from '../modules/floor/index.ts';
 import { raiseLedgerAlerts } from '../modules/ledger/index.ts';
+import { runDump, type BackupConfig } from '../modules/backup/index.ts';
 import { scanSchedules, sendDue, type MailDeps } from '../modules/mail/index.ts';
 import { closeDay } from '../modules/reports/index.ts';
 import {
@@ -36,6 +37,8 @@ export interface TaskOptions {
   logDir?: string | undefined;
   /** The mailbox key (MAIL_KEY_FILE); without it, scheduled e-mails wait in the queue. */
   mail?: MailDeps | undefined;
+  /** Where and how to back up (step 7.1); without it, no nightly dump. */
+  backup?: BackupConfig | undefined;
 }
 
 export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
@@ -132,6 +135,16 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
       const made = await closeDay(pool, new Date());
       helpers.logger.info(`day-end for ${made.date} (${made.generatedBy})`);
     },
+    // BACKUP_RECOVERY.md §1: the nightly encrypted dump, after the day-end (P6-9).
+    'backup:dump': async (_payload, helpers) => {
+      if (!options.backup) return;
+      const r = await runDump(pool, options.backup, new Date());
+      if (r.status === 'succeeded') {
+        helpers.logger.info(
+          `backup: ${String(r.sizeBytes)} bytes to ${String(r.path)}; ${String(r.filesCopied)} files copied`,
+        );
+      } else helpers.logger.error(`backup failed: ${String(r.error)}`);
+    },
     // D-20: each completed period of a schedule, made once, its e-mails queued.
     'mail:schedule_scan': async (_payload, helpers) => {
       const { made, failed } = await scanSchedules(pool, new Date());
@@ -153,7 +166,7 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
 
 /**
  * Hourly housekeeping, minutes staggered; waiting and unpaid takeaway orders every minute; stale sessions every 10 minutes; the expiry scan (04:05), the stock check
- * (04:10), the ledger check (04:15), the delivery redaction (04:20) and the day-end report (04:25) run nightly; schedules are looked at every 5 minutes and the e-mail queue every minute just after the business-day cutoff (04:00 shop time, D-22).
+ * (04:10), the ledger check (04:15), the delivery redaction (04:20) the day-end report (04:25) and the encrypted backup (04:35) run nightly; schedules are looked at every 5 minutes and the e-mail queue every minute just after the business-day cutoff (04:00 shop time, D-22).
  */
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
@@ -170,6 +183,7 @@ export const CRONTAB = [
   '15 4 * * * ledger:reconcile',
   '20 4 * * * privacy:redact_delivery',
   '25 4 * * * reports:day_end',
+  '35 4 * * * backup:dump',
   '*/5 * * * * mail:schedule_scan',
   '* * * * * mail:send',
 ].join('\n');
@@ -182,6 +196,7 @@ export interface WorkerRunOptions {
   taskList?: TaskList;
   logDir?: string | undefined;
   mail?: MailDeps | undefined;
+  backup?: BackupConfig | undefined;
   crontab?: string;
 }
 
@@ -194,7 +209,12 @@ export function startRunner(options: WorkerRunOptions): Promise<Runner> {
       noHandleSignals: true,
       ...(options.logger ? { logger: options.logger } : {}),
     },
-    options.taskList ?? makeTasks(options.pool, { logDir: options.logDir, mail: options.mail }),
+    options.taskList ??
+      makeTasks(options.pool, {
+        logDir: options.logDir,
+        mail: options.mail,
+        backup: options.backup,
+      }),
     parseCrontab(options.crontab ?? CRONTAB),
   );
 }

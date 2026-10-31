@@ -7,7 +7,8 @@ param(
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
   [string]$CaExportDir = '',
   [int]$PgPort = 5432,
-  [string]$CounterUser = 'Counter'
+  [string]$CounterUser = 'Counter',
+  [string]$BackupDrive = 'B:\'
 )
 . (Join-Path $PSScriptRoot '..\lib.ps1')
 
@@ -254,6 +255,39 @@ Check 'a crashed database process is recovered by PostgreSQL and the API carries
   # Evidence only: how PostgreSQL logs a killed child depends on its exit code.
   Get-Content $log.FullName -Tail 8 | ForEach-Object { Write-Step "  pg log: $_" }
   ((Get-Service 'coffeelounge-api').Status -eq 'Running') -and ((Get-Service 'coffeelounge-worker').Status -eq 'Running')
+}
+
+Check 'backups: WAL segments are archived to the drive, encrypted, by PostgreSQL itself (step 7.1)' {
+  $super = Unprotect-FromFile (Join-Path $DataDir 'config\postgres.secret')
+  $env:PGPASSWORD = $super
+  try {
+    & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d coffee_lounge -At -c 'SELECT pg_switch_wal()' | Out-Null
+  } finally { Remove-Item Env:\PGPASSWORD }
+  $wal = Join-Path $BackupDrive 'CoffeeLounge\wal'
+  for ($i = 0; $i -lt 30; $i++) {
+    $files = @(Get-ChildItem $wal -Filter '*.gz.age' -ErrorAction SilentlyContinue)
+    if ($files.Count -gt 0) { break }
+    Start-Sleep -Seconds 2
+  }
+  if ($files.Count -eq 0) {
+    $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
+    Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" }
+    throw "no archived segment in $wal"
+  }
+  $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($files[0].FullName), 0, 21)
+  if ($head -ne 'age-encryption.org/v1') { throw "not an age file: $head" }
+  $true
+}
+Check 'backups: a dump made as the service login, encrypted, the private key not on this PC (step 7.1)' {
+  $out = & $Node "--env-file=$(Join-Path $DataDir 'config\server.env')" (Join-Path $InstallDir 'app\dist\admin.js') backup-now 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "backup-now: $out" }
+  $dump = Get-ChildItem (Join-Path $BackupDrive 'CoffeeLounge\dumps') -Filter '*.dump.age' | Select-Object -First 1
+  $bytes = [IO.File]::ReadAllBytes($dump.FullName)
+  if ([Text.Encoding]::ASCII.GetString($bytes).Contains('PGDMP')) { throw 'the dump is not encrypted' }
+  $left = Get-ChildItem -Recurse -ErrorAction SilentlyContinue -Path $DataDir, $InstallDir -Filter 'coffee-lounge-backup-key.txt'
+  if ($left) { throw "private key found on this PC: $($left.FullName -join ', ')" }
+  if ($CaExportDir -and -not (Test-Path (Join-Path $CaExportDir 'coffee-lounge-backup-key.txt'))) { throw 'private key not exported' }
+  $true
 }
 
 if ($script:Failures.Count -gt 0) {

@@ -11,7 +11,16 @@ export interface SystemHealth {
   database: 'ok' | 'unreachable';
   worker: { status: 'ok' | 'stale' | 'down'; lastHeartbeatAt: string | null };
   printer: { status: 'ok' | 'error' | 'unknown'; openJobs: number };
-  backup: { lastSuccessAt: string | null; lastVerifiedAt: string | null; usbDrivePresent: boolean };
+  backup: {
+    lastSuccessAt: string | null;
+    lastVerifiedAt: string | null;
+    usbDrivePresent: boolean;
+    configured?: boolean;
+    driveFreeBytes?: number | null;
+    lastDump?: { at: string; status: string; error: string | null } | null;
+    archiver?: { enabled: boolean; lastArchivedAt: string | null; lastFailedAt: string | null };
+    message?: string | null;
+  };
   disk: { freePercent: number | null; status: 'ok' | 'warning' | 'critical' | 'unknown' };
   internet: 'online' | 'offline';
   warnings: Record<string, string>;
@@ -69,8 +78,25 @@ export function healthRows(h: SystemHealth): Row[] {
       label: 'Backup drive',
       value: h.backup.usbDrivePresent ? 'Plugged in' : 'Missing',
       tone: h.backup.usbDrivePresent ? 'ok' : 'warning',
-      note: `Last backup: ${when(h.backup.lastSuccessAt)}`,
+      note:
+        h.backup.driveFreeBytes === null || h.backup.driveFreeBytes === undefined
+          ? `Last backup: ${when(h.backup.lastSuccessAt)}`
+          : `Last backup: ${when(h.backup.lastSuccessAt)} · ${(h.backup.driveFreeBytes / 1e9).toFixed(0)} GB free`,
     },
+    ...(h.backup.configured
+      ? [
+          {
+            label: 'Backups',
+            value: h.backup.message ? 'Problem' : 'Working',
+            tone: (h.backup.message ? 'danger' : 'ok') as Tone,
+            note:
+              h.backup.message ??
+              (h.backup.archiver?.enabled
+                ? `Latest changes copied: ${when(h.backup.archiver.lastArchivedAt ?? null)}`
+                : 'Continuous copying is off'),
+          },
+        ]
+      : []),
     {
       label: 'Printer',
       value: { ok: 'Ready', error: 'Problem', unknown: 'Not set up yet' }[h.printer.status],
