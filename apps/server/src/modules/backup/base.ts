@@ -52,7 +52,12 @@ export async function runBaseBackup(
       rmSync(scratch, { recursive: true, force: true });
     }
     const sealed = await encrypt(readRecipient(c.publicKeyFile), gzipSync(tar));
-    const dir = join(backupRoot(c.driveRoot), 'base', stampOf(at));
+    // To the second: a restore must pick a base backup that ended before its point in time.
+    const dir = join(
+      backupRoot(c.driveRoot),
+      'base',
+      `${stampOf(at)}${String(at.getUTCSeconds()).padStart(2, '0')}`,
+    );
     mkdirSync(dir, { recursive: true });
     const path = join(dir, 'base.tar.gz.age');
     writeDurably(path, sealed);

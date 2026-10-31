@@ -53,7 +53,13 @@ try {
   Set-RestrictedAcl -Path $PgData -Modify @('NT AUTHORITY\NETWORK SERVICE')
   Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M', '/T', '/Q') | Out-Null
   Write-Step 'Starting PostgreSQL to replay the archived changes'
-  Start-Service -Name $PgService
+  try {
+    Start-Service -Name $PgService
+  } catch {
+    $log = Get-ChildItem (Join-Path $PgData 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($log) { Get-Content $log.FullName -Tail 40 | ForEach-Object { Write-Step "  pg log: $_" } }
+    throw
+  }
   $super = Unprotect-FromFile (Join-Path $DataDir 'config\postgres.secret')
   $env:PGPASSWORD = $super
   try {

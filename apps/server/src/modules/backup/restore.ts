@@ -94,11 +94,13 @@ export function baseBackups(driveRoot: string): { at: Date; file: string }[] {
   const dir = join(backupRoot(driveRoot), 'base');
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((d) => /^\d{8}-\d{4}$/.test(d) && existsSync(join(dir, d, 'base.tar.gz.age')))
+    .filter((d) => /^\d{8}-\d{4}(\d{2})?$/.test(d) && existsSync(join(dir, d, 'base.tar.gz.age')))
     .sort()
     .map((d) => ({
+      // Folder names are the start, to the second (minute-only names count as the end of that
+      // minute), so a restore never picks a base backup that ended after its point in time.
       at: new Date(
-        `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${d.slice(9, 11)}:${d.slice(11, 13)}:00Z`,
+        `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${d.slice(9, 11)}:${d.slice(11, 13)}:${d.length === 15 ? d.slice(13, 15) : '59'}Z`,
       ),
       file: join(dir, d, 'base.tar.gz.age'),
     }));
