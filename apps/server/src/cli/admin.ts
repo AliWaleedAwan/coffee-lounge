@@ -256,7 +256,7 @@ try {
       keyText,
       dataDir: required(values.to, 'to'),
       target,
-      restoreCommand: `"${process.execPath}" "${fetchScript}" --dir "${join(backupRoot(driveRoot), 'wal')}" --key "${keyFile}" "%f" "%p"`,
+      restoreCommand: `"${process.execPath}" "${fetchScript}" --dir "${config.BACKUP_WAL_DIR ?? join(backupRoot(driveRoot), 'wal')}" --key "${keyFile}" "%f" "%p"`,
     });
     console.log(
       `Unpacked ${prepared.baseBackup} (${String(prepared.files)} files); PostgreSQL will replay the WAL to ${time} when it starts.`,

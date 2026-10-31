@@ -81,13 +81,18 @@ export async function pruneBackups(db: Queryable, driveRoot: string): Promise<Pr
   const walDir = join(root, 'wal');
   if (oldest && existsSync(walDir)) {
     const before = oldest.started_at.getTime() - WAL_MARGIN_MS;
-    for (const name of readdirSync(walDir)) {
-      const file = join(walDir, name);
-      if (statSync(file).mtimeMs < before) {
-        rmSync(file, { force: true });
-        if (name.endsWith('.gz.age')) result.walFiles += 1;
+    // One folder per database cluster (step 7.3), and the older flat layout.
+    const pruneWal = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const file = join(dir, entry.name);
+        if (entry.isDirectory()) pruneWal(file);
+        else if (statSync(file).mtimeMs < before) {
+          rmSync(file, { force: true });
+          if (entry.name.endsWith('.gz.age')) result.walFiles += 1;
+        }
       }
-    }
+    };
+    pruneWal(walDir);
   }
   return result;
 }

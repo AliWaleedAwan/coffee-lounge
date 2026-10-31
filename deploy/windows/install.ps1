@@ -296,7 +296,16 @@ if (Test-Path $backupPub) {
   # (as the PostgreSQL service account: it needs only the public key).
   # No backslash right before a closing quote: Windows would read it as an escaped quote.
   $driveArg = $BackupDrive.TrimEnd('\') + '\.'
-  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + (Join-Path $BackupDrive 'CoffeeLounge\wal') + '" --key "' + $backupPub + '" "%p" "%f"'
+  # Each database cluster archives into its own folder (its system id): a replacement PC's new
+  # cluster starts its WAL names again, and must never meet the old PC's files (step 7.3).
+  $env:PGPASSWORD = $superPassword
+  try { $sysId = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c 'SELECT system_identifier FROM pg_control_system()').Trim() }
+  finally { Remove-Item Env:\PGPASSWORD }
+  if ($sysId -notmatch '^\d+$') { throw "Could not read the database system id: $sysId" }
+  $walDir = Join-Path $BackupDrive "CoffeeLounge\wal\$sysId"
+  $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_DIR=*' }
+  Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_DIR=$walDir")
+  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + $walDir + '" --key "' + $backupPub + '" "%p" "%f"'
   $superForArchive = Unprotect-FromFile $superSecret
   Invoke-Sql 'postgres' $superForArchive 'postgres' @"
 ALTER SYSTEM SET archive_mode = 'on';

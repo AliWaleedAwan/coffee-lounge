@@ -263,12 +263,18 @@ Check 'backups: WAL segments are archived to the drive, encrypted, by PostgreSQL
   try {
     & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d coffee_lounge -At -c 'SELECT pg_switch_wal()' | Out-Null
   } finally { Remove-Item Env:\PGPASSWORD }
-  $wal = Join-Path $BackupDrive 'CoffeeLounge\wal'
-  for ($i = 0; $i -lt 30; $i++) {
-    $files = @(Get-ChildItem $wal -Filter '*.gz.age' -ErrorAction SilentlyContinue)
-    if ($files.Count -gt 0) { break }
-    Start-Sleep -Seconds 2
-  }
+  $wal = ((Get-Content (Join-Path $DataDir 'config\server.env')) | Where-Object { $_ -like 'BACKUP_WAL_DIR=*' }).Substring('BACKUP_WAL_DIR='.Length)
+  # The archiver itself must say the segment just switched went out, not merely that old files exist.
+  $env:PGPASSWORD = $super
+  try {
+    for ($i = 0; $i -lt 30; $i++) {
+      $ok = & (Join-Path $PgDir 'bin\psql.exe') -h 127.0.0.1 -p $PgPort -U postgres -d coffee_lounge -At -c "SELECT last_archived_time > now() - interval '2 minutes' AND (last_failed_time IS NULL OR last_failed_time < last_archived_time) FROM pg_stat_archiver"
+      if ($ok -eq 't') { break }
+      Start-Sleep -Seconds 2
+    }
+  } finally { Remove-Item Env:\PGPASSWORD }
+  if ($ok -ne 't') { throw 'the archiver did not archive the switched segment (or keeps failing)' }
+  $files = @(Get-ChildItem $wal -Filter '*.gz.age' -ErrorAction SilentlyContinue)
   if ($files.Count -eq 0) {
     $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
     Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" }

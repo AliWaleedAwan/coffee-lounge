@@ -253,7 +253,8 @@ describe('retention (BACKUP_RECOVERY.md §2)', () => {
     for (let n = 0; n < 3; n++)
       await add('base_backup', join(root, 'base', `b${String(n)}`, 'base.tar.gz.age'), day(n * 7));
     mkdirSync(join(root, 'wal'), { recursive: true });
-    const oldWal = join(root, 'wal', '000000010000000000000001.gz.age');
+    const oldWal = join(root, 'wal', '7300000000000000001', '000000010000000000000001.gz.age');
+    mkdirSync(join(root, 'wal', '7300000000000000001'), { recursive: true });
     const newWal = join(root, 'wal', '000000010000000000000099.gz.age');
     writeFileSync(oldWal, 'x');
     writeFileSync(newWal, 'x');

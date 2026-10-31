@@ -39,6 +39,8 @@ const schema = z
     MAIL_KEY_FILE: z.string().min(1).optional(),
     /** The backup public key (step 7.1; installed: `C:\ProgramData\CoffeeLounge\config\backup.pub`). Unset: no backups. */
     BACKUP_PUBLIC_KEY_FILE: z.string().min(1).optional(),
+    /** This cluster's own WAL folder on the drive (`B:\\CoffeeLounge\\wal\\<system id>`; step 7.3). Unset: `wal`. */
+    BACKUP_WAL_DIR: z.string().min(1).optional(),
     /** The backup login with REPLICATION, for base backups (step 7.2). Unset: no base backups. */
     BACKUP_REPLICATION_URL: z
       .string()
