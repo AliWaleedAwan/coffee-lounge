@@ -79,6 +79,8 @@ if (!stop.signal.aborted) {
             pgBinDir: config.PG_BIN_DIR,
             connectionString: config.DATABASE_URL,
             filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+            replicationUrl: config.BACKUP_REPLICATION_URL,
+            restoreTestUrl: config.RESTORE_TEST_DATABASE_URL,
           },
         }
       : {}),

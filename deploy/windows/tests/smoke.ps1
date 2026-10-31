@@ -290,6 +290,20 @@ Check 'backups: a dump made as the service login, encrypted, the private key not
   $true
 }
 
+Check 'backups: a base backup through the backup login, and a test restore that passes every integrity check (step 7.2)' {
+  $envFile = Join-Path $DataDir 'config\server.env'
+  $out = & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') backup-base 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "backup-base: $out" }
+  $base = @(Get-ChildItem -Recurse (Join-Path $BackupDrive 'CoffeeLounge\base') -Filter 'base.tar.gz.age')
+  if ($base.Count -eq 0) { throw 'no base backup written' }
+  $out = & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') backup-now --test-restore 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "backup-now --test-restore: $out" }
+  if (-not ("$out" -match 'every integrity check passed')) { throw "no test restore: $out" }
+  $id = Get-Content -Raw (Join-Path $BackupDrive 'CoffeeLounge\drive.json') | ConvertFrom-Json
+  if ($id.label -ne 'A') { throw "drive label: $($id.label)" }
+  $true
+}
+
 if ($script:Failures.Count -gt 0) {
   Write-Step "$($script:Failures.Count) check(s) failed: $($script:Failures -join '; ')"
   exit 1

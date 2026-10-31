@@ -7,7 +7,14 @@ import type pg from 'pg';
 import { redactDeliveryDetails } from '../modules/delivery/index.ts';
 import { scanStaleSessions } from '../modules/floor/index.ts';
 import { raiseLedgerAlerts } from '../modules/ledger/index.ts';
-import { runDump, type BackupConfig } from '../modules/backup/index.ts';
+import {
+  baseBackupDue,
+  copyOffsite,
+  pruneBackups,
+  runBaseBackup,
+  runDump,
+  type BackupConfig,
+} from '../modules/backup/index.ts';
 import { scanSchedules, sendDue, type MailDeps } from '../modules/mail/index.ts';
 import { closeDay } from '../modules/reports/index.ts';
 import {
@@ -37,8 +44,8 @@ export interface TaskOptions {
   logDir?: string | undefined;
   /** The mailbox key (MAIL_KEY_FILE); without it, scheduled e-mails wait in the queue. */
   mail?: MailDeps | undefined;
-  /** Where and how to back up (step 7.1); without it, no nightly dump. */
-  backup?: BackupConfig | undefined;
+  /** Where and how to back up (steps 7.1, 7.2); without it, no backups. */
+  backup?: (BackupConfig & { replicationUrl?: string | undefined }) | undefined;
 }
 
 export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
@@ -138,12 +145,49 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
     // BACKUP_RECOVERY.md §1: the nightly encrypted dump, after the day-end (P6-9).
     'backup:dump': async (_payload, helpers) => {
       if (!options.backup) return;
-      const r = await runDump(pool, options.backup, new Date());
+      // Sundays (shop clock): the dump is also restored into the scratch database and checked.
+      const now = new Date();
+      const sunday = new Date(now.getTime() + 5 * 3600_000).getUTCDay() === 0;
+      const r = await runDump(pool, options.backup, now, { testRestore: sunday });
+      if (r.restoreTest && !r.restoreTest.ok)
+        helpers.logger.error(`test restore failed: ${r.restoreTest.failed.join('; ')}`);
       if (r.status === 'succeeded') {
         helpers.logger.info(
           `backup: ${String(r.sizeBytes)} bytes to ${String(r.path)}; ${String(r.filesCopied)} files copied`,
         );
       } else helpers.logger.error(`backup failed: ${String(r.error)}`);
+    },
+    // BACKUP_RECOVERY.md §1: the weekly base backup (Monday 04:50).
+    'backup:base': async (_payload, helpers) => {
+      const b = options.backup;
+      if (!b?.replicationUrl) return;
+      const r = await runBaseBackup(pool, { ...b, replicationUrl: b.replicationUrl }, new Date());
+      if (r.status === 'succeeded') helpers.logger.info(`base backup: ${String(r.path)}`);
+      else helpers.logger.error(`base backup failed: ${String(r.error)}`);
+    },
+    // §3: a swapped or new drive gets its base backup; then old backups on it are pruned (§2).
+    'backup:watch': async (_payload, helpers) => {
+      const b = options.backup;
+      if (!b) return;
+      if (b.replicationUrl && (await baseBackupDue(pool, b.driveRoot))) {
+        const r = await runBaseBackup(pool, { ...b, replicationUrl: b.replicationUrl }, new Date());
+        helpers.logger.info(`new drive: base backup ${r.status}${r.error ? `: ${r.error}` : ''}`);
+      }
+      const pruned = await pruneBackups(pool, b.driveRoot);
+      if (pruned.dumps + pruned.baseBackups + pruned.walFiles > 0) {
+        helpers.logger.info(
+          `pruned ${String(pruned.dumps)} dumps, ${String(pruned.baseBackups)} base backups, ${String(pruned.walFiles)} WAL files`,
+        );
+      }
+    },
+    // D-23: the newest dump to the owner's bucket when the internet is up.
+    'backup:offsite': async (_payload, helpers) => {
+      if (!options.backup || !options.mail) return;
+      const outcome = await copyOffsite(pool, {
+        keyFile: options.mail.keyFile,
+        ...(options.mail.tls ? { tls: options.mail.tls } : {}),
+      });
+      if (outcome.startsWith('copied')) helpers.logger.info(`off-site: ${outcome}`);
     },
     // D-20: each completed period of a schedule, made once, its e-mails queued.
     'mail:schedule_scan': async (_payload, helpers) => {
@@ -184,6 +228,9 @@ export const CRONTAB = [
   '20 4 * * * privacy:redact_delivery',
   '25 4 * * * reports:day_end',
   '35 4 * * * backup:dump',
+  '50 4 * * 1 backup:base',
+  '*/5 * * * * backup:watch',
+  '*/15 * * * * backup:offsite',
   '*/5 * * * * mail:schedule_scan',
   '* * * * * mail:send',
 ].join('\n');
@@ -196,7 +243,7 @@ export interface WorkerRunOptions {
   taskList?: TaskList;
   logDir?: string | undefined;
   mail?: MailDeps | undefined;
-  backup?: BackupConfig | undefined;
+  backup?: TaskOptions['backup'];
   crontab?: string;
 }
 

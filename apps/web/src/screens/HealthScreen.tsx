@@ -20,6 +20,8 @@ export interface SystemHealth {
     lastDump?: { at: string; status: string; error: string | null } | null;
     archiver?: { enabled: boolean; lastArchivedAt: string | null; lastFailedAt: string | null };
     message?: string | null;
+    lastTestRestore?: { status: string; error: string | null } | null;
+    lastOffsite?: { at: string; status: string; error: string | null } | null;
   };
   disk: { freePercent: number | null; status: 'ok' | 'warning' | 'critical' | 'unknown' };
   internet: 'online' | 'offline';
@@ -94,6 +96,34 @@ export function healthRows(h: SystemHealth): Row[] {
               (h.backup.archiver?.enabled
                 ? `Latest changes copied: ${when(h.backup.archiver.lastArchivedAt ?? null)}`
                 : 'Continuous copying is off'),
+          },
+          {
+            label: 'Test restore (weekly)',
+            value:
+              h.backup.lastTestRestore?.status === 'failed'
+                ? 'Found a problem'
+                : h.backup.lastVerifiedAt
+                  ? 'Passed'
+                  : 'Not run yet',
+            tone: (h.backup.lastTestRestore?.status === 'failed'
+              ? 'danger'
+              : h.backup.lastVerifiedAt
+                ? 'ok'
+                : 'info') as Tone,
+            note:
+              h.backup.lastTestRestore?.error ?? `Last passed: ${when(h.backup.lastVerifiedAt)}`,
+          },
+          {
+            label: 'Off-site copy',
+            value: !h.backup.lastOffsite
+              ? 'Not set up or none yet'
+              : h.backup.lastOffsite.status === 'succeeded'
+                ? 'Copied'
+                : 'Waiting for internet',
+            tone: (h.backup.lastOffsite?.status === 'succeeded' ? 'ok' : 'info') as Tone,
+            note: h.backup.lastOffsite
+              ? `${when(h.backup.lastOffsite.at)}${h.backup.lastOffsite.error ? ` · ${h.backup.lastOffsite.error}` : ''}`
+              : 'Settings → Off-site copy',
           },
         ]
       : []),

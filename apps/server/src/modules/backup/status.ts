@@ -8,7 +8,8 @@
 import { existsSync, statfsSync } from 'node:fs';
 import type { Queryable } from '../../platform/db/pool.ts';
 
-export type BackupProblem = 'drive_missing' | 'archive_failing' | 'dump_failed' | 'dump_overdue';
+export type BackupProblem =
+  'drive_missing' | 'archive_failing' | 'dump_failed' | 'restore_test_failed' | 'dump_overdue';
 
 export interface BackupHealth {
   configured: boolean;
@@ -19,6 +20,9 @@ export interface BackupHealth {
   /** The weekly test restore (step 7.2). */
   lastVerifiedAt: string | null;
   lastDump: { at: string; status: string; error: string | null; sizeBytes: number | null } | null;
+  lastTestRestore: { status: string; error: string | null } | null;
+  /** The off-site copy (D-23): waiting is not a problem, only shown. */
+  lastOffsite: { at: string; status: string; error: string | null } | null;
   archiver: { enabled: boolean; lastArchivedAt: string | null; lastFailedAt: string | null };
   problem: BackupProblem | null;
   message: string | null;
@@ -32,6 +36,8 @@ const MESSAGES: Record<BackupProblem, string> = {
     'Backup drive missing: plug in the CL-BACKUP drive. Nothing is lost; backups wait until it is back.',
   archive_failing: 'Backups are failing: the latest changes are not being copied. See Health.',
   dump_failed: 'Last night’s backup failed. See Health.',
+  restore_test_failed:
+    'The weekly test restore found a problem in the backup. The owner has been told; see Health.',
   dump_overdue: 'No backup for more than a day. See Health.',
 };
 
@@ -104,6 +110,20 @@ export class BackupWatch {
       a.last_failed_time !== null &&
       (a.last_archived_time === null || a.last_failed_time > a.last_archived_time);
     const last = dumps[0];
+    const { rows: tests } = await this.db.query<{ status: string; error: string | null }>(
+      `SELECT status, error FROM cl.backup_runs WHERE kind = 'restore_test' AND status <> 'running'
+        ORDER BY started_at DESC, id DESC LIMIT 1`,
+    );
+    const lastTest = tests[0];
+    const { rows: offsite } = await this.db.query<{
+      at: Date;
+      status: string;
+      error: string | null;
+    }>(
+      `SELECT COALESCE(finished_at, started_at) AS at, status, error FROM cl.backup_runs
+        WHERE kind = 'offsite_copy' ORDER BY started_at DESC, id DESC LIMIT 1`,
+    );
+    const lastOff = offsite[0];
     const lastSuccess = ok[0]?.at ?? null;
     let problem: BackupProblem | null = null;
     if (this.configured) {
@@ -111,6 +131,7 @@ export class BackupWatch {
         problem = 'drive_missing';
       else if (failing) problem = 'archive_failing';
       else if (last?.status === 'failed') problem = 'dump_failed';
+      else if (lastTest?.status === 'failed') problem = 'restore_test_failed';
       else if (last && (!lastSuccess || now.getTime() - lastSuccess.getTime() > DUMP_OVERDUE_MS))
         problem = 'dump_overdue';
     }
@@ -128,6 +149,10 @@ export class BackupWatch {
             error: last.error,
             sizeBytes: last.size_bytes === null ? null : Number(last.size_bytes),
           }
+        : null,
+      lastTestRestore: lastTest ? { status: lastTest.status, error: lastTest.error } : null,
+      lastOffsite: lastOff
+        ? { at: lastOff.at.toISOString(), status: lastOff.status, error: lastOff.error }
         : null,
       archiver: {
         enabled,

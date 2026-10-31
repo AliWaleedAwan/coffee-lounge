@@ -186,6 +186,24 @@ Invoke-Native -FilePath $Node -Arguments @((Join-Path $InstallDir 'app\dist\migr
 # The services log in as cl_service with the application role only (DATABASE.md §12, §15).
 Invoke-Sql 'cl_migrator' $migratorPassword $Database 'GRANT cl_app TO cl_service;'
 
+# The backup login (step 7.2): REPLICATION for base backups, and the owner of the scratch
+# database the weekly test restore uses. It cannot read or change the shop's data otherwise.
+$backupSecret = Join-Path $Config 'backup-login.secret'
+if (-not (Test-Path $backupSecret)) {
+  $backupPassword = New-Secret
+  Invoke-Sql 'postgres' $superPassword 'postgres' @"
+CREATE ROLE cl_backup LOGIN REPLICATION PASSWORD '$backupPassword';
+CREATE DATABASE coffee_lounge_restore_test OWNER cl_backup ENCODING 'UTF8' TEMPLATE template0;
+"@ @($backupPassword)
+  Invoke-Sql 'postgres' $superPassword 'coffee_lounge_restore_test' 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+  Protect-ToFile $backupPassword $backupSecret
+}
+$backupPassword = Unprotect-FromFile $backupSecret
+$hba = Join-Path $PgData 'pg_hba.conf'
+if (-not (Select-String -Path $hba -Pattern '^host\s+replication\s+cl_backup' -Quiet)) {
+  Add-Content -Path $hba -Encoding ASCII -Value 'host replication cl_backup 127.0.0.1/32 scram-sha-256'
+}
+
 # ------------------------------------------------------------------ 5. certificates
 New-Item -ItemType Directory -Force -Path $Tls | Out-Null
 if ($needCertificates) {
@@ -241,6 +259,8 @@ DISK_CHECK_PATH=$env:SystemDrive\
 BACKUP_DRIVE_PATH=$BackupDrive
 BACKUP_PUBLIC_KEY_FILE=$backupPub
 PG_BIN_DIR=$PgDir\bin
+BACKUP_REPLICATION_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/$Database
+RESTORE_TEST_DATABASE_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/coffee_lounge_restore_test
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
 MAIL_KEY_FILE=$mailKey
@@ -277,7 +297,7 @@ ALTER SYSTEM SET archive_command = '$($walCmd.Replace("'", "''"))';
     if ($LASTEXITCODE -eq 0) { break }
     Start-Sleep -Seconds 2
   }
-  Write-Step "WAL archiving to $BackupDrive every 5 minutes at most; nightly backup at 04:35"
+  Write-Step "WAL archiving to $BackupDrive every 5 minutes at most; nightly backup at 04:35, base backup Mondays at 04:50, test restore on Sundays"
 }
 
 # ------------------------------------------------------------------ 7. services

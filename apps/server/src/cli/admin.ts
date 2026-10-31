@@ -11,7 +11,9 @@
  *   test-print          --name "<printer>"                         (W-4: the worker prints a test page)
  *   backup-keygen       --out <owner's USB folder>                 (step 7.1: the backup key pair, once;
  *                       the public key goes to BACKUP_PUBLIC_KEY_FILE)
- *   backup-now                                                     (a dump now, as the nightly one)
+ *   backup-now          [--test-restore]                           (a dump now, as the nightly one;
+ *                       with the test restore and its integrity checks)
+ *   backup-base                                                    (a base backup now, step 7.2)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
  * Usage (from apps/server): corepack pnpm admin <command> [options]
@@ -24,7 +26,12 @@ import { loadConfig } from '../platform/config.ts';
 import { createPool } from '../platform/db/pool.ts';
 import { withTransaction } from '../platform/db/tx.ts';
 import { AppError } from '../platform/errors.ts';
-import { makeBackupKeys, PRIVATE_KEY_FILE, runDump } from '../modules/backup/index.ts';
+import {
+  makeBackupKeys,
+  PRIVATE_KEY_FILE,
+  runBaseBackup,
+  runDump,
+} from '../modules/backup/index.ts';
 import { requestPrint } from '../modules/printing/index.ts';
 import { DEV_FILES_DIR } from '../platform/paths.ts';
 import {
@@ -47,6 +54,7 @@ const { positionals, values } = parseArgs({
     connection: { type: 'string' },
     address: { type: 'string' },
     out: { type: 'string' },
+    'test-restore': { type: 'boolean' },
   },
 });
 
@@ -156,16 +164,42 @@ try {
         pgBinDir: config.PG_BIN_DIR,
         connectionString: config.DATABASE_URL,
         filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+        restoreTestUrl: config.RESTORE_TEST_DATABASE_URL,
       },
       new Date(),
+      { testRestore: values['test-restore'] === true },
     );
     if (r.status !== 'succeeded') throw new Error(`backup failed: ${String(r.error)}`);
+    if (r.restoreTest && !r.restoreTest.ok)
+      throw new Error(`test restore failed: ${r.restoreTest.failed.join('; ')}`);
+    if (r.restoreTest) console.log('Test restore: every integrity check passed.');
     console.log(
       `Backup written: ${String(r.path)} (${String(r.sizeBytes)} bytes, ${String(r.filesCopied)} files copied).`,
     );
+  } else if (command === 'backup-base') {
+    const r = await runBaseBackup(
+      pool,
+      {
+        driveRoot: required(config.BACKUP_DRIVE_PATH, 'BACKUP_DRIVE_PATH in the config'),
+        publicKeyFile: required(
+          config.BACKUP_PUBLIC_KEY_FILE,
+          'BACKUP_PUBLIC_KEY_FILE in the config',
+        ),
+        pgBinDir: config.PG_BIN_DIR,
+        connectionString: config.DATABASE_URL,
+        filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
+        replicationUrl: required(
+          config.BACKUP_REPLICATION_URL,
+          'BACKUP_REPLICATION_URL in the config',
+        ),
+      },
+      new Date(),
+    );
+    if (r.status !== 'succeeded') throw new Error(`base backup failed: ${String(r.error)}`);
+    console.log(`Base backup written: ${String(r.path)}`);
   } else {
     console.log(
-      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now (see the header of src/cli/admin.ts)',
+      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now, backup-base (see the header of src/cli/admin.ts)',
     );
     process.exitCode = 2;
   }

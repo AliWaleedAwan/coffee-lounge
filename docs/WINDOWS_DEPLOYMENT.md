@@ -13,7 +13,7 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 | API + worker application | `C:\Program Files\CoffeeLounge\app` | Services `coffeelounge-api`, `coffeelounge-worker` (WinSW wrappers) |
 | Electron counter app | `C:\Program Files\CoffeeLounge\desktop` · settings: `C:\ProgramData\CoffeeLounge\desktop` (§10) | The logged-in Windows user |
 | Helpers: `cl-rawprint.exe` (RAW printing), `age.exe` (backup encryption), `cl-admin.exe` (recovery/maintenance CLI) | `C:\Program Files\CoffeeLounge\tools` | Called by services / owner |
-| Config & secrets | `C:\ProgramData\CoffeeLounge\config` (ACL: service account + Administrators only), including `backup.pub` (`BACKUP_PUBLIC_KEY_FILE`, the backup public key; the private key is only on the owner's USB key, step 7.1) and `mail.key` (`MAIL_KEY_FILE`, the key that seals the mailbox password; made once by the installer, kept on reinstall) | — |
+| Config & secrets | `C:\ProgramData\CoffeeLounge\config` (ACL: service account + Administrators only), including `backup-login.secret` (the backup login's password, DPAPI, step 7.2), `backup.pub` (`BACKUP_PUBLIC_KEY_FILE`, the backup public key; the private key is only on the owner's USB key, step 7.1) and `mail.key` (`MAIL_KEY_FILE`, the key that seals the mailbox password; made once by the installer, kept on reinstall) | — |
 | Logs | `C:\ProgramData\CoffeeLounge\logs` (rotated daily, 30 days, size-capped) | — |
 | Attachments (expense receipts, logo) | `C:\ProgramData\CoffeeLounge\files` (`FILES_DIR` in the server config) | — |
 
