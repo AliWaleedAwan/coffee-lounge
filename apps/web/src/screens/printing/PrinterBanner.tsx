@@ -49,7 +49,7 @@ export function PrinterBanner({
       ))}
       {status.data.kitchenPrinterMissing && canSetUp ? (
         <div role="status" className="banner banner-warning">
-          No printer is set for kitchen tickets. <Link to="/settings">Set one up</Link>.
+          No printer is set for kitchen tickets. <Link to="/hardware">Set one up</Link>.
         </div>
       ) : null}
     </>

@@ -43,10 +43,12 @@ test('every screen, tab and button the guides name exists as written', async ({ 
   await visit('Settings');
   for (const heading of [
     'Shop and branding',
-    'Printers',
     'E-mail (scheduled reports)',
     'Off-site copy of the backups',
   ])
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  await visit('Hardware');
+  for (const heading of ['Printers', 'Scanner'])
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   await visit('Inventory');
   for (const tab of ['Receive stock', 'Waste', 'Counts', 'Import'])

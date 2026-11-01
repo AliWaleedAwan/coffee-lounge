@@ -12,6 +12,7 @@ import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
+import { detectQueues } from './detect.ts';
 import { printJobChanged, requestPrint, stationPrinter, wakePrinter } from './jobs.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
@@ -153,6 +154,8 @@ export async function printingRoutes(
       tills: tills.map((t) => ({ id: t.id, name: t.name, printerId: t.printer_id })),
     };
   });
+
+  app.get('/printers/detect', { config: { permission: 'printers.manage' } }, () => detectQueues());
 
   app.post('/printers', { config: { permission: 'printers.manage' } }, async (request, reply) => {
     const body = parseInput(z.object(printerFields).strict(), request.body);
@@ -466,7 +469,7 @@ export async function printingRoutes(
         if (printerId === null)
           throw new AppError(
             'VALIDATION_FAILED',
-            'No printer is set for the kitchen. The owner sets one under Settings.',
+            'No printer is set for the kitchen. The owner sets one on the Hardware page.',
           );
         const { rows: copies } = await tx.query<{ copy: number }>(
           `SELECT COALESCE(max(copy_no), 0) + 1 AS copy FROM cl.print_jobs WHERE document_type = 'kitchen_ticket' AND document_id = $1`,

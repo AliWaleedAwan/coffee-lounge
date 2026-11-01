@@ -23,6 +23,7 @@ import { FloorScreen } from '../screens/floor/FloorScreen.tsx';
 import { SessionScreen } from '../screens/session/SessionScreen.tsx';
 import { PickupScreen } from '../screens/pickup/PickupScreen.tsx';
 import { PrintJobsScreen } from '../screens/printing/PrintJobsScreen.tsx';
+import { HardwareScreen } from '../screens/hardware/HardwareScreen.tsx';
 import { ReceiptDesignScreen } from '../screens/settings/ReceiptDesignScreen.tsx';
 import { SettingsScreen } from '../screens/settings/SettingsScreen.tsx';
 import { MenuScreen } from '../screens/menu/MenuScreen.tsx';
@@ -67,6 +68,7 @@ const BUILT: Record<string, () => JSX.Element> = {
   reports: ReportsScreen,
   'receipt-design': ReceiptDesignScreen,
   settings: SettingsScreen,
+  hardware: HardwareScreen,
   users: UsersScreen,
 };
 

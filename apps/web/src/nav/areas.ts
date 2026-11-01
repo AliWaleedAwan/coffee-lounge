@@ -94,7 +94,14 @@ export const AREAS: readonly Area[] = [
     id: 'settings',
     label: 'Settings',
     path: '/settings',
-    anyOf: ['settings.manage', 'printers.manage'],
+    anyOf: ['settings.manage'],
+    ready: true,
+  },
+  {
+    id: 'hardware',
+    label: 'Hardware',
+    path: '/hardware',
+    anyOf: ['printers.manage'],
     ready: true,
   },
   {

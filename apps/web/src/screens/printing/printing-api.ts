@@ -74,6 +74,22 @@ export function useManagedPrinters() {
   });
 }
 
+export type QueueDetection =
+  | { supported: false; queues: [] }
+  | {
+      supported: true;
+      queues: { name: string; driver: string; port: string }[];
+      problem?: string;
+    };
+
+/** The Windows printers the counter PC finds (step 8.6). */
+export function useDetectedQueues() {
+  return useQuery({
+    queryKey: ['printers', 'detect'],
+    queryFn: ({ signal }) => api<QueueDetection>('/printers/detect', { signal }),
+  });
+}
+
 export function usePrintWrite<T = unknown>(onDone?: (result: T) => void) {
   const client = useQueryClient();
   return useMutation({

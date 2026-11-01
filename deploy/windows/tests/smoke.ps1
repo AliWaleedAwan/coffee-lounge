@@ -154,6 +154,11 @@ Check 'the worker service prints RAW through a Windows print queue (spooler path
   Write-Step ('  print: {0} bytes through "{1}"' -f (Get-Item $out).Length, $queue)
   $true
 }
+Check 'the print queue is found by the same command the Hardware page runs (step 8.6)' {
+  $found = Get-Printer | Select-Object Name,DriverName,PortName | ConvertTo-Json -Compress
+  if ($found -notmatch 'CL Test Printer') { throw "found: $found" }
+  $true
+}
 Check 'the services log in without owner or superuser powers' {
   $who = Invoke-ServiceSql 'SELECT current_user || ''/'' || rolsuper || ''/'' || rolcreaterole FROM pg_roles WHERE rolname = current_user'
   if ($who.Output -ne 'cl_service/false/false') { throw $who.Output }
