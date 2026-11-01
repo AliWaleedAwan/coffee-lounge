@@ -150,8 +150,33 @@ export function ReportsScreen() {
   };
   return (
     <>
-      <h1>Reports</h1>
-      <div className="report-picker">
+      <div className="report-head">
+        <h1>{open === 'emails' ? 'E-mail reports' : 'Reports'}</h1>
+        {schedules ? (
+          open === 'emails' ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                goTo(null);
+              }}
+            >
+              Back to reports
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                goTo('emails');
+              }}
+            >
+              ✉ E-mail reports
+            </button>
+          )
+        ) : null}
+      </div>
+      <div className="report-picker" hidden={open === 'emails'}>
         <SelectField
           label="Report"
           value={open ?? 'overview'}
@@ -162,7 +187,6 @@ export function ReportsScreen() {
                   { value: 'day-end', label: 'Day-end' },
                 ]
               : []),
-            ...(schedules ? [{ value: 'emails', label: 'E-mails' }] : []),
             ...items.filter((r) => !r.drillOnly).map((r) => ({ value: r.key, label: r.title })),
             // Reached from another report: shown, so the box says where you are.
             ...(entry?.drillOnly ? [{ value: entry.key, label: entry.title }] : []),

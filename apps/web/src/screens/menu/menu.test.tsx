@@ -189,7 +189,7 @@ describe('menu screen', () => {
     const calls = serve(meWith('cashier', ['menu.read', 'menu.availability_toggle']));
     renderMenu();
     expect(await screen.findByRole('heading', { name: 'Coffee' })).toBeTruthy();
-    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Choices' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Edit/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add item' })).toBeNull();
 

@@ -1,6 +1,6 @@
 # Phase 8 — Scan-to-Add Products, One-Click App, Device Setup: Build Plan
 
-> **Draft, 1 Nov 2026: not approved yet.** The decisions in §5 are yours; each has a recommendation. Nothing here is built until you approve it.
+> **Approved, 1 Nov 2026, with the recommendations in §5.** Step 8.1 is built; 8.2 is next.
 
 | | |
 |---|---|
@@ -85,7 +85,7 @@ Detection runs on the server, which is the counter PC, so it sees that PC's prin
 
 | Step | What | Done when |
 |---|---|---|
-| 8.1 | **New product API:** one transaction creating item, barcode, menu item and recipe; refuses duplicate barcodes; permissions per P8-3 | Tests: stock falls on sale, ledger balances, retry creates no duplicates |
+| 8.1 ✅ | **New product API:** one transaction creating item, barcode, menu item and recipe; refuses duplicate barcodes; permissions per P8-3 | Tests: stock falls on sale, ledger balances, retry creates no duplicates |
 | 8.2 | **Products screen:** scan to open or create, edit card, photo, expiry correction | e2e with scanner-style typing; accessibility check passes |
 | 8.3 | **Scan to sell** at the counter (if P8-1 is yes): a scan adds the line, and unknown codes say so | e2e; a scan never lands in a text field by mistake |
 | 8.4 | **Setup wizard:** NSIS pages, protected secrets, progress and a log, Finish opens the app | Windows CI: fresh install, upgrade and restore drills all still pass |

@@ -52,6 +52,7 @@ const time = (iso: string | null) =>
 
 export function EmailsPanel({ reports }: { reports: { key: string; title: string }[] }) {
   const client = useQueryClient();
+  const [view, setView] = useState<'daily' | 'custom' | 'sent'>('daily');
   const schedules = useQuery({
     queryKey: ['mail', 'schedules'],
     queryFn: ({ signal }) => api<{ items: Schedule[] }>('/report-schedules', { signal }),
@@ -86,7 +87,28 @@ export function EmailsPanel({ reports }: { reports: { key: string; title: string
   const options = [{ key: 'day-end', title: 'Day-end report' }, ...reports];
   return (
     <>
-      <section className="card stack" aria-labelledby="schedules-head">
+      <div className="tabs" role="tablist" aria-label="E-mail reports">
+        {(
+          [
+            ['daily', 'Daily e-mail'],
+            ['custom', 'Other schedules'],
+            ['sent', 'Sent and waiting'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            onClick={() => {
+              setView(key);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <section hidden={view === 'sent'} className="card stack" aria-labelledby="schedules-head">
         <h2 id="schedules-head">Scheduled e-mails</h2>
         <p className="muted">
           Each report covers the period that has just ended and goes out from the shop mailbox
@@ -138,10 +160,13 @@ export function EmailsPanel({ reports }: { reports: { key: string; title: string
             {messageOf(toggle.error)}
           </div>
         ) : null}
-        <DailyToOwner options={options} existing={schedules.data?.items ?? []} onDone={refresh} />
-        <NewSchedule options={options} onDone={refresh} />
+        {view === 'daily' ? (
+          <DailyToOwner options={options} existing={schedules.data?.items ?? []} onDone={refresh} />
+        ) : (
+          <NewSchedule options={options} onDone={refresh} />
+        )}
       </section>
-      <section className="card stack" aria-labelledby="queue-head">
+      <section hidden={view !== 'sent'} className="card stack" aria-labelledby="queue-head">
         <h2 id="queue-head">E-mails sent and waiting</h2>
         {deliveries.data && deliveries.data.items.length === 0 ? (
           <p className="muted">No e-mails yet.</p>
@@ -217,6 +242,18 @@ export function EmailsPanel({ reports }: { reports: { key: string; title: string
   );
 }
 
+// By what the owner is looking for; the last group catches anything new.
+const REPORT_GROUPS = [
+  { title: 'Sales', match: /^(Day-end|Sales|Bills|Menu eng|Discounts|Deliveries)/ },
+  { title: 'Money', match: /^(Payment|Recorded|Ledger|Expenses)/ },
+  { title: 'Stock', match: /^(Inventory|Waste|Stock|Purchases)/ },
+  {
+    title: 'Other',
+    match:
+      /^(?!Day-end|Sales|Bills|Menu eng|Discounts|Deliveries|Payment|Recorded|Ledger|Expenses|Inventory|Waste|Stock|Purchases)/,
+  },
+];
+
 /** The owner's morning e-mail: tick the reports, give an address, one schedule each. */
 function DailyToOwner({
   options,
@@ -258,18 +295,25 @@ function DailyToOwner({
       <p className="muted">
         Tick what you want each morning. It is sent once the shop's mailbox is set up in Settings.
       </p>
-      <div className="checks">
-        {options.map((o) => (
-          <CheckField
-            key={o.key}
-            label={o.title}
-            checked={daily.includes(o.key) || ticked.includes(o.key)}
-            onChange={(on) => {
-              setTicked(on ? [...ticked, o.key] : ticked.filter((k) => k !== o.key));
-            }}
-          />
-        ))}
-      </div>
+      {REPORT_GROUPS.map((g) => (
+        <fieldset key={g.title} className="stack stack-tight">
+          <legend>{g.title}</legend>
+          <div className="checks">
+            {options
+              .filter((o) => g.match.test(o.title))
+              .map((o) => (
+                <CheckField
+                  key={o.key}
+                  label={o.title}
+                  checked={daily.includes(o.key) || ticked.includes(o.key)}
+                  onChange={(on) => {
+                    setTicked(on ? [...ticked, o.key] : ticked.filter((k) => k !== o.key));
+                  }}
+                />
+              ))}
+          </div>
+        </fieldset>
+      ))}
       <div className="row">
         <Field
           label="Owner's e-mail"

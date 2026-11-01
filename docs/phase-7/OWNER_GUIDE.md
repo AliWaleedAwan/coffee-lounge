@@ -44,7 +44,7 @@ Passwords and keys you type there are stored encrypted and are never shown again
 - **Reports** opens on the overview (today against the same day last week). Every tile and chart opens the report behind it; reports open down to the bills and lines.
 - **Download CSV** / **Download PDF** on any report (needs `reports.export`). On the counter iMac the file goes to Downloads.
 - **Reports** → **Day-end**: the report of a finished business day (a business day runs 04:00 to 03:59). It is made once at 04:25 and never changes; print it on the receipt printer or download the PDF.
-- **Reports** → **E-mails**: which report goes to whom and when. The suggested start (I-18): the day-end daily at 08:00 to you; sales by day weekly on Monday. Without internet the e-mails wait and go when it is back; the list shows each e-mail's status and **Try again now**.
+- **Reports** → **E-mail reports** (top right): which report goes to whom and when. The suggested start (I-18): the day-end daily at 08:00 to you; sales by day weekly on Monday. Without internet the e-mails wait and go when it is back; the list shows each e-mail's status and **Try again now**.
 
 ## 6. Backups (BACKUP_RECOVERY.md)
 

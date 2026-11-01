@@ -9,6 +9,7 @@ export { bestPromotion, discountedPrice, localMoment, type PromotionRule } from 
 export {
   createCategory,
   createItem,
+  createItemIn,
   createModifierGroup,
   loadPromotionRules,
   readMenu,

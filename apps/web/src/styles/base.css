@@ -1372,11 +1372,30 @@ kbd {
 
 .jump-nav {
   position: sticky;
-  top: 0;
+  top: var(--space-2);
   z-index: 3;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  background: var(--surface-page, inherit);
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid rgb(255 255 255 / 60%);
+  border-radius: var(--radius-control);
+  background: rgb(255 255 255 / 65%);
+  box-shadow: 0 8px 24px rgb(60 40 25 / 12%);
+  backdrop-filter: blur(18px) saturate(170%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .jump-nav {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+  }
+}
+
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }

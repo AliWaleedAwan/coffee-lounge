@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (262)
+### A. Every staff route (263)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -170,6 +170,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/printers/:id/retry-all` | `kitchen.reprint` |
 | POST | `/printers/:id/test` | `printers.manage` |
 | GET | `/printers/status` | `kitchen.read` |
+| POST | `/products` | `inventory.items_manage` |
 | GET | `/promotions` | `promotions.manage` |
 | POST | `/promotions` | `promotions.manage` |
 | PATCH | `/promotions/:id` | `promotions.manage` |

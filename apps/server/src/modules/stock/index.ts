@@ -54,6 +54,7 @@ export {
 } from './items.ts';
 export {
   addBarcode,
+  addBarcodeIn,
   addPackSize,
   archiveItem,
   createItem,

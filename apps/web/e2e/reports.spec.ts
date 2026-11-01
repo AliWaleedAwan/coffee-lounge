@@ -110,7 +110,8 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expectAccessible(page, 'day-end');
 
   // Step 6.6: a scheduled e-mail, and the mailbox it goes out from.
-  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'E-mails' });
+  await page.getByRole('button', { name: 'E-mail reports' }).click();
+  await page.getByRole('tab', { name: 'Other schedules' }).click();
   await page.getByLabel('To (one or more addresses)').fill('owner@example.test');
   await page.getByRole('button', { name: 'Schedule it' }).click();
   await expect(

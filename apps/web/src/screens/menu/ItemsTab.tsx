@@ -26,6 +26,8 @@ export function ItemsTab({ can }: { can: MenuAbilities }) {
   const [editing, setEditing] = useState<{ itemId: string | null; categoryId: string } | null>(
     null,
   );
+  const [tab, setTab] = useState<string | null>(null);
+  const [find, setFind] = useState('');
   const items = menu.data?.categories.flatMap((c) => c.items) ?? [];
   const current = editing?.itemId ? items.find((i) => i.id === editing.itemId) : undefined;
 
@@ -41,6 +43,57 @@ export function ItemsTab({ can }: { can: MenuAbilities }) {
           setEditing(null);
         }}
       />
+    );
+  }
+
+  const categories = menu.data?.categories ?? [];
+  if (!can.manage && categories.length > 0) {
+    const words = find.trim().toLowerCase();
+    const shown = words
+      ? categories
+          .map((c) => ({
+            ...c,
+            items: c.items.filter((i) => i.name.toLowerCase().includes(words)),
+          }))
+          .filter((c) => c.items.length > 0)
+      : categories.filter((c) => c.id === (tab ?? categories[0]?.id));
+    return (
+      <>
+        <Field
+          label="Find an item"
+          autoComplete="off"
+          value={find}
+          onChange={(e) => {
+            setFind(e.target.value);
+          }}
+        />
+        {words ? null : (
+          <div className="tabs" role="tablist" aria-label="Menu categories">
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={c.id === (tab ?? categories[0]?.id)}
+                onClick={() => {
+                  setTab(c.id);
+                }}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {shown.map((category) => (
+          <CategorySection
+            key={category.id}
+            category={category}
+            can={can}
+            onEdit={() => undefined}
+          />
+        ))}
+        {words && shown.length === 0 ? <p className="muted">No item matches.</p> : null}
+      </>
     );
   }
 
