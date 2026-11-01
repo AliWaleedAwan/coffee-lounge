@@ -497,6 +497,10 @@ if (Get-LocalUser -Name $CounterUser -ErrorAction SilentlyContinue) {
     -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew)
   Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
   Write-Step "Counter app starts at the login of $account"
+  # Step 8.5: the app's start-up screen starts a stopped service as this account, which is
+  # not an administrator. It gets that right on these three services and nothing else.
+  foreach ($s in (@($PgService) + $AppServices)) { Grant-ServiceStart $s $account }
+  Write-Step "$account may start the database, server and background jobs services"
 } else {
   Write-Step "Windows user '$CounterUser' not found: create it (H-9), then run the installer again so the counter app starts at its login."
 }

@@ -16,6 +16,14 @@ import {
   WEB_CSP,
   withCsp,
 } from '../src/policy.ts';
+import {
+  coreRunning,
+  MAX_START_ATTEMPTS,
+  parseScQuery,
+  ServiceSupervisor,
+  START_RETRY_MS,
+  type ServiceRow,
+} from '../src/services.ts';
 import { makePki, type Pki } from './pki.ts';
 
 let pki: Pki;
@@ -139,6 +147,118 @@ describe('certificates made by the shop certificate tool (installer)', () => {
         ok: true,
       });
     }
+  });
+});
+
+describe('start-up screen: services (step 8.5)', () => {
+  const output = (state: string) => ({
+    code: 0,
+    stdout: `SERVICE_NAME: x\n        TYPE               : 10  WIN32_OWN_PROCESS\n        STATE              : ${state}\n        WIN32_EXIT_CODE    : 0  (0x0)\n`,
+  });
+  const NAMES = ['postgresql-x64-17', 'coffeelounge-api', 'coffeelounge-worker', 'Spooler'];
+
+  /** A pretend sc.exe; `start` answers with startCode and then the service runs. */
+  function world(stopped: string[], startCode = 0) {
+    const down = new Set(stopped);
+    const calls: string[] = [];
+    const sc = (args: readonly string[]) => {
+      const [verb = '', name = ''] = args;
+      calls.push(`${verb} ${name}`);
+      if (verb === 'start') {
+        if (startCode === 0) down.delete(name);
+        return Promise.resolve({ code: startCode, stdout: '' });
+      }
+      return Promise.resolve(output(down.has(name) ? '1  STOPPED' : '4  RUNNING'));
+    };
+    return { sc, calls };
+  }
+  const state = (rows: ServiceRow[], id: string) => rows.find((r) => r.id === id);
+
+  it('reads the state by number, in any Windows language', () => {
+    expect(parseScQuery(output('4  RUNNING'))).toBe('running');
+    expect(parseScQuery(output('1  STOPPED'))).toBe('stopped');
+    expect(parseScQuery(output('2  START_PENDING'))).toBe('pending');
+    expect(
+      parseScQuery({ code: 0, stdout: 'SERVICE_NAME: x\n TYP : 10  W\n STATUS : 4  RUNNING\n' }),
+    ).toBe('running');
+    expect(parseScQuery({ code: 1060, stdout: '' })).toBe('missing');
+    expect(parseScQuery({ code: null, stdout: '' })).toBe('unknown');
+    expect(parseScQuery({ code: 0, stdout: 'nonsense' })).toBe('unknown');
+  });
+
+  it('leaves running services alone and only ever queries and starts the fixed names', async () => {
+    const { sc, calls } = world([]);
+    const rows = await new ServiceSupervisor(sc, () => false).check();
+    expect(coreRunning(rows)).toBe(true);
+    expect(calls).toEqual(NAMES.map((n) => `query ${n}`));
+  });
+
+  it('starts the database first, and the others only once it runs', async () => {
+    const { sc, calls } = world(['postgresql-x64-17', 'coffeelounge-api']);
+    const supervisor = new ServiceSupervisor(sc, () => false);
+    const first = await supervisor.check();
+    expect(calls).toContain('start postgresql-x64-17');
+    expect(calls).not.toContain('start coffeelounge-api');
+    expect(state(first, 'server')?.message).toBe('Waiting for the database…');
+    expect(coreRunning(first)).toBe(false);
+    await supervisor.check();
+    expect(calls).toContain('start coffeelounge-api');
+    expect(coreRunning(await supervisor.check())).toBe(true);
+  });
+
+  it('never starts anything during an upgrade or restore', async () => {
+    const { sc, calls } = world(['postgresql-x64-17', 'coffeelounge-api']);
+    const rows = await new ServiceSupervisor(sc, () => true).check();
+    expect(calls.filter((c) => c.startsWith('start'))).toEqual([]);
+    expect(state(rows, 'database')?.state).toBe('working');
+  });
+
+  it('never starts the print service; a stopped one is shown but holds nothing back', async () => {
+    const { sc, calls } = world(['Spooler']);
+    const rows = await new ServiceSupervisor(sc, () => false).check();
+    expect(calls).not.toContain('start Spooler');
+    expect(state(rows, 'printer')?.state).toBe('problem');
+    expect(coreRunning(rows)).toBe(true);
+  });
+
+  it('says so when this account lacks the right, without asking again', async () => {
+    const { sc, calls } = world(['coffeelounge-api'], 5);
+    const supervisor = new ServiceSupervisor(sc, () => false);
+    expect(state(await supervisor.check(), 'server')?.message).toMatch(/may not start/);
+    expect(state(await supervisor.check(), 'server')?.state).toBe('problem');
+    expect(calls.filter((c) => c === 'start coffeelounge-api')).toHaveLength(1);
+  });
+
+  it('gives up after three spaced attempts in plain words; "Try again" starts over', async () => {
+    let now = 0;
+    const { sc, calls } = world(['coffeelounge-api'], 1067);
+    const supervisor = new ServiceSupervisor(
+      sc,
+      () => false,
+      () => now,
+    );
+    const starts = () => calls.filter((c) => c === 'start coffeelounge-api').length;
+    await supervisor.check();
+    await supervisor.check(); // too soon
+    expect(starts()).toBe(1);
+    now += START_RETRY_MS;
+    await supervisor.check();
+    now += START_RETRY_MS;
+    await supervisor.check();
+    expect(starts()).toBe(MAX_START_ATTEMPTS);
+    now += START_RETRY_MS;
+    const rows = await supervisor.check();
+    expect(starts()).toBe(MAX_START_ATTEMPTS);
+    expect(state(rows, 'server')?.message).toMatch(/will not start\. Restart this PC/);
+    supervisor.resetAttempts();
+    await supervisor.check();
+    expect(starts()).toBe(MAX_START_ATTEMPTS + 1);
+  });
+
+  it('a service that is not installed sends for the technician', async () => {
+    const sc = () => Promise.resolve({ code: 1060, stdout: '' });
+    const rows = await new ServiceSupervisor(sc, () => false).check();
+    expect(state(rows, 'database')?.message).toMatch(/not installed.*technician/);
   });
 });
 

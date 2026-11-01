@@ -228,6 +228,64 @@ Check 'the installed counter app opens the staff app over the pinned HTTPS conne
   }
 }
 
+# ------------------------------------------------------------------ start-up screen (step 8.5)
+# The Counter user's rights and the app run as that user, not as this administrator.
+$counterPassword = 'Ci1!' + [guid]::NewGuid().ToString('N')
+Set-LocalUser -Name $CounterUser -Password (ConvertTo-SecureString $counterPassword -AsPlainText -Force)
+$counterCredential = New-Object Management.Automation.PSCredential("$env:COMPUTERNAME\$CounterUser", (ConvertTo-SecureString $counterPassword -AsPlainText -Force))
+function Invoke-AsCounter([string[]]$ScArguments) {
+  $p = Start-Process -FilePath 'sc.exe' -ArgumentList $ScArguments -Credential $counterCredential -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -Wait -PassThru
+  return $p.ExitCode
+}
+$startupServices = @('postgresql-x64-17', 'coffeelounge-api', 'coffeelounge-worker')
+Check "$CounterUser may start these services, but not stop or reconfigure them, nor start another" {
+  foreach ($s in $startupServices) {
+    $code = Invoke-AsCounter @('stop', $s)
+    if ($code -ne 5) { throw "stop $s answered $code" }
+    $code = Invoke-AsCounter @('config', $s, 'start=', 'disabled')
+    if ($code -ne 5) { throw "config $s answered $code" }
+    $code = Invoke-AsCounter @('start', $s)
+    if ($code -ne 1056) { throw "start $s answered $code" } # already running: the right was checked
+  }
+  $code = Invoke-AsCounter @('start', 'Spooler')
+  if ($code -ne 5 -and $code -ne 1056) { throw "start Spooler answered $code" }
+  $sddl = (& sc.exe sdshow 'Spooler') -join ''
+  $sid = (New-Object Security.Principal.NTAccount("$env:COMPUTERNAME\$CounterUser")).Translate([Security.Principal.SecurityIdentifier]).Value
+  if ($sddl -match [regex]::Escape($sid)) { throw 'the right reached the print service' }
+  $true
+}
+$counterLog = "C:\Users\$CounterUser\AppData\Roaming\Coffee Lounge\desktop.log"
+foreach ($stopped in @('coffeelounge-worker', 'coffeelounge-api', 'postgresql-x64-17')) {
+  Check "$stopped stopped: the app, run as $CounterUser, starts it and opens" {
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'exit' -Credential $counterCredential -LoadUserProfile -WindowStyle Hidden -Wait | Out-Null
+    if (Test-Path $counterLog) { Remove-Item $counterLog -Force }
+    # The watchdog would start the database itself within a minute: this has to be the app.
+    $watchdog = 'Coffee Lounge database watchdog'
+    Disable-ScheduledTask -TaskName $watchdog | Out-Null
+    $app = $null
+    try {
+      Stop-Service -Name $stopped -Force
+      $app = Start-Process -FilePath $CounterExe -Credential $counterCredential -LoadUserProfile -WorkingDirectory (Split-Path $CounterExe) -PassThru
+      $deadline = (Get-Date).AddSeconds(180)
+      $text = ''
+      do {
+        Start-Sleep -Seconds 3
+        if (Test-Path $counterLog) { $text = Get-Content -Raw $counterLog }
+      } while (-not ($text -match "service start requested.*$stopped" -and $text -match '"page loaded","page":"https://127\.0\.0\.1:8443/') -and (Get-Date) -lt $deadline)
+      ($text -split "`n") | Select-Object -Last 8 | ForEach-Object { if ($_) { Write-Step "  app log: $_" } }
+      if ($text -notmatch "service start requested.*$stopped") { throw 'the app did not start the service' }
+      if ($text -notmatch '"page loaded","page":"https://127\.0\.0\.1:8443/') { throw 'the app did not open' }
+      if ((Get-Service $stopped).Status -ne 'Running') { throw 'the service is not running' }
+    } finally {
+      Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+      Enable-ScheduledTask -TaskName $watchdog | Out-Null
+      # Stopping the database also stopped what depends on it.
+      foreach ($s in $startupServices) { if ((Get-Service $s).Status -ne 'Running') { Start-Service -Name $s } }
+    }
+    Wait-Ready 120
+  }
+}
+
 # ------------------------------------------------------------------ recovery
 Check 'a crashed API is restarted by Windows and serves again' {
   $before = Get-ServiceNodePid 'coffeelounge-api'

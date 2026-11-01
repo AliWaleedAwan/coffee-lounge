@@ -145,6 +145,19 @@ function Show-ServiceFailure([string]$Name, [string[]]$Providers = @()) {
   }
 }
 
+# Lets one Windows account see and start a service, and nothing more: no stop, no
+# configuration (Phase 8 step 8.5). Safe to run again.
+function Grant-ServiceStart([string]$Service, [string]$Account) {
+  $sid = (New-Object Security.Principal.NTAccount($Account)).Translate([Security.Principal.SecurityIdentifier]).Value
+  $sddl = ((& sc.exe sdshow $Service) -join '').Trim()
+  if ($LASTEXITCODE -ne 0 -or $sddl -notmatch '^D:') { throw "Could not read the permissions of $Service." }
+  if ($sddl -match [regex]::Escape(";;;$sid)")) { return }
+  $ace = "(A;;LCRPRC;;;$sid)"
+  $saclAt = $sddl.IndexOf('S:')
+  if ($saclAt -ge 0) { $updated = $sddl.Insert($saclAt, $ace) } else { $updated = $sddl + $ace }
+  Invoke-Native -FilePath 'sc.exe' -Arguments @('sdset', $Service, $updated) | Out-Null
+}
+
 # Writes UTF-8 without a byte-order mark (Set-Content -Encoding UTF8 in 5.1 adds one,
 # which JSON parsers reject).
 function Write-Utf8NoBom([string]$Path, [string]$Text) {
