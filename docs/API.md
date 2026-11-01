@@ -329,7 +329,7 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 
 ### 5.11b New product (Phase 8 step 8.1)
 
-`POST /products` [I] (`inventory.items_manage`): `{barcode, name, categoryId, sku?, baseUom?, price?, lowThreshold?, trackExpiry?, opening?: {qty, unitCost, expiryDate?}}`. One transaction: inventory item, barcode, menu item with one size, one-to-one recipe, and stock tracking on if `opening` is given (otherwise it starts with the first delivery). Without `price`, or without `menu.price_change`, the menu item is saved not on sale (P8-3). `opening` needs `inventory.opening_balance` or `inventory.receive`. A code already in use: 409 `BARCODE_IN_USE`.
+`POST /products` [I] (`inventory.items_manage`): `{barcode, name, categoryId, sku?, baseUom?, price?, lowThreshold?, trackExpiry?, opening?: {qty, unitCost, expiryDate?}}`. One transaction: inventory item, barcode, menu item with one size, one-to-one recipe, and stock tracking on if `opening` is given. Without `opening` the recipe stays a draft, to activate on Menu → Recipes after stock is received. Without `price`, or without `menu.price_change`, the menu item is saved not on sale (P8-3). `opening` needs `inventory.opening_balance` or `inventory.receive`. A code already in use: 409 `BARCODE_IN_USE`.
 
 ### 5.12 Asset register (Phase 5 step 5.4)
 

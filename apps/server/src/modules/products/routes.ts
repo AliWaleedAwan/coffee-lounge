@@ -117,10 +117,12 @@ export async function productRoutes(
             variantId,
             components: [{ itemId, qtyBase: '1', wasteFactor: '0' }],
           });
-          await activateRecipe(tx, who, draft.id);
-          // Without a starting quantity there is nothing to count yet: tracking starts when the
-          // first delivery does (Receive stock, "start stock control").
-          if (input.opening) await setStockMode(tx, who, variantId, 'recipe');
+          // Tracking needs a counted quantity. Without one the recipe stays a draft, to activate
+          // on Menu → Recipes once stock has been received.
+          if (input.opening) {
+            await activateRecipe(tx, who, draft.id);
+            await setStockMode(tx, who, variantId, 'recipe');
+          }
           if (!onSale) {
             await tx.query('UPDATE cl.menu_items SET is_active = false WHERE id = $1', [menu.id]);
           }
