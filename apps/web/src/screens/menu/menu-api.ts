@@ -45,6 +45,8 @@ export interface MenuItem {
   id: string;
   name: string;
   description: string | null;
+  /** Relative to the API base (`menu-photos/…`); null when the item has none. */
+  imageUrl: string | null;
   dietaryTags: string[];
   allowDineIn: boolean;
   allowTakeaway: boolean;

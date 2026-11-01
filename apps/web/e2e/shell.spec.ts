@@ -21,6 +21,7 @@ const OWNER_AREAS = [
   'Users & roles',
   'Devices',
   'Settings',
+  'Receipt design',
   'Audit log',
   'System health',
 ];

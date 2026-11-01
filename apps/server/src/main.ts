@@ -78,7 +78,8 @@ const { customer, staff } = buildApps(
     ...(customerWebRoot ? { customerWebRoot } : {}),
   },
   {
-    customer: (app) => registerCustomerRoutes(app, { pool, hub }),
+    customer: (app) =>
+      registerCustomerRoutes(app, { pool, hub, filesDir: config.FILES_DIR ?? DEV_FILES_DIR }),
     staff: (app) =>
       registerStaffRoutes(app, {
         pool,

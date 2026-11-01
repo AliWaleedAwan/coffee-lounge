@@ -31,6 +31,8 @@ For you, the owner, and anyone you make a manager. Staff training sheets are in 
 |---|---|---|
 | Shop name, address, phone, receipt footer, brand colour | **Settings** → **Shop and branding** | Owner, manager |
 | Guest ordering hours, thresholds and lists (refund reasons, asset places …) | **Settings** | Owner, manager; financial ones owner only |
+| Receipt layout: your own text above and below the bill (NTN, opening hours, Wi-Fi, a thank-you), sizes, bold, alignment, whether the address and the cashier's name print. The right side shows the receipt exactly as the printer will print it; **Save receipt design**, or **Back to the standard receipt** | **Receipt design** | Owner |
+| Item photos (JPEG or PNG, at most 2 MB, square looks best): guests see them on the QR menu | **Menu & recipes** → **Edit** an item → **Photo** | Whoever edits the menu |
 | Printers, test print | **Settings** → **Printers** | Owner, manager |
 | The mailbox for scheduled e-mails (I-17) | **Settings** → **E-mail (scheduled reports)**: provider's server, port, your address, an **app password** you create at your provider; **Send a test** | You only |
 | The off-site copy of the backups (I-22) | **Settings** → **Off-site copy of the backups**: endpoint, region, bucket, key ID and secret key; **Test** | You only |

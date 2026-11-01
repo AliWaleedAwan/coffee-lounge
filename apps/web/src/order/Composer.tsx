@@ -50,10 +50,13 @@ export function MenuPicker({
   categories,
   onAdd,
   disabled,
+  photoBase,
 }: {
   categories: MenuCategory[];
   onAdd: (line: CartLine) => void;
   disabled?: boolean | undefined;
+  /** The API base item photos are fetched from; without it no photos are shown. */
+  photoBase?: string;
 }) {
   const [open, setOpen] = useState<MenuItem | null>(null);
   const [category, setCategory] = useState(categories[0]?.id ?? '');
@@ -79,6 +82,7 @@ export function MenuPicker({
       {open ? (
         <ItemSheet
           item={open}
+          {...(photoBase ? { photoBase } : {})}
           onCancel={() => {
             setOpen(null);
           }}
@@ -108,6 +112,14 @@ export function MenuPicker({
                     setOpen(item);
                   }}
                 >
+                  {photoBase && item.imageUrl ? (
+                    <img
+                      className="menu-row-photo"
+                      src={`${photoBase}/${item.imageUrl}`}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : null}
                   <span className="menu-row-name">{item.name}</span>
                   {item.dietaryTags.length > 0 ? (
                     <span className="muted">{item.dietaryTags.join(' · ')}</span>
@@ -224,8 +236,10 @@ function ItemSheet({
   item,
   onAdd,
   onCancel,
+  photoBase,
 }: {
   item: MenuItem;
+  photoBase?: string;
   onAdd: (line: CartLine) => void;
   onCancel: () => void;
 }) {
@@ -244,6 +258,13 @@ function ItemSheet({
   return (
     <div className="card stack" role="group" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>{item.name}</h2>
+      {photoBase && item.imageUrl ? (
+        <img
+          className="menu-sheet-photo"
+          src={`${photoBase}/${item.imageUrl}`}
+          alt={`Photo of ${item.name}`}
+        />
+      ) : null}
       {item.description ? <p className="muted">{item.description}</p> : null}
       {item.dietaryTags.length > 0 ? <p>{item.dietaryTags.join(' · ')}</p> : null}
       {sizes.length > 1 ? (

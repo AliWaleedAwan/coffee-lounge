@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (251)
+### A. Every staff route (257)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -135,6 +135,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | PUT | `/mail/account` | `settings.mailbox` |
 | POST | `/mail/test` | `settings.mailbox` |
 | GET | `/menu` | `menu.read` |
+| GET | `/menu-photos/:file` | `menu.read` |
 | GET | `/menu/catalog` | `menu.manage` |
 | POST | `/menu/categories` | `menu.manage` |
 | PATCH | `/menu/categories/:id` | `menu.manage` |
@@ -142,6 +143,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/menu/items` | `menu.manage` |
 | PATCH | `/menu/items/:id` | `menu.manage` |
 | POST | `/menu/items/:id/archive` | `menu.manage` |
+| DELETE | `/menu/items/:id/photo` | `menu.manage` |
+| PUT | `/menu/items/:id/photo` | `menu.manage` |
 | POST | `/menu/items/:id/variants` | `menu.manage` |
 | PATCH | `/menu/variants/:id` | `menu.manage` |
 | POST | `/menu/variants/:id/archive` | `menu.manage` |
@@ -256,6 +259,9 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/settings` | `settings.manage` |
 | PATCH | `/settings/:key` | `settings.manage` |
 | PUT | `/settings/branding` | `settings.manage` |
+| GET | `/settings/receipt-design` | `settings.manage` |
+| PUT | `/settings/receipt-design` | `settings.manage` |
+| POST | `/settings/receipt-design/preview` | `settings.manage` |
 | PUT | `/stations/:id/printer` | `printers.manage` |
 | GET | `/stock-counts` | `inventory.read` |
 | POST | `/stock-counts` | `inventory.count` |

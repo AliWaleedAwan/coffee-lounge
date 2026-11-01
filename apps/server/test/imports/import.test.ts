@@ -298,3 +298,21 @@ describe('errors (AT-82)', () => {
     });
   });
 });
+
+describe("the owner's item list (docs/shop-data)", () => {
+  it('imports with no errors, and a second import changes nothing', async () => {
+    const csv = readFileSync(
+      new URL('../../../../docs/shop-data/04_menu_owner.csv', import.meta.url),
+      'utf8',
+    );
+    const first = await apply(owner, 'menu', csv);
+    expect(first.body, JSON.stringify(first.body).slice(0, 600)).toMatchObject({ errors: [] });
+    const { rows } = await fx.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM cl.menu_variants v JOIN cl.menu_items i ON i.id = v.item_id
+        WHERE i.name = 'Tikka Pizza'`,
+    );
+    expect(rows[0]?.n).toBe(4);
+    const again = await apply(owner, 'menu', csv);
+    expect(again.body).toMatchObject({ errors: [], summary: { create: 0, update: 0 } });
+  });
+});

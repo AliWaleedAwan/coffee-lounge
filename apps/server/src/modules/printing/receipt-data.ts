@@ -10,12 +10,14 @@ import { Decimal, money } from '@cl/shared';
 import { z } from 'zod';
 import type { Queryable } from '../../platform/db/pool.ts';
 import type { ReceiptData } from './documents.ts';
+import { receiptLayout } from './receipt-design.ts';
 
 const template = z.object({
   shopName: z.string().min(1),
   addressLine: z.string().nullable(),
   phone: z.string().nullable(),
   footer: z.string(),
+  layout: receiptLayout.optional(),
 });
 
 const PROVIDER: Record<string, string> = {
@@ -186,5 +188,6 @@ export async function receiptData(db: Queryable, invoiceId: string): Promise<Rec
         }
       : null,
     footer: shop.footer,
+    layout: shop.layout,
   };
 }

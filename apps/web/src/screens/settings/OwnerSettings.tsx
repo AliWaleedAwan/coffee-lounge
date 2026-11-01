@@ -352,6 +352,7 @@ function BrandingForm({ branding }: { branding: Branding }) {
       />
       <Field
         label="Receipt footer"
+        hint="Once a receipt design is saved, the Receipt design page sets the bottom of the receipt instead."
         maxLength={80}
         value={form.footer}
         onChange={(e) => {

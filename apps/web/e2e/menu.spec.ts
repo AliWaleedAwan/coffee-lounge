@@ -57,6 +57,20 @@ test('owner builds the menu, changes a price and schedules a promotion', async (
   await page.getByRole('button', { name: 'Save price' }).click();
   await expect(page.getByRole('row', { name: /Regular/ })).toContainText('Rs 480');
   await expectAccessible(page, 'item editor');
+
+  // A photo for the guest menu (a 1×1 PNG).
+  await expect(page.getByText('No photo yet.')).toBeVisible();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'latte.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  });
+  await expect(page.getByRole('img', { name: 'Photo of Latte' })).toBeVisible();
+  await expect(page.getByText('Replace photo')).toBeVisible();
+  await expectAccessible(page, 'item photo');
   await page.getByRole('button', { name: 'Back to the menu' }).click();
 
   await page.getByRole('tab', { name: 'Promotions' }).click();

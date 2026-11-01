@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { photoRoute } from './modules/catalog/index.ts';
 import { customerFloorRoutes } from './modules/floor/index.ts';
 import { customerLiveRoutes, type LiveRouteOptions } from './modules/live/index.ts';
 import { customerOrderRoutes } from './modules/orders/index.ts';
@@ -19,6 +20,8 @@ export interface CustomerRouteDeps {
   /** The live-update hub: guest phones get `GET /events` (step 3.11). */
   hub?: LiveRouteOptions['hub'];
   live?: Pick<LiveRouteOptions, 'heartbeatMs' | 'revalidateMs'>;
+  /** FILES_DIR: the menu shows item photos from it. */
+  filesDir?: string;
 }
 
 export async function registerCustomerRoutes(
@@ -27,6 +30,8 @@ export async function registerCustomerRoutes(
 ): Promise<void> {
   const perIp = new RequestLimiter(deps.limits?.perIp ?? 60, 60_000);
   app.addHook('onRequest', async (request, reply) => {
+    // A menu page loads one photo per item; they are cached files, not work.
+    if (request.url.includes('/menu-photos/')) return;
     const wait = perIp.take(request.ip);
     if (wait > 0) {
       void reply.header('Retry-After', String(Math.ceil(wait / 1000)));
@@ -37,6 +42,12 @@ export async function registerCustomerRoutes(
     }
   });
   const clock = deps.now ? { now: deps.now } : {};
+  const { filesDir } = deps;
+  if (filesDir) {
+    await app.register(async (photos) => {
+      photoRoute(photos, filesDir, { auth: 'public' });
+    });
+  }
   await customerFloorRoutes(app, { pool: deps.pool, ...clock });
   await customerOrderRoutes(app, {
     pool: deps.pool,
