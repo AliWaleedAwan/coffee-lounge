@@ -28,7 +28,9 @@ param(
   [switch]$Force,
   # Leave power, time zone, Defender and Remote Desktop alone (test machines, CI).
   [switch]$SkipHostSettings,
-  [switch]$Unattended
+  [switch]$Unattended,
+  # Run by the setup wizard: the owner's password comes in CL_OWNER_PASSWORD (Phase 8 step 8.4).
+  [switch]$Wizard
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
 
@@ -519,7 +521,16 @@ $waitReady = Join-Path $InstallDir 'setup\wait-ready.mjs'
 Invoke-Native -FilePath $Node -Arguments @($waitReady, 'https://127.0.0.1:8443/health/ready', $RootCa, '180') | Out-Null
 Invoke-Native -FilePath $Node -Arguments @($waitReady, 'http://127.0.0.1:8080/health/ready', '-', '60') | Out-Null
 
-if ($firstInstall -and -not $Unattended) {
+if ($firstInstall -and $Wizard -and $env:CL_OWNER_PASSWORD) {
+  # The recovery code goes on the USB key, never into the install log.
+  Write-Step 'Creating the owner account'
+  $created = & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner
+  if ($LASTEXITCODE -ne 0) { throw 'Creating the owner failed.' }
+  $codeLine = @($created) | Where-Object { $_ -match 'RECOVERY CODE' } | Select-Object -First 1
+  if (-not $codeLine) { throw 'The owner was created, but no recovery code was shown.' }
+  Set-Content -Path (Join-Path $CaExportDir 'coffee-lounge-owner-recovery-code.txt') -Value $codeLine -Encoding UTF8
+  Write-Step 'The recovery code is on the USB key'
+} elseif ($firstInstall -and -not $Unattended) {
   Write-Step 'Create the owner account (password typed twice, recovery code printed once):'
   & $Node "--env-file=$envFile" (Join-Path $InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner
   if ($LASTEXITCODE -ne 0) { throw 'Creating the owner failed.' }

@@ -19,6 +19,8 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 
 Program files are read-only for the service account. The service account can write only to `pgdata`, `logs`, `files` and the backup drive folder.
 
+**Setup wizard (Phase 8 step 8.4):** `CoffeeLounge-Setup.exe` with no options opens a wizard; on a first install it asks for the shop address, the USB key folder, the key passphrase and the owner's password. The owner's recovery code is written to the USB key as `coffee-lounge-owner-recovery-code.txt`. With any option it runs as before.
+
 ## 2. Windows services
 
 | Service | Start type | Depends on | Recovery on failure | Account |

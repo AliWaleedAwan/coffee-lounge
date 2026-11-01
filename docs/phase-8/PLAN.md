@@ -1,6 +1,6 @@
 # Phase 8 — Scan-to-Add Products, One-Click App, Device Setup: Build Plan
 
-> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.3 are built; 8.4 is next.
+> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.4 are built, the wizard's screens not yet clicked through on Windows; 8.5 is next.
 
 | | |
 |---|---|
@@ -45,7 +45,7 @@ Products without a barcode (fries, karhai) stay on the menu as they are. The own
 
 ## 3. Part B: install once, click once
 
-**Setup wizard** replaces the console: Welcome → options (install folder, shop address) → owner password → key passphrase and USB key folder → progress bar → Finish. It installs PostgreSQL, the database, the services and the firewall rules, and adds the desktop icon, as it does today. Passwords go to the installer through a protected temporary file, never the command line, and are deleted afterwards. The current command-line options stay for CI and restores.
+**Setup wizard** replaces the console: Welcome → options (install folder, shop address) → owner password → key passphrase and USB key folder → progress bar → Finish. It installs PostgreSQL, the database, the services and the firewall rules, and adds the desktop icon, as it does today. Passwords reach the install script through the installer process's environment, never the command line or a file, which the existing unattended path already used. The current command-line options stay for CI and restores.
 
 **The icon** opens a start-up screen showing Database, Server, Background jobs and Printer as they come up. If one is stopped, the app starts it, then opens the login screen. If one fails, it says which and in plain words what to do.
 
@@ -88,7 +88,7 @@ Detection runs on the server, which is the counter PC, so it sees that PC's prin
 | 8.1 ✅ | **New product API:** one transaction creating item, barcode, menu item and recipe; refuses duplicate barcodes; permissions per P8-3 | Tests: stock falls on sale, ledger balances, retry creates no duplicates |
 | 8.2 ✅ | **Products screen:** scan to open or create, edit card, photo, expiry correction | e2e with scanner-style typing; accessibility check passes |
 | 8.3 ✅ | **Scan to sell** at the counter (if P8-1 is yes): a scan adds the line, and unknown codes say so | e2e; a scan never lands in a text field by mistake |
-| 8.4 | **Setup wizard:** NSIS pages, protected secrets, progress and a log, Finish opens the app | Windows CI: fresh install, upgrade and restore drills all still pass |
+| 8.4 ✅ | **Setup wizard:** NSIS pages, protected secrets, progress and a log, Finish opens the app | Windows CI: fresh install, upgrade and restore drills all still pass |
 | 8.5 | **Start-up screen:** service status, start a stopped service, plain-language errors, limited service right | Windows CI: stop each service, click the icon, app recovers as a non-administrator |
 | 8.6 | **Hardware page:** printer detection and guided setup, scanner test | Tests with the simulator; Windows CI lists a real print queue |
 | 8.7 | **Cash drawer:** pulse command, open rules, permission and audit log; off by default | Golden file of the bytes; simulator sees the pulse; receipts unchanged with it off |
