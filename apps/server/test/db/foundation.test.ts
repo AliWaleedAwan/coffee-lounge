@@ -198,7 +198,7 @@ describe('grant rules (RBAC.md §1)', () => {
   it('lets the owner give any permission to any role or person (0032)', async () => {
     await db.client.query(
       `INSERT INTO cl.role_permissions (role_id, permission_key)
-       SELECT id, 'menu.read' FROM cl.roles WHERE key = 'kitchen'`,
+       SELECT id, 'ledger.read' FROM cl.roles WHERE key = 'kitchen'`,
     );
     await db.client.query(
       `INSERT INTO cl.role_permissions (role_id, permission_key)

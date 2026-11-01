@@ -79,7 +79,7 @@ export function OwnerSettings() {
     <>
       <BrandingForm branding={settings.data.branding} />
       {hours ? <Hours setting={hours} /> : null}
-      <section className="stack" aria-labelledby="thresholds">
+      <section className="card stack" aria-labelledby="thresholds">
         <h2 id="thresholds">Thresholds and lists</h2>
         <p className="muted">
           Expense categories are kept on <Link to="/expenses">Expenses</Link> → Categories.

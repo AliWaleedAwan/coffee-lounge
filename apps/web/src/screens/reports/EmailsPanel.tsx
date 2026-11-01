@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { api, messageOf } from '../../api/client.ts';
-import { Field, SelectField, TextAreaField } from '../../components/Field.tsx';
+import { CheckField, Field, SelectField, TextAreaField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 
 interface Schedule {
@@ -138,6 +138,7 @@ export function EmailsPanel({ reports }: { reports: { key: string; title: string
             {messageOf(toggle.error)}
           </div>
         ) : null}
+        <DailyToOwner options={options} existing={schedules.data?.items ?? []} onDone={refresh} />
         <NewSchedule options={options} onDone={refresh} />
       </section>
       <section className="card stack" aria-labelledby="queue-head">
@@ -213,6 +214,97 @@ export function EmailsPanel({ reports }: { reports: { key: string; title: string
         ) : null}
       </section>
     </>
+  );
+}
+
+/** The owner's morning e-mail: tick the reports, give an address, one schedule each. */
+function DailyToOwner({
+  options,
+  existing,
+  onDone,
+}: {
+  options: { key: string; title: string }[];
+  existing: Schedule[];
+  onDone: () => Promise<void>;
+}) {
+  const [address, setAddress] = useState('');
+  const [sendAt, setSendAt] = useState('08:00');
+  const [ticked, setTicked] = useState<string[]>(['day-end']);
+  const daily = existing
+    .filter((s) => s.frequency === 'daily' && s.isActive)
+    .map((s) => s.reportType);
+  const save = useMutation({
+    mutationFn: async () => {
+      for (const reportType of ticked.filter((k) => !daily.includes(k))) {
+        await api('/report-schedules', {
+          method: 'POST',
+          body: { reportType, frequency: 'daily', sendAt, recipients: [address.trim()] },
+        });
+      }
+    },
+    onSuccess: onDone,
+  });
+  return (
+    <form
+      className="stack"
+      noValidate
+      aria-label="Daily e-mail to the owner"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+    >
+      <h3>Daily e-mail to the owner</h3>
+      <p className="muted">
+        Tick what you want each morning. It is sent once the shop's mailbox is set up in Settings.
+      </p>
+      <div className="checks">
+        {options.map((o) => (
+          <CheckField
+            key={o.key}
+            label={o.title}
+            checked={daily.includes(o.key) || ticked.includes(o.key)}
+            onChange={(on) => {
+              setTicked(on ? [...ticked, o.key] : ticked.filter((k) => k !== o.key));
+            }}
+          />
+        ))}
+      </div>
+      <div className="row">
+        <Field
+          label="Owner's e-mail"
+          type="email"
+          maxLength={120}
+          value={address}
+          onChange={(e) => {
+            setAddress(e.target.value);
+          }}
+        />
+        <Field
+          label="Send at (04:30 or later)"
+          type="time"
+          min="04:30"
+          value={sendAt}
+          onChange={(e) => {
+            setSendAt(e.target.value);
+          }}
+        />
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={
+            !address.includes('@') || save.isPending || ticked.every((k) => daily.includes(k))
+          }
+        >
+          Save daily e-mail
+        </button>
+      </div>
+      {save.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {messageOf(save.error)}
+        </div>
+      ) : null}
+    </form>
   );
 }
 

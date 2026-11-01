@@ -125,11 +125,12 @@ describe('Picked up with a 5-second Undo (AT-92)', () => {
 describe('line status', () => {
   it('reads like the floor does', () => {
     const base = { qty: 2, pickedUp: 0, served: 0, cancelled: 0, open: 2 };
-    expect(lineStatus(base)).toBe('Being prepared');
+    expect(lineStatus(base)).toBe('Sent to kitchen');
+    expect(lineStatus(base, true)).toBe('Preparing');
     expect(lineStatus({ ...base, pickedUp: 1, served: 1, open: 1 })).toBe('Picked up 1, 1 to come');
     expect(lineStatus({ ...base, pickedUp: 2, served: 2, open: 0 })).toBe('Served');
     expect(lineStatus({ ...base, pickedUp: 2, served: 0, open: 0 })).toBe('Picked up');
     expect(lineStatus({ ...base, cancelled: 2, open: 0 })).toBe('Cancelled');
-    expect(lineStatus({ ...base, cancelled: 1, open: 1 })).toBe('Being prepared · 1 cancelled');
+    expect(lineStatus({ ...base, cancelled: 1, open: 1 })).toBe('Sent to kitchen · 1 cancelled');
   });
 });

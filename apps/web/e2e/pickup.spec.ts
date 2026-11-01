@@ -73,14 +73,14 @@ test('pickup with Undo, then cancel a waiting item', async ({ page }) => {
     .getByRole('link', { name: /Orders/ })
     .click();
   const sconeLine = page.locator('li.cart-line').filter({ hasText: '2 × Scone' });
-  await expect(sconeLine).toContainText('Being prepared');
+  await expect(sconeLine).toContainText('Sent to kitchen');
   await sconeLine.getByRole('button', { name: 'Cancel… Scone' }).click();
   await page.getByLabel('How many').selectOption('1');
   await page.getByLabel('No, not made yet').check();
   await page.getByLabel('Reason').fill('Guest changed their mind');
   await expectAccessible(page, 'cancel items');
   await page.getByRole('button', { name: 'Cancel items' }).click();
-  await expect(sconeLine).toContainText('Being prepared · 1 cancelled');
+  await expect(sconeLine).toContainText('Sent to kitchen · 1 cancelled');
   await expect(page.locator('li.cart-line').filter({ hasText: '1 × Garden tea' })).toContainText(
     'Served',
   );

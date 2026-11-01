@@ -21,11 +21,35 @@ export function SettingsScreen() {
   return (
     <>
       <h1>Settings</h1>
-      <DemoData />
+      <nav className="jump-nav" aria-label="Settings sections">
+        {[
+          ['branding', 'Shop'],
+          ['hours', 'Ordering hours'],
+          ['thresholds', 'Limits and lists'],
+          ['mailbox', 'E-mail'],
+          ['offsite', 'Backups'],
+          ['printers', 'Printers'],
+          ['demo-data', 'Demo data'],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              document
+                .getElementById(id ?? '')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
       {permissions.has('settings.manage') ? <OwnerSettings /> : null}
       {permissions.has('settings.mailbox') ? <MailboxForm /> : null}
       {permissions.has('backup.manage') ? <OffsiteForm /> : null}
       {permissions.has('printers.manage') ? <Printers /> : null}
+      <DemoData />
     </>
   );
 }
@@ -91,7 +115,7 @@ function Printers() {
   const stations = printers.data?.stations ?? [];
   const tills = printers.data?.tills ?? [];
   return (
-    <section className="stack" aria-labelledby="printers">
+    <section className="card stack" aria-labelledby="printers">
       <h2 id="printers">Printers</h2>
       {printers.isError ? (
         <div role="alert" className="banner banner-danger">

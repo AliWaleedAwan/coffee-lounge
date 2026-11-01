@@ -57,7 +57,7 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | `cash_shifts.operate` | Open/close own shift, paid-in/out | ✔ | ✔ | ✕ | ✔ S own_shift | ✕ | ✕ |
 | `cash_shifts.approve_variance` | Approve shift variance | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | **Menu & recipes** | | | | | | | |
-| `menu.read` | Staff menu with prices | ✔ | ✔ | ✔ | ✔ | ✔ | ✕ |
+| `menu.read` | Staff menu with prices | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `menu.manage` | Items, variants, modifiers | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
 | `menu.price_change` | Change prices | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `menu.availability_toggle` | Mark item temporarily unavailable | ✔ | ✔ | ○ | ✔ | ✔ | ✔ |

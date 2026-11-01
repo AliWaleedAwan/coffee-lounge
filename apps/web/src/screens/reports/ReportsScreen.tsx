@@ -14,6 +14,7 @@ import { Link, useSearchParams } from 'react-router';
 import { API_BASE, api, messageOf } from '../../api/client.ts';
 import { permissionSet, useMe } from '../../auth/session.ts';
 import { Field, SelectField } from '../../components/Field.tsx';
+import { Chart3D, type ChartKind } from './Chart3D.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { EmailsPanel } from './EmailsPanel.tsx';
 
@@ -112,6 +113,8 @@ function preset(name: string): { from: string; to: string } {
       return { from: shift(t, -1), to: shift(t, -1) };
     case 'week':
       return { from: shift(t, -weekday), to: t };
+    case 'last-14':
+      return { from: shift(t, -13), to: t };
     case 'month':
       return { from: monthStart, to: t };
     case 'last-month': {
@@ -197,7 +200,7 @@ function PeriodPicker({
   value: { from: string; to: string };
   onChange: (p: { from: string; to: string }) => void;
 }) {
-  const keys = ['today', 'yesterday', 'week', 'month', 'last-month'] as const;
+  const keys = ['today', 'yesterday', 'week', 'last-14', 'month', 'last-month'] as const;
   const current = keys.find((k) => {
     const p = preset(k);
     return p.from === value.from && p.to === value.to;
@@ -212,6 +215,7 @@ function PeriodPicker({
           { value: 'today', label: 'Today' },
           { value: 'yesterday', label: 'Yesterday' },
           { value: 'week', label: 'This week' },
+          { value: 'last-14', label: 'Last 14 days' },
           { value: 'month', label: 'This month' },
           { value: 'last-month', label: 'Last month' },
           { value: 'custom', label: 'Choose dates…' },
@@ -252,7 +256,8 @@ function OverviewPanel({
 }: {
   onOpen: (report: string, extra?: Record<string, string>) => void;
 }) {
-  const [period, setPeriod] = useState(() => preset('today'));
+  // A trend needs more than one day to show anything.
+  const [period, setPeriod] = useState(() => preset('last-14'));
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(period.from) &&
     /^\d{4}-\d{2}-\d{2}$/.test(period.to) &&
@@ -306,6 +311,7 @@ function OverviewPanel({
           <div className="row overview-row">
             <Chart
               title="Net sales by day"
+              initial="line"
               rows={o.byDay.map((d) => ({ label: d.date, value: Number(d.net_sales) }))}
               onOpen={() => {
                 onOpen('sales-by-day', range);
@@ -313,6 +319,7 @@ function OverviewPanel({
             />
             <Chart
               title="Sales by hour"
+              initial="column"
               rows={o.byHour.map((h) => ({ label: h.hour, value: Number(h.sales) }))}
               onOpen={() => {
                 onOpen('sales-by-hour', range);
@@ -320,6 +327,11 @@ function OverviewPanel({
             />
           </div>
           <div className="row overview-row">
+            <Chart
+              title="Share of sales by item"
+              initial="pie"
+              rows={o.topItems.map((i) => ({ label: i.item, value: Number(i.net_sales) }))}
+            />
             <section className="card stack" aria-labelledby="top-items">
               <h2 id="top-items">Top items by sales</h2>
               <ItemList rows={o.topItems} showMargin={o.topByMargin !== null} />
@@ -404,54 +416,23 @@ function ItemList({
   );
 }
 
-/** A plain bar chart with its numbers beside it (P6-5): readable on screen, on paper and by screen readers. */
+/** A chart the reader can change, with its numbers beneath (P6-5). */
 function Chart({
   title,
   rows,
+  initial,
   onOpen,
 }: {
   title: string;
   rows: { label: string; value: number }[];
-  onOpen: () => void;
+  initial: ChartKind;
+  onOpen?: () => void;
 }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
-  const width = 28;
-  const height = 120;
   const busy = rows.filter((r) => r.value !== 0);
   return (
     <section className="card stack chart" aria-label={title}>
       <h2>{title}</h2>
-      <svg
-        role="img"
-        aria-label={`${title}: ${busy.length === 0 ? 'nothing yet' : busy.map((r) => `${r.label} Rs ${r.value.toFixed(0)}`).join(', ')}`}
-        viewBox={`0 0 ${String(rows.length * width)} ${String(height + 16)}`}
-        className="chart-svg"
-      >
-        {rows.map((r, i) => {
-          const h = Math.round((r.value / max) * height);
-          return (
-            <g key={r.label}>
-              <rect
-                x={i * width + 4}
-                y={height - h}
-                width={width - 8}
-                height={h}
-                className="chart-bar"
-              />
-              {rows.length <= 31 && i % Math.ceil(rows.length / 8) === 0 ? (
-                <text
-                  x={i * width + width / 2}
-                  y={height + 12}
-                  textAnchor="middle"
-                  className="chart-label"
-                >
-                  {r.label.length > 5 ? r.label.slice(8) : r.label.slice(0, 2)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-      </svg>
+      <Chart3D title={title} rows={rows} initial={initial} />
       <details>
         <summary>Numbers</summary>
         <table className="data">
@@ -465,7 +446,7 @@ function Chart({
           </tbody>
         </table>
       </details>
-      <div>
+      <div hidden={!onOpen}>
         <button type="button" className="btn btn-ghost" onClick={onOpen}>
           Open the report<span className="visually-hidden"> {title}</span>
         </button>

@@ -1327,3 +1327,56 @@ kbd {
   font-weight: 600;
   line-height: 1.4;
 }
+
+.chart-frame {
+  position: relative;
+}
+
+.chart-frame .chart-svg {
+  height: auto;
+  overflow: visible;
+}
+
+.chart-frame [tabindex] {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart-frame [tabindex]:hover,
+.chart-frame [tabindex]:focus {
+  filter: brightness(1.12);
+}
+
+.chart-axis {
+  stroke: var(--border-subtle);
+}
+
+.chart-legend {
+  font-size: 13px;
+  fill: var(--text-primary);
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -130%);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.jump-nav {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  background: var(--surface-page, inherit);
+}
