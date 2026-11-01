@@ -137,15 +137,18 @@ Check 'the worker service prints RAW through a Windows print queue (spooler path
   if ($LASTEXITCODE -ne 0) { throw 'admin printer-add failed' }
   & $Node "--env-file=$envFile" $admin test-print --name $queue | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'admin test-print failed' }
+  # The file may first hold another job or a part of this one (seen after a reinstall), so
+  # wait for this job to be sent and its text to arrive, not just for any bytes.
   $deadline = (Get-Date).AddSeconds(120)
-  while ((Get-Date) -lt $deadline) {
-    if ((Test-Path $out) -and ((Get-Item $out).Length -gt 0)) { break }
+  $text = ''
+  do {
     Start-Sleep -Seconds 2
-  }
-  $last = Invoke-ServiceSql "SELECT status || ' ' || coalesce(last_error, '') FROM cl.print_jobs ORDER BY print_jobs.id DESC LIMIT 1"
+    $last = Invoke-ServiceSql "SELECT status || ' ' || coalesce(last_error, '') FROM cl.print_jobs ORDER BY print_jobs.id DESC LIMIT 1"
+    if (Test-Path $out) {
+      try { $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($out)) } catch { $text = '' } # the spooler still has it open
+    }
+  } while ((Get-Date) -lt $deadline -and -not ($last.Output.Trim() -eq 'sent' -and $text -match 'TEST PRINT'))
   if (-not (Test-Path $out)) { throw "nothing reached the queue; last job: $($last.Output)" }
-  Start-Sleep -Seconds 2 # let the spooler finish writing the file
-  $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($out))
   if ($text -notmatch 'TEST PRINT') { throw "the queue received other bytes; last job: $($last.Output)" }
   if ($last.Output.Trim() -ne 'sent') { throw "job status: $($last.Output)" }
   Write-Step ('  print: {0} bytes through "{1}"' -f (Get-Item $out).Length, $queue)
