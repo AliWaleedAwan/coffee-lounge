@@ -91,7 +91,7 @@ describe('heartbeat', () => {
     const errors: unknown[] = [];
     heartbeat.start((e) => errors.push(e), 50);
     await new Promise((r) => setTimeout(r, 200));
-    heartbeat.stop();
+    await heartbeat.stop();
     expect(errors).toEqual([]);
     const first = (await workerStatus(fx.pool, 'hb-timer')).lastHeartbeatAt;
     await new Promise((r) => setTimeout(r, 150));
@@ -105,7 +105,7 @@ describe('heartbeat', () => {
       const failures: unknown[] = [];
       broken.start((e) => failures.push(e), 1_000);
       await new Promise((r) => setTimeout(r, 100));
-      broken.stop();
+      await broken.stop();
       expect(failures).toHaveLength(1);
     } finally {
       await fx.pool.query('ALTER TABLE cl.worker_heartbeats DROP CONSTRAINT short_name');

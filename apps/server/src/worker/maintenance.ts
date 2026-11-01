@@ -32,6 +32,7 @@ export class Heartbeat {
   private readonly version: string;
   private readonly startedAt = new Date();
   private timer: NodeJS.Timeout | undefined;
+  private inFlight: Promise<void> = Promise.resolve();
 
   constructor(pool: pg.Pool, name: string, version: string) {
     this.pool = pool;
@@ -51,12 +52,17 @@ export class Heartbeat {
   }
 
   start(onError: (error: unknown) => void, intervalMs = HEARTBEAT_INTERVAL_MS): void {
-    void this.beat().catch(onError);
-    this.timer = setInterval(() => void this.beat().catch(onError), intervalMs);
+    const tick = () => {
+      this.inFlight = this.beat().catch(onError);
+    };
+    tick();
+    this.timer = setInterval(tick, intervalMs);
   }
 
-  stop(): void {
+  /** Stops beating; resolves once a beat already being written has finished. */
+  stop(): Promise<void> {
     clearInterval(this.timer);
+    return this.inFlight;
   }
 }
 

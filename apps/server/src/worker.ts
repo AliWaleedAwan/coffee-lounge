@@ -38,7 +38,7 @@ async function shutdown(signal: string): Promise<void> {
   if (stop.signal.aborted) return;
   stop.abort();
   log('info', 'shutting down', { signal });
-  heartbeat?.stop();
+  await heartbeat?.stop();
   await runner?.stop();
   await pool.end();
 }
