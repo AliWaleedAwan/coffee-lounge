@@ -99,7 +99,7 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | `settings.financial` 🔒 | Business day, rounding, tax, costing parameters | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `settings.mailbox` 🔒 | The shop's mailbox for scheduled e-mails (address, app password) | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `printers.manage` | Printer setup, test print | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
-| `drawer.open` | Open the cash drawer by hand (each open is in the audit log) | ✔ | ✔ | ✔ | ✕ | ✕ | ✕ |
+| `drawer.open` | Open the cash drawer by hand (each open is in the audit log) | ✔ | ✔ | ✕ | ✔ | ✕ | ✕ |
 | `audit.read` | Audit log | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `system.health` | Diagnostics page | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | `backup.manage` | Run/download backups | ✔ | ✕ | ✕ | ✕ | ✕ | ✕ |

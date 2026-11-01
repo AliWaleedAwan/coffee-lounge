@@ -9,7 +9,7 @@ export const GROUPS: { title: string; modules: string[] }[] = [
   { title: 'Ledger & expenses', modules: ['ledger', 'expenses'] },
   { title: 'Assets', modules: ['assets'] },
   { title: 'People & security', modules: ['users', 'roles', 'devices', 'audit'] },
-  { title: 'System & backups', modules: ['settings', 'system', 'backup', 'printers'] },
+  { title: 'System & backups', modules: ['settings', 'system', 'backup', 'printers', 'drawer'] },
 ];
 
 const WORDS: Record<string, string> = {
