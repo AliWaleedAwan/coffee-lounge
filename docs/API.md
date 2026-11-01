@@ -333,6 +333,8 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 
 Step 8.2: `GET /products/by-item/{id}` (`inventory.read`) `{soldAs}`. `POST /products/by-item/{id}/price` (`menu.price_change`) `{price, reason}`, which also puts it on sale. `POST /inventory/lots/{id}/expiry` (`inventory.items_manage`) `{expiryDate, reason}`, audited.
 
+Step 8.3: `GET /products/sell-scan?code=` (`orders.create`) `{variantId, problem}`.
+
 ### 5.12 Asset register (Phase 5 step 5.4)
 
 What the shop owns (D-31): the row is the asset as it is now, and every change is an event in its history (AT-106, AT-23). Disposal is a status, never a delete. No depreciation (D-19).

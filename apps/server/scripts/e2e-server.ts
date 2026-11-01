@@ -79,13 +79,13 @@ for (const s of staff) {
   );
 }
 const codes: string[] = [];
-for (let i = 1; i <= 33; i++) {
+for (let i = 1; i <= 34; i++) {
   const { code } = await createRegistrationCode(
     pool,
     { actor: { kind: 'system' }, userId: ownerId },
     {
       deviceName: `E2E device ${String(i)}`,
-      kind: i === 1 ? 'reception' : 'waiter',
+      kind: i === 1 || i === 34 ? 'reception' : 'waiter',
       ownership: 'shop',
     },
     facts,

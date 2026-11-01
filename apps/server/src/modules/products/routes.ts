@@ -96,6 +96,27 @@ export async function productRoutes(
     return rows[0] ?? null;
   };
 
+  /** Scan to sell (step 8.3): the size a barcode sells. Packs hold many, so they are refused. */
+  app.get('/products/sell-scan', { config: { permission: 'orders.create' } }, async (request) => {
+    const { code } = parseInput(
+      z.object({ code: z.string().regex(/^[!-~]{1,64}$/) }).strict(),
+      request.query,
+    );
+    const { rows } = await pool.query<{ item_id: string; pack: boolean }>(
+      `SELECT item_id::text, pack_size_id IS NOT NULL AS pack FROM cl.barcodes
+        WHERE code = $1 AND is_active`,
+      [code],
+    );
+    const hit = rows[0];
+    if (!hit) return { variantId: null, problem: `Barcode ${code} is not known` };
+    if (hit.pack)
+      return { variantId: null, problem: 'That code is for a whole pack: scan one piece' };
+    const sold = await soldAs(hit.item_id);
+    return sold?.onSale
+      ? { variantId: sold.variantId, problem: null }
+      : { variantId: null, problem: `Barcode ${code}: this product is not on sale` };
+  });
+
   app.get(
     '/products/by-item/:id',
     { config: { permission: 'inventory.read' } },

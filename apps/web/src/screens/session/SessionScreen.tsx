@@ -15,6 +15,7 @@ import { Composer } from '../../order/Composer.tsx';
 import { RoundList, type Round } from '../../order/RoundList.tsx';
 import { useSignedIn } from '../Shell.tsx';
 import { LineActions } from './LineActions.tsx';
+import { ScanToSell } from './ScanToSell.tsx';
 
 interface SessionDetail {
   session: {
@@ -33,7 +34,9 @@ export function SessionScreen() {
   const { sessionId = '' } = useParams();
   const client = useQueryClient();
   const writes = useWritesAllowed();
-  const permissions = permissionSet(useSignedIn());
+  const me = useSignedIn();
+  const permissions = permissionSet(me);
+  const onCounter = me.device.kind === 'reception';
   const canBill = permissions.has('payments.collect') || permissions.has('invoices.lock');
   const detail = useQuery({
     queryKey: ['session', sessionId],
@@ -107,6 +110,9 @@ export function SessionScreen() {
         <div role="status" className="banner banner-info">
           This visit is {s.status.replace('_', ' ')}: no new orders.
         </div>
+      ) : null}
+      {menu.data && s && ['open', 'checkout_requested'].includes(s.status) && onCounter ? (
+        <ScanToSell categories={menu.data.categories} cart={cart} onCartChange={changeCart} />
       ) : null}
       {menu.data && s && ['open', 'checkout_requested'].includes(s.status) ? (
         <Composer
