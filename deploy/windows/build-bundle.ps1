@@ -74,7 +74,7 @@ Copy-Item $winsw (Join-Path $Out 'winsw\WinSW-x64.exe')
 Write-Step 'Adding the setup scripts'
 $setup = Join-Path $Out 'setup'
 New-Item -ItemType Directory -Force -Path $setup | Out-Null
-foreach ($f in @('install.ps1', 'uninstall.ps1', 'restore.ps1', 'watchdog.ps1', 'lib.ps1', 'wait-ready.mjs')) { Copy-Item (Join-Path $PSScriptRoot $f) $setup }
+foreach ($f in @('install.ps1', 'uninstall.ps1', 'restore.ps1', 'watchdog.ps1', 'lib.ps1', 'wait-ready.mjs', 'update-agent.mjs', 'update-public.pem')) { Copy-Item (Join-Path $PSScriptRoot $f) $setup }
 Copy-Item -Recurse (Join-Path $PSScriptRoot 'services') (Join-Path $setup 'services')
 
 $version = (Get-Content -Raw (Join-Path $repo 'apps\server\package.json') | ConvertFrom-Json).version

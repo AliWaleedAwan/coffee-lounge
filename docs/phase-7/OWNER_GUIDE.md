@@ -75,7 +75,7 @@ A wrong discount, refund or stock entry is **never** fixed with a restore: corre
 
 ## 8. Upgrades
 
-A new version comes as `CoffeeLounge-Setup-<version>.exe`. Run it outside trading hours, as Administrator. It refuses while bills or the cash shift are open (close them first). It keeps a copy of the current version and of the database first, and if anything fails it puts both back by itself and says **ROLLED BACK** in its log. Nothing ever updates by itself.
+When a new version is ready, **System health** shows **Update now** to the owner; the PC needs internet. Or run `CoffeeLounge-Setup-<version>.exe` from a USB stick, as Administrator. Either way, do it outside trading hours. It refuses while bills or the cash shift are open (close them first). It keeps a copy of the current version and of the database first, and if anything fails it puts both back by itself and says **ROLLED BACK** in its log. Nothing ever updates until the owner says so.
 
 ## 9. Audit log
 

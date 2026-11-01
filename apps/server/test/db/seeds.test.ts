@@ -45,6 +45,7 @@ describe('access seed matches docs/RBAC.md', () => {
       'roles.manage',
       'settings.financial',
       'settings.mailbox',
+      'system.update',
     ]);
   });
 

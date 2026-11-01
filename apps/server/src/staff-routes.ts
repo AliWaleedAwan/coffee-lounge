@@ -54,7 +54,11 @@ export async function registerStaffRoutes(
 ): Promise<void> {
   await registerStaffIdentity(app, { pool: deps.pool, secureCookies: deps.secureCookies });
   await liveRoutes(app, { pool: deps.pool, hub: deps.hub, ...deps.live });
-  await systemRoutes(app, { health: deps.health });
+  await systemRoutes(app, {
+    health: deps.health,
+    pool: deps.pool,
+    updateDir: process.env['UPDATE_DIR'],
+  });
   await catalogRoutes(app, {
     pool: deps.pool,
     filesDir: deps.filesDir,

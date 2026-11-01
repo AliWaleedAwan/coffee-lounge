@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (270)
+### A. Every staff route (272)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -289,6 +289,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | PATCH | `/suppliers/:id` | `suppliers.manage` |
 | GET | `/system/backup-status` | session |
 | GET | `/system/health` | `system.health` |
+| GET | `/system/update` | `system.update` |
+| POST | `/system/update` | `system.update` |
 | GET | `/tables` | `tables.manage` |
 | POST | `/tables` | `tables.manage` |
 | PATCH | `/tables/:id` | `tables.manage` |
@@ -336,7 +338,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 
 ### D. Owner-only (🔒) permissions
 
-`backup.restore`, `roles.manage`, `settings.financial`, `settings.mailbox`
+`backup.restore`, `roles.manage`, `settings.financial`, `settings.mailbox`, `system.update`
 
 ### E. Permissions no route names (checked inside services, or for later phases)
 

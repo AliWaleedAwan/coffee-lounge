@@ -159,6 +159,23 @@ Check 'the print queue is found by the same command the Hardware page runs (step
   if ($found -notmatch 'CL Test Printer') { throw "found: $found" }
   $true
 }
+Check 'the updater runs as SYSTEM, from a folder ordinary users and the server cannot change' {
+  $task = Get-ScheduledTask -TaskName 'Coffee Lounge updater' -ErrorAction Stop
+  if ($task.Principal.UserId -ne 'SYSTEM') { throw "runs as $($task.Principal.UserId)" }
+  $agent = Join-Path $DataDir 'update-agent'
+  $open = (Get-Acl $agent).Access | Where-Object { $_.IdentityReference.Value -match 'Users|Everyone|Authenticated|coffeelounge' }
+  if ($open) { throw "$agent open to $($open.IdentityReference -join ', ')" }
+  $status = Join-Path $DataDir 'update\status.json'
+  Remove-Item $status -ErrorAction SilentlyContinue
+  Start-ScheduledTask -TaskName 'Coffee Lounge updater'
+  $deadline = (Get-Date).AddSeconds(120)
+  while (-not (Test-Path $status) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+  if (-not (Test-Path $status)) { throw 'the updater wrote no status' }
+  $version = (Get-Content (Join-Path $InstallDir 'VERSION.txt') -TotalCount 1) -replace '^Coffee Lounge (\S+).*$', '$1'
+  $seen = (Get-Content -Raw $status | ConvertFrom-Json).current
+  if ($seen -ne $version) { throw "updater reads $seen, installed $version" }
+  $true
+}
 Check 'the services log in without owner or superuser powers' {
   $who = Invoke-ServiceSql 'SELECT current_user || ''/'' || rolsuper || ''/'' || rolcreaterole FROM pg_roles WHERE rolname = current_user'
   if ($who.Output -ne 'cl_service/false/false') { throw $who.Output }

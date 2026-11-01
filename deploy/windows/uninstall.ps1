@@ -33,6 +33,7 @@ if (Get-Service -Name 'postgresql-x64-17' -ErrorAction SilentlyContinue) {
 }
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+Unregister-ScheduledTask -TaskName 'Coffee Lounge updater' -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'Coffee Lounge counter app' -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk')

@@ -1,6 +1,6 @@
 # Phase 8 — Scan-to-Add Products, One-Click App, Device Setup: Build Plan
 
-> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.7 are built, the wizard's screens not yet clicked through on Windows; 8.6 and 8.7 await a green Windows CI run; automatic updates are next.
+> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.7 are built, the wizard's screens not yet clicked through on Windows; 8.6 and 8.7 await a green Windows CI run; automatic updates are built and await the same run, and their first real release; 8.8 is next.
 
 | | |
 |---|---|

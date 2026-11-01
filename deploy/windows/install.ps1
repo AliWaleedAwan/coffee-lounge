@@ -356,6 +356,7 @@ RESTORE_TEST_DATABASE_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
 MAIL_KEY_FILE=$mailKey
+UPDATE_DIR=$DataDir\update
 LOG_LEVEL=info
 "@
 
@@ -453,6 +454,41 @@ $watchdogPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType Serv
 $watchdogSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Action $watchdogAction -Trigger $watchdogTrigger -Principal $watchdogPrincipal -Settings $watchdogSettings -Force | Out-Null
 Write-Step 'Database watchdog: PostgreSQL is started again within a minute if it stops by itself'
+
+# ------------------------------------------------------------------ 7c. the updater
+# Administrators-only folder: the server may ask for an update, never change what runs it.
+# An update runs this script from the updater itself, whose node.exe is then in use, and whose
+# task must not be replaced under it: the next install refreshes those.
+$updateDir = Join-Path $DataDir 'update'
+$agentDir = Join-Path $DataDir 'update-agent'
+New-Item -ItemType Directory -Force -Path $updateDir, $agentDir | Out-Null
+Set-RestrictedAcl -Path $updateDir -Modify @('NT SERVICE\coffeelounge-api')
+Set-RestrictedAcl -Path $agentDir
+$updaterTask = 'Coffee Lounge updater'
+$updaterRunning = (Get-ScheduledTask -TaskName $updaterTask -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Running' })
+foreach ($f in @('setup\update-agent.mjs', 'setup\update-public.pem', 'runtime\node.exe')) {
+  if ($updaterRunning -and $f -like '*node.exe') { continue }
+  Copy-Item (Join-Path $InstallDir $f) $agentDir -Force
+}
+$manifestUrl = 'https://github.com/AliWaleedAwan/coffee-lounge-releases/releases/latest/download/latest.json'
+$existingConfig = Join-Path $agentDir 'config.json'
+if (Test-Path $existingConfig) { $manifestUrl = (Get-Content -Raw $existingConfig | ConvertFrom-Json).manifestUrl }
+Write-Utf8NoBom $existingConfig (@{
+    manifestUrl = $manifestUrl
+    publicKeyFile = (Join-Path $agentDir 'update-public.pem')
+    installDir = $InstallDir
+    updateDir = $updateDir
+    agentDir = $agentDir
+    logDir = (Join-Path $DataDir 'logs')
+    backupDrive = $BackupDrive
+  } | ConvertTo-Json)
+if (-not $updaterRunning) {
+  $updaterAction = New-ScheduledTaskAction -Execute (Join-Path $agentDir 'node.exe') -Argument ('"{0}" "{1}"' -f (Join-Path $agentDir 'update-agent.mjs'), $existingConfig)
+  $updaterTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+  $updaterSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+  Register-ScheduledTask -TaskName $updaterTask -Action $updaterAction -Trigger $updaterTrigger -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest) -Settings $updaterSettings -Force | Out-Null
+}
+Write-Step 'Updater: checks for a new version every 6 hours; installs only when the owner asks'
 
 # ------------------------------------------------------------------ 8. firewall (H-3)
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule

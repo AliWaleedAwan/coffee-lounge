@@ -1,0 +1,58 @@
+# A release: pushing the tag vX.Y.Z builds CoffeeLounge-Setup-X.Y.Z.exe, signs latest.json with
+# the release key, and publishes both in the public repository that holds only installers.
+# Shops find it within 6 hours; the owner presses Update now.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+env:
+  RELEASES_REPO: AliWaleedAwan/coffee-lounge-releases
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.0
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Set the version from the tag
+        run: |
+          $version = '${{ github.ref_name }}'.Substring(1)
+          $file = 'apps\server\package.json'
+          $json = Get-Content -Raw $file
+          $json = $json -replace '"version": "[^"]*"', ('"version": "' + $version + '"')
+          [IO.File]::WriteAllText((Resolve-Path $file).Path, $json)
+      - name: Build the installer
+        run: |
+          powershell -ExecutionPolicy Bypass -File deploy\windows\build-bundle.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Sign and publish
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.Substring(1)
+          $setup = "out\CoffeeLounge-Setup-$version.exe"
+          $url = "https://github.com/$env:RELEASES_REPO/releases/download/$tag/CoffeeLounge-Setup-$version.exe"
+          node deploy\windows\sign-release.mjs $setup $version $url out\latest.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release create $tag $setup out\latest.json --repo $env:RELEASES_REPO --title "Coffee Lounge $version" --notes "Coffee Lounge $version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

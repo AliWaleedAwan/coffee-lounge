@@ -99,7 +99,7 @@ A 15-year-old iMac may lose its clock setting after power cuts if its internal c
 | Apply | Replace program files → run forward-only migrations (each in a transaction where possible) → start services → health check |
 | Rollback | If health fails: stop services → restore the pre-upgrade dump → reinstall the previous version (kept in `tools\previous\`) → health check → report |
 | Compatibility | Migrations follow expand → migrate → contract across releases, so a rollback within one version is always possible |
-| No auto-update | Electron and services never self-update; updates are delivered as a new installer |
+| Updates | Nothing updates by itself. The updater (`update-agent.mjs`, SYSTEM, every minute, in the administrators-only `update-agent` folder) reports a new version, and installs it when the owner presses Update now on System health. Same installer, so same refusal with open bills and same rollback. Release: push tag `vX.Y.Z` |
 
 ### 7.1 As built (step 7.4)
 
