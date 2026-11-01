@@ -14,3 +14,4 @@ export {
   readMenu,
   type Who,
 } from './service.ts';
+export { photoRoute } from './photos.ts';

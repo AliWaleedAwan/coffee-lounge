@@ -52,28 +52,49 @@ function encode(text: string): number[] {
 
 export type Align = 'left' | 'center' | 'right';
 
+/** One printed line as the paper shows it: for on-screen previews (receipt design). */
+export interface PreviewLine {
+  text: string;
+  align: Align;
+  bold: boolean;
+  wide: boolean;
+  tall: boolean;
+}
+
 export class EscPos {
   private readonly out: number[] = [ESC, 0x40, ESC, 0x74, 0]; // initialise; code page 0 = CP437
+  private readonly shown: PreviewLine[] = [];
+  private state = { align: 'left' as Align, bold: false, wide: false, tall: false };
 
   line(text = ''): this {
     this.out.push(...encode(text), LF);
+    this.shown.push({ text: toPrintable(text), ...this.state });
     return this;
   }
 
   bold(on: boolean): this {
     this.out.push(ESC, 0x45, on ? 1 : 0);
+    this.state.bold = on;
     return this;
   }
 
   /** Double width and/or height (GS !). */
   size(double: { width?: boolean; height?: boolean }): this {
     this.out.push(GS, 0x21, (double.width ? 0x10 : 0) | (double.height ? 0x01 : 0));
+    this.state.wide = Boolean(double.width);
+    this.state.tall = Boolean(double.height);
     return this;
   }
 
   align(a: Align): this {
     this.out.push(ESC, 0x61, a === 'left' ? 0 : a === 'center' ? 1 : 2);
+    this.state.align = a;
     return this;
+  }
+
+  /** The lines printed so far, with their alignment and emphasis. */
+  preview(): PreviewLine[] {
+    return this.shown.map((l) => ({ ...l }));
   }
 
   feed(lines: number): this {

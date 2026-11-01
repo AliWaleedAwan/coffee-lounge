@@ -34,6 +34,8 @@ export interface MenuItem {
   id: string;
   name: string;
   description: string | null;
+  /** Relative to the API base (`menu-photos/…`); null without a photo. */
+  imageUrl?: string | null;
   dietaryTags: string[];
   variants: MenuVariant[];
   modifierGroups: MenuGroup[];

@@ -10,7 +10,10 @@ import { z } from 'zod';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
 import { ORDER_TYPES } from '../stock/index.ts';
+import { MAX_PHOTO_BYTES, photoRoute, removePhoto, setPhoto } from './photos.ts';
 import * as catalog from './service.ts';
+import { withTransaction } from '../../platform/db/tx.ts';
+import { AppError } from '../../platform/errors.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
 const name = z.string().trim().min(1).max(80);
@@ -76,6 +79,8 @@ const versionBody = (request: FastifyRequest) =>
 
 export interface CatalogRouteOptions {
   pool: pg.Pool;
+  /** Where item photos are kept (FILES_DIR). */
+  filesDir: string;
   /** Clock for promotions (tests). */
   now?: () => Date;
 }
@@ -86,6 +91,39 @@ export async function catalogRoutes(
 ): Promise<void> {
   const { pool } = options;
   const now = options.now ?? (() => new Date());
+
+  // ------------------------------------------------------------ photos
+  // Own context: the image parsers must not clash with the expense bill's.
+  await app.register(async (photos) => {
+    photos.addContentTypeParser(
+      ['image/jpeg', 'image/png'],
+      { parseAs: 'buffer', bodyLimit: MAX_PHOTO_BYTES + 1 },
+      (_request, body, done) => {
+        done(null, body);
+      },
+    );
+    photos.put(
+      '/menu/items/:id/photo',
+      { config: { permission: 'menu.manage' }, bodyLimit: MAX_PHOTO_BYTES + 1 },
+      async (request) => {
+        if (!Buffer.isBuffer(request.body))
+          throw new AppError('VALIDATION_FAILED', 'Send the photo itself as JPEG or PNG');
+        const bytes = request.body;
+        return withTransaction(pool, (tx) =>
+          setPhoto(tx, whoOf(request), options.filesDir, idParam(request), bytes),
+        );
+      },
+    );
+    photos.delete(
+      '/menu/items/:id/photo',
+      { config: { permission: 'menu.manage' } },
+      async (request, reply) => {
+        await withTransaction(pool, (tx) => removePhoto(tx, whoOf(request), idParam(request)));
+        return reply.code(204).send();
+      },
+    );
+    photoRoute(photos, options.filesDir, { permission: 'menu.read' });
+  });
 
   // ------------------------------------------------------------ reading
   app.get('/menu', { config: { permission: 'menu.read' } }, async (request) => {

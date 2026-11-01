@@ -1,0 +1,255 @@
+category,item,description,variant,price,is_default,allow_dine_in,allow_takeaway,allow_delivery
+Starter,Plain Fries,,Regular,250.00,yes,yes,yes,yes
+Starter,Mayo Garlic Fries,,Regular,320.00,yes,yes,yes,yes
+Starter,Loaded Fries,,Regular,430.00,yes,yes,yes,yes
+Starter,Pizza Fries,,Regular,800.00,yes,yes,yes,yes
+Starter,Wings 6Pcs,,Regular,450.00,yes,yes,yes,yes
+Starter,Nuggets 6Pcs,,Regular,260.00,yes,yes,yes,yes
+Starter,Spanish Roll,,Regular,800.00,yes,yes,yes,yes
+Starter,Finger Chicken,,Regular,450.00,yes,yes,yes,yes
+Starter,Wing 1Pcs,,Regular,75.00,yes,yes,yes,yes
+Starter,Nuggets 1Pcs,,Regular,45.00,yes,yes,yes,yes
+Sandwich,Chicken Cheese,,Regular,300.00,yes,yes,yes,yes
+Sandwich,Café Club,,Regular,360.00,yes,yes,yes,yes
+Sandwich,Alepeno Sandwich,,Regular,490.00,yes,yes,yes,yes
+Sandwich,California Grilled,,Regular,360.00,yes,yes,yes,yes
+Sandwich,Olive Cheese,,Regular,260.00,yes,yes,yes,yes
+Sandwich,Olive Cheese Chicken,,Regular,360.00,yes,yes,yes,yes
+Pasta,Alfredo Pasta,,Regular,930.00,yes,yes,yes,yes
+Pasta,Red Sauce Pasta,,Regular,860.00,yes,yes,yes,yes
+Pasta,Lasanga,,Regular,550.00,yes,yes,yes,yes
+Wraps,Tikka Wraps,,Regular,480.00,yes,yes,yes,yes
+Wraps,Zinger Roll,,Regular,440.00,yes,yes,yes,yes
+Wraps,Pratha Roll,,Regular,220.00,yes,yes,yes,yes
+Wraps,Seekh Kabab Roll,,Regular,330.00,yes,yes,yes,yes
+Wraps,Shawarma,,Regular,210.00,yes,yes,yes,yes
+Burger,Zinger With Fries,,Regular,490.00,yes,yes,yes,yes
+Burger,Tower With Fries,,Regular,570.00,yes,yes,yes,yes
+Burger,Petty Burger,,Regular,370.00,yes,yes,yes,yes
+Burger,Shami Burger,,Regular,230.00,yes,yes,yes,yes
+Burger,Beef Patty Burger,,Regular,550.00,yes,yes,yes,yes
+Burger,Chicken Grill,,Regular,430.00,yes,yes,yes,yes
+Burger,Olive &Mashroom Grill,,Regular,500.00,yes,yes,yes,yes
+Burger,Alepeno Grill,,Regular,700.00,yes,yes,yes,yes
+Steak Chicken,Chicken Black Pepper,,Regular,1000.00,yes,yes,yes,yes
+Steak Chicken,Chicken Mashroom,,Regular,1000.00,yes,yes,yes,yes
+Steak Chicken,Chicken Red Chilli,,Regular,1000.00,yes,yes,yes,yes
+Steak Beef,Beef Mashroom,,Regular,1540.00,yes,yes,yes,yes
+Steak Beef,Beef Red Chilli,,Regular,1540.00,yes,yes,yes,yes
+Steak Beef,Beef Black Pepper,,Regular,1540.00,yes,yes,yes,yes
+Steak Beef,Extra Sauce (Beef Steak),,Regular,200.00,yes,yes,yes,yes
+Steak Chicken,Turkish Chicken,,Regular,1100.00,yes,yes,yes,yes
+Steak Chicken,Extra Sauce (Chicken Steak),,Regular,200.00,yes,yes,yes,yes
+Pizza,Tikka Pizza,,Small,720.00,yes,yes,yes,yes
+Pizza,Tikka Pizza,,Medium,1130.00,no,yes,yes,yes
+Pizza,Tikka Pizza,,Large,1590.00,no,yes,yes,yes
+Pizza,Tikka Pizza,,XL,2140.00,no,yes,yes,yes
+Pizza,Fajita Pizza,,Small,720.00,yes,yes,yes,yes
+Pizza,Fajita Pizza,,Medium,1130.00,no,yes,yes,yes
+Pizza,Fajita Pizza,,Large,1590.00,no,yes,yes,yes
+Pizza,Fajita Pizza,,XL,2140.00,no,yes,yes,yes
+Pizza,Tandoori Pizza,,Small,720.00,yes,yes,yes,yes
+Pizza,Tandoori Pizza,,Medium,1130.00,no,yes,yes,yes
+Pizza,Tandoori Pizza,,Large,1590.00,no,yes,yes,yes
+Pizza,Tandoori Pizza,,XL,2140.00,no,yes,yes,yes
+Pizza,S&M Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,S&M Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,S&M Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,S&M Pizza,,XL,2230.00,no,yes,yes,yes
+Pizza,Crown Crust Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,Crown Crust Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,Crown Crust Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,Crown Crust Pizza,,XL,2230.00,no,yes,yes,yes
+Pizza,BBQ Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,BBQ Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,BBQ Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,BBQ Pizza,,XL,2230.00,no,yes,yes,yes
+Pizza,Malai Boti Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,Malai Boti Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,Malai Boti Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,Malai Boti Pizza,,XL,2230.00,no,yes,yes,yes
+Pizza,Seekh Kabab Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,Seekh Kabab Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,Seekh Kabab Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,Seekh Kabab Pizza,,XL,2230.00,no,yes,yes,yes
+Pizza,Extra Topping,,Small,100.00,yes,yes,yes,yes
+Pizza,Extra Topping,,Medium,150.00,no,yes,yes,yes
+Pizza,Extra Topping,,Large,200.00,no,yes,yes,yes
+Pizza,Extra Topping,,XL,250.00,no,yes,yes,yes
+Coffee,Latte,,Regular,180.00,yes,yes,yes,yes
+Coffee,Cappuccino,,Regular,180.00,yes,yes,yes,yes
+Coffee,Black Coffee,,Regular,140.00,yes,yes,yes,yes
+Coffee,Cold Coffee,,Regular,250.00,yes,yes,yes,yes
+Tea,Matka Special,,Regular,160.00,yes,yes,yes,yes
+Tea,Karak Special,,Regular,130.00,yes,yes,yes,yes
+Tea,Cardamom Tea,,Regular,130.00,yes,yes,yes,yes
+Tea,Green Tea,,Regular,50.00,yes,yes,yes,yes
+Soup,Chicken Corn,,Regular,150.00,yes,yes,yes,yes
+Soup,Hot & Sour,,Regular,150.00,yes,yes,yes,yes
+Soup,Thai Soup,,Regular,150.00,yes,yes,yes,yes
+Drinks,Mint Margrita,,Regular,150.00,yes,yes,yes,yes
+Drinks,Fresh lime,,Regular,140.00,yes,yes,yes,yes
+Drinks,Lemo pani,,Regular,80.00,yes,yes,yes,yes
+Drinks,Pina Colada,,Regular,270.00,yes,yes,yes,yes
+Drinks,Ice Tea,,Regular,100.00,yes,yes,yes,yes
+Shakes,Oreo Shake,,Regular,220.00,yes,yes,yes,yes
+Shakes,Ice Cream Shake,,Regular,410.00,yes,yes,yes,yes
+Shakes,Chocolate Shake,,Regular,280.00,yes,yes,yes,yes
+Shakes,Strawberry Shake,,Regular,370.00,yes,yes,yes,yes
+Shakes,Mango Shake,,Regular,220.00,yes,yes,yes,yes
+BBQ,Malai Boti 4pcs,,Regular,560.00,yes,yes,yes,yes
+BBQ,Tikka Boti 6pcs,,Regular,410.00,yes,yes,yes,yes
+BBQ,1/4 Tikka 1 pcs,,Regular,330.00,yes,yes,yes,yes
+BBQ,Reshmi Kabab,,Regular,200.00,yes,yes,yes,yes
+BBQ,Seekh Kabab,,Regular,160.00,yes,yes,yes,yes
+BBQ,Beef Kabab,,Regular,220.00,yes,yes,yes,yes
+BBQ,Chicken Sajji,,Regular,1950.00,yes,yes,yes,yes
+BBQ,Grill Fish Boneless,,1 kg,2750.00,yes,yes,yes,yes
+BBQ,Grill Fish Boneless,,½ kg,1400.00,no,yes,yes,yes
+BBQ,Grill Fish Rahu,,1 kg,1300.00,yes,yes,yes,yes
+BBQ,Grill Fish Rahu,,½ kg,750.00,no,yes,yes,yes
+Rice,Veg Fried Rice,,Regular,600.00,yes,yes,yes,yes
+Chinese,Manchorian,,Regular,770.00,yes,yes,yes,yes
+Chinese,Chowmein,,Regular,770.00,yes,yes,yes,yes
+Chinese,Chicken Chilli Dry,,Regular,940.00,yes,yes,yes,yes
+Pakistani,Red Karhai,,Full,1500.00,yes,yes,yes,yes
+Pakistani,Red Karhai,,Half,750.00,no,yes,yes,yes
+Pakistani,Red Boneless,,Full,1700.00,yes,yes,yes,yes
+Pakistani,Red Boneless,,Half,850.00,no,yes,yes,yes
+Pakistani,White Karhai,,Full,1800.00,yes,yes,yes,yes
+Pakistani,White Karhai,,Half,900.00,no,yes,yes,yes
+Pakistani,White Boneless,,Full,1900.00,yes,yes,yes,yes
+Pakistani,White Boneless,,Half,950.00,no,yes,yes,yes
+Pakistani,BBQ Karhai,,Full,1900.00,yes,yes,yes,yes
+Pakistani,BBQ Karhai,,Half,950.00,no,yes,yes,yes
+Pakistani,Seekh Kabab Karhai,,Full,1900.00,yes,yes,yes,yes
+Pakistani,Seekh Kabab Karhai,,Half,950.00,no,yes,yes,yes
+Pakistani,Mutton Karhai,,Full,3200.00,yes,yes,yes,yes
+Pakistani,Mutton Karhai,,Half,1600.00,no,yes,yes,yes
+Pakistani,Mutton Shanwari,,Full,3500.00,yes,yes,yes,yes
+Pakistani,Mutton Shanwari,,Half,1750.00,no,yes,yes,yes
+Pakistani,Chicken Shanwari,,Full,1600.00,yes,yes,yes,yes
+Pakistani,Chicken Shanwari,,Half,800.00,no,yes,yes,yes
+Pakistani,Plane Naan,,Regular,35.00,yes,yes,yes,yes
+Pakistani,Roghni Naan,,Regular,45.00,yes,yes,yes,yes
+Pakistani,Garlic Naan,,Regular,45.00,yes,yes,yes,yes
+Pakistani,Capati,,Regular,20.00,yes,yes,yes,yes
+Pakistani,Tandoori Pratha,,Regular,65.00,yes,yes,yes,yes
+Pakistani,Raita,,Regular,80.00,yes,yes,yes,yes
+Pakistani,Fresh Salad Plate,,Regular,90.00,yes,yes,yes,yes
+Rice,Chicken Biryani 1Kg,,Regular,2400.00,yes,yes,yes,yes
+Rice,Chicken Biryani Dish,,Regular,800.00,yes,yes,yes,yes
+Rice,Chicken Biryani plate,,Regular,440.00,yes,yes,yes,yes
+Rice,Peas Pulao Dish,,Regular,650.00,yes,yes,yes,yes
+Rice,Chana Pulao Dish,,Regular,650.00,yes,yes,yes,yes
+Rice,Chicken Pulao Dish,,Regular,750.00,yes,yes,yes,yes
+Rice,Beef Pulao Dish,,Regular,800.00,yes,yes,yes,yes
+Rice,Kabli Pulao Dish,,Regular,1200.00,yes,yes,yes,yes
+Desserts,Rabri Dish,,Regular,1900.00,yes,yes,yes,yes
+Desserts,Oreo Delight Dish,,Regular,2200.00,yes,yes,yes,yes
+Desserts,Mango Delight Dish,,Regular,2300.00,yes,yes,yes,yes
+Desserts,Fruit Trifle Dish,,Regular,2200.00,yes,yes,yes,yes
+Desserts,Gajjar Halwa 200grm,,Regular,310.00,yes,yes,yes,yes
+Desserts,Molten Lava Cake,,Regular,330.00,yes,yes,yes,yes
+Bakery Items,Pasty,,Regular,140.00,yes,yes,yes,yes
+Bakery Items,Donut,,Regular,130.00,yes,yes,yes,yes
+Bakery Items,Cake Slice,,Regular,170.00,yes,yes,yes,yes
+Bakery Items,Browni,,Regular,220.00,yes,yes,yes,yes
+Pepsi Drink,Pepsi 1.5 ltr,,Regular,200.00,yes,yes,yes,yes
+Pepsi Drink,Pepsi 1Ltr,,Regular,180.00,yes,yes,yes,yes
+Pepsi Drink,Pepsi NR,,Regular,80.00,yes,yes,yes,yes
+Pepsi Drink,Pepsi Tin,,Regular,120.00,yes,yes,yes,yes
+Pepsi Drink,String 500ml,,Regular,130.00,yes,yes,yes,yes
+Water,Water Large,,Regular,70.00,yes,yes,yes,yes
+Water,Water Small,,Regular,40.00,yes,yes,yes,yes
+Nestle Juice,Slice 200ml,,Regular,60.00,yes,yes,yes,yes
+Nestle Juice,Nesfruta 200ml,,Regular,70.00,yes,yes,yes,yes
+Nestle Juice,Fruita Vital 200ml,,Regular,80.00,yes,yes,yes,yes
+Nestle Juice,Fruita Vital 1ltr,,Regular,400.00,yes,yes,yes,yes
+Nestle Juice,Nesfruta 1ltr,,Regular,260.00,yes,yes,yes,yes
+Nestle Juice,MOCHA JUICE,,Regular,160.00,yes,yes,yes,yes
+Nestle Juice,CAPPUCCINO JUICE,,Regular,160.00,yes,yes,yes,yes
+Nestle Juice,LATTE JUICE,,Regular,160.00,yes,yes,yes,yes
+Nestle Juice,Milo,,Regular,200.00,yes,yes,yes,yes
+Desserts,Gol Gappay 12 pcs,,Regular,190.00,yes,yes,yes,yes
+Desserts,Gol Gappay 6pcs,,Regular,100.00,yes,yes,yes,yes
+Pakistani,Chicken Haleem,,Regular,1200.00,yes,yes,yes,yes
+Bliss Scoop,Scoop Ice Cream,,Regular,80.00,yes,yes,yes,yes
+Bliss Ice cream,Biscut Cone,,Regular,100.00,yes,yes,yes,yes
+Walls Ice cream,Magnum Classic,,Regular,299.00,yes,yes,yes,yes
+Walls Ice cream,Cornetto,,Regular,190.00,yes,yes,yes,yes
+Walls Ice cream,Double Cocolate,,Regular,150.00,yes,yes,yes,yes
+Walls Ice cream,Pop Cone Cocolate,,Regular,90.00,yes,yes,yes,yes
+Walls Ice cream,Pop Cone Strawberry,,Regular,90.00,yes,yes,yes,yes
+Walls Ice cream,Pop Cone Carimal,,Regular,100.00,yes,yes,yes,yes
+Walls Ice cream,Feast,,Regular,100.00,yes,yes,yes,yes
+Walls Ice cream,Choc Bar,,Regular,50.00,yes,yes,yes,yes
+Walls Ice cream,Jet Sport,,Regular,40.00,yes,yes,yes,yes
+Walls Ice cream,Donut Ice Cream,,Regular,100.00,yes,yes,yes,yes
+Walls Ice cream,Dassi Kulfi,,Regular,100.00,yes,yes,yes,yes
+Bliss Scoop,Peshawri Falooda,,Regular,350.00,yes,yes,yes,yes
+Snacks,Biscut,,Rs 10,10.00,yes,yes,yes,yes
+Snacks,Biscut,,Rs 20,20.00,no,yes,yes,yes
+Snacks,Biscut,,Rs 30,30.00,no,yes,yes,yes
+Snacks,Biscut,,Rs 50,50.00,no,yes,yes,yes
+Snacks,Lays,,Rs 20,20.00,yes,yes,yes,yes
+Snacks,Lays,,Rs 30,30.00,no,yes,yes,yes
+Snacks,Lays,,Rs 40,40.00,no,yes,yes,yes
+Snacks,Lays,,Rs 50,50.00,no,yes,yes,yes
+Snacks,Lays,,Rs 60,60.00,no,yes,yes,yes
+Snacks,Lays,,Rs 70,70.00,no,yes,yes,yes
+Snacks,Lays,,Rs 100,100.00,no,yes,yes,yes
+Snacks,Lays,,Rs 130,130.00,no,yes,yes,yes
+Snacks,Nimko,,Regular,100.00,yes,yes,yes,yes
+Snacks,Penut,,Regular,100.00,yes,yes,yes,yes
+Bread & Beyond,Lemon Pound,,Regular,370.00,yes,yes,yes,yes
+Bread & Beyond,Marble Pound,,Regular,370.00,yes,yes,yes,yes
+Bread & Beyond,Old Fashionend,,Regular,370.00,yes,yes,yes,yes
+Bread & Beyond,Fruit Cake Small,,Regular,140.00,yes,yes,yes,yes
+Bread & Beyond,Bar Cake,,Regular,370.00,yes,yes,yes,yes
+Bread & Beyond,Fruit Cake,,Regular,230.00,yes,yes,yes,yes
+Bread & Beyond,Chip Muffin,,Regular,170.00,yes,yes,yes,yes
+Bread & Beyond,Cocolate Muffin,,Regular,190.00,yes,yes,yes,yes
+Bread & Beyond,Cup Cake,,Regular,50.00,yes,yes,yes,yes
+Packing,Packing,,Rs 10,10.00,yes,yes,yes,yes
+Packing,Packing,,Rs 20,20.00,no,yes,yes,yes
+Packing,Packing,,Rs 30,30.00,no,yes,yes,yes
+Packing,Packing,,Rs 40,40.00,no,yes,yes,yes
+Gaming,PS5 30 Mint,,Regular,100.00,yes,yes,no,no
+Gaming,PS5 1Hour,,Regular,200.00,yes,yes,no,no
+Gaming,VR Set Meta 30 Nint,,Regular,300.00,yes,yes,no,no
+Gaming,VR Set Meta 1Hour,,Regular,600.00,yes,yes,no,no
+Gaming,VR Set PS5 30 mint,,Regular,500.00,yes,yes,no,no
+Gaming,VR Set PS5 1 Hour,,Regular,1000.00,yes,yes,no,no
+Gaming,Party Charge,,Rs 2000,2000.00,yes,yes,no,no
+Gaming,Party Charge,,Rs 5000,5000.00,no,yes,no,no
+Gaming,Gas Heater 30 mint,,Regular,200.00,yes,yes,no,no
+Gaming,Gas Heater 1 Hour,,Regular,400.00,yes,yes,no,no
+Gaming,Firewood,,Regular,400.00,yes,yes,no,no
+Desserts,Russian Salad,,Regular,750.00,yes,yes,yes,yes
+Desserts,Italian Salad,,Regular,750.00,yes,yes,yes,yes
+Pepsi Drink,2.25 Ltr Jumbo,,Regular,260.00,yes,yes,yes,yes
+Pakistani,Beef Korma,,Full,2500.00,yes,yes,yes,yes
+Pakistani,Beef Korma,,Half,1250.00,no,yes,yes,yes
+Pizza,Special Pizza,,Small,770.00,yes,yes,yes,yes
+Pizza,Special Pizza,,Medium,1210.00,no,yes,yes,yes
+Pizza,Special Pizza,,Large,1660.00,no,yes,yes,yes
+Pizza,Special Pizza,,XL,2230.00,no,yes,yes,yes
+BBQ,Turkish kubab,,Regular,250.00,yes,yes,yes,yes
+Desserts,Caremal Delight Dish,,Regular,2200.00,yes,yes,yes,yes
+Drinks,Fresh Juice,,Regular,100.00,yes,yes,yes,yes
+Pakistani,Shahi Dall,,Regular,900.00,yes,yes,yes,yes
+Pakistani,Karahi Plate,,Regular,400.00,yes,yes,yes,yes
+Pakistani,Butter,,Full,500.00,yes,yes,yes,yes
+Pakistani,Butter,,Half,250.00,no,yes,yes,yes
+Desserts,Mix Kheer Dish,,Regular,700.00,yes,yes,yes,yes
+BBQ,Finger Fish Boneless 1Kg,,Regular,2750.00,yes,yes,yes,yes
+Pakistani,Chicken Korma,,Full,1600.00,yes,yes,yes,yes
+Pakistani,Chicken Korma,,Half,800.00,no,yes,yes,yes
+Pakistani,Qeema 1kg,,Regular,2400.00,yes,yes,yes,yes
+Walls Ice cream,Classoco,,Regular,140.00,yes,yes,yes,yes
+Rice,Mutton Pullao Dish Dish,,Regular,1100.00,yes,yes,yes,yes
+Pakistani,Mutton Namkeen,,Full,3600.00,yes,yes,yes,yes
+Pakistani,Mutton Namkeen,,Half,1800.00,no,yes,yes,yes
+Desserts,Gulab Jaman 1p,,Regular,50.00,yes,yes,yes,yes
+Soup,Fish Cracker 6 Piece,,Regular,30.00,yes,yes,yes,yes

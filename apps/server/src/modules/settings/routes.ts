@@ -9,6 +9,13 @@ import { withTransaction } from '../../platform/db/tx.ts';
 import { parseInput } from '../../platform/validation.ts';
 import type { Who } from '../catalog/index.ts';
 import { authOf, factsOf } from '../identity/index.ts';
+import {
+  previewReceipt,
+  readReceiptDesign,
+  receiptLayout,
+  saveReceiptDesign,
+} from '../printing/index.ts';
+import { readSetting } from '../../platform/settings.ts';
 import { listSettings, readBranding, updateBranding, updateSetting } from './service.ts';
 
 function whoOf(request: FastifyRequest): Who {
@@ -77,4 +84,29 @@ export async function settingsRoutes(
     );
     return withTransaction(pool, (tx) => updateBranding(tx, whoOf(request), body));
   });
+
+  // Receipt design (owner): text blocks and switches; the preview is the printer's own output.
+  app.get('/settings/receipt-design', { config: { permission: 'settings.manage' } }, async () =>
+    readReceiptDesign(pool),
+  );
+  app.post(
+    '/settings/receipt-design/preview',
+    { config: { permission: 'settings.manage' } },
+    async (request) => {
+      const body = parseInput(z.object({ layout: receiptLayout }).strict(), request.body);
+      const timeZone = await readSetting(pool, 'shop.timezone', z.string().min(1));
+      return previewReceipt(pool, body.layout, timeZone);
+    },
+  );
+  app.put(
+    '/settings/receipt-design',
+    { config: { permission: 'settings.manage' } },
+    async (request) => {
+      const body = parseInput(
+        z.object({ expectedVersion, layout: receiptLayout.nullable() }).strict(),
+        request.body,
+      );
+      return withTransaction(pool, (tx) => saveReceiptDesign(tx, whoOf(request), body));
+    },
+  );
 }

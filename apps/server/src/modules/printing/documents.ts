@@ -6,7 +6,7 @@
  * price, a payment or a guest's details: such things cannot reach the kitchen (AT-99,
  * AT-83). Golden files in test/printing/golden pin every layout (AT-83, AT-84).
  */
-import { amount, columns, EscPos, rule, toPrintable, twoCols, wrap } from './escpos.ts';
+import { amount, columns, EscPos, rule, toPrintable, twoCols, wrap, type Align } from './escpos.ts';
 
 export interface PrintOptions {
   width: number;
@@ -151,30 +151,80 @@ export interface ReceiptData {
     collect: { amount: string; by: 'cash' | 'card' } | null;
   } | null;
   footer: string;
+  /** The owner's receipt design (Settings → Receipt design); without one, the standard layout. */
+  layout?: ReceiptLayout | undefined;
+}
+
+/** A block of the owner's own text: each line of `text` is printed, wrapped to the paper. */
+export interface ReceiptBlock {
+  text: string;
+  align: Align;
+  bold: boolean;
+  size: 'normal' | 'wide' | 'big';
+}
+
+export interface ReceiptLayout {
+  /** Printed under the shop name and contact line. */
+  header: ReceiptBlock[];
+  /** Printed after the totals, in place of the one-line footer. */
+  footer: ReceiptBlock[];
+  shopNameSize: 'normal' | 'wide' | 'big';
+  showContact: boolean;
+  showCashier: boolean;
+}
+
+const SIZE = {
+  normal: {},
+  wide: { width: true },
+  big: { width: true, height: true },
+} as const;
+
+function block(doc: EscPos, b: ReceiptBlock, w: number): void {
+  // Double width halves the characters a line holds.
+  const width = b.size === 'normal' ? w : Math.floor(w / 2);
+  doc.align(b.align).bold(b.bold).size(SIZE[b.size]);
+  for (const part of b.text.split('\n')) {
+    const lines = part.trim() ? wrap(part.trim(), width) : [''];
+    for (const text of lines) doc.line(text);
+  }
+  doc.size({}).bold(false).align('left');
 }
 
 export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
+  return composeReceipt(r, o).bytes();
+}
+
+/** The receipt as the printer receives it; `.preview()` gives the lines for a screen. */
+export function composeReceipt(r: ReceiptData, o: PrintOptions): EscPos {
   const w = o.width;
   const doc = new EscPos();
+  const layout = r.layout;
   reprintBanner(doc, o.copyNo);
   doc
     .align('center')
     .bold(true)
-    .size({ width: true })
+    .size(SIZE[layout?.shopNameSize ?? 'wide'])
     .line(r.shop.name.toUpperCase())
     .size({})
     .bold(false);
   const contact = [r.shop.addressLine, r.shop.phone]
     .filter((x): x is string => Boolean(x))
     .join('  ·  ');
-  for (const text of contact ? wrap(contact, w) : []) doc.line(text);
-  doc.align('left').line(rule(w));
+  if (layout?.showContact ?? true)
+    for (const text of contact ? wrap(contact, w) : []) doc.line(text);
+  doc.align('left');
+  for (const b of layout?.header ?? []) block(doc, b, w);
+  doc.line(rule(w));
   doc.line(
     r.invoiceNo === null
       ? twoCols(`Order: ${r.where}`, 'NOT PAID YET', w)
       : twoCols(`Invoice: ${r.invoiceNo}`, r.where, w),
   );
-  doc.line(twoCols(shopTime(r.at, o.timeZone), `Cashier: ${r.cashier}`, w));
+  doc.line(
+    layout && !layout.showCashier
+      ? shopTime(r.at, o.timeZone)
+      : twoCols(shopTime(r.at, o.timeZone), `Cashier: ${r.cashier}`, w),
+  );
   if (r.delivery) {
     doc.line(rule(w));
     doc
@@ -213,10 +263,13 @@ export function renderReceipt(r: ReceiptData, o: PrintOptions): Buffer {
       )
       .bold(false);
   doc.line(rule(w));
-  doc.align('center');
-  for (const text of wrap(r.footer, w)) doc.line(text);
-  doc.align('left');
-  return doc.cut(o.canCut).bytes();
+  if (layout) for (const b of layout.footer) block(doc, b, w);
+  else {
+    doc.align('center');
+    for (const text of wrap(r.footer, w)) doc.line(text);
+    doc.align('left');
+  }
+  return doc.cut(o.canCut);
 }
 
 // ---------------------------------------------------------------- refund slip (step 5.2)

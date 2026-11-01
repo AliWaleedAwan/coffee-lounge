@@ -97,6 +97,13 @@ export const AREAS: readonly Area[] = [
     anyOf: ['settings.manage', 'printers.manage'],
     ready: true,
   },
+  {
+    id: 'receipt-design',
+    label: 'Receipt design',
+    path: '/receipt-design',
+    anyOf: ['settings.manage'],
+    ready: true,
+  },
   { id: 'audit', label: 'Audit log', path: '/audit', anyOf: ['audit.read'], ready: true },
   {
     id: 'health',

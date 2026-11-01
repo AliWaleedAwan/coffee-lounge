@@ -1,0 +1,274 @@
+ID	pname	pbarcode	pprice	pinstock	pcategory	pdiscountable	pcost
+9	Plain Fries	1	250	-1	Starter	-1	0
+10	Mayo Garlic Fries	2	320	-1	Starter	-1	0
+11	Loaded Fries	3	430	-1	Starter	-1	0
+12	Pizza Fries	4	800	-1	Starter	-1	0
+13	Wings 6Pcs	5	450	-1	Starter	-1	0
+14	Nuggets 6Pcs	6	260	-1	Starter	-1	0
+15	Spanish Roll	7	800	-1	Starter	-1	0
+16	Finger Chicken	8	450	-1	Starter	-1	0
+17	Wing 1Pcs	9	75	-1	Starter	-1	0
+18	Nuggets 1Pcs	10	45	-1	Starter	-1	0
+19	Chicken Cheese	11	300	-1	Sandwich	-1	0
+20	Café Club	12	360	-1	Sandwich	-1	0
+21	Alepeno Sandwich	13	490	-1	Sandwich	-1	0
+22	California Grilled	14	360	-1	Sandwich	-1	0
+23	Olive Cheese	15	260	-1	Sandwich	-1	0
+24	Olive Cheese Chicken	16	360	-1	Sandwich	-1	0
+25	Alfredo Pasta	17	930	-1	Pasta	-1	0
+26	Red Sauce Pasta	18	860	-1	Pasta	-1	0
+27	Lasanga	19	550	-1	Pasta	-1	0
+28	 Tikka Wraps	20	480	-1	Wraps	-1	0
+29	Zinger Roll	21	440	-1	Wraps	-1	0
+30	Pratha Roll	22	220	-1	Wraps	-1	0
+31	Seekh Kabab Roll	23	330	-1	Wraps	-1	0
+32	Shawarma	24	210	-1	Wraps	-1	0
+33	Zinger With Fries	25	490	-1	Burger	-1	0
+34	Tower With Fries	26	570	-1	Burger	-1	0
+35	Petty Burger	27	370	-1	Burger	-1	0
+36	Shami Burger	28	230	-1	Burger	-1	0
+37	Beef Patty Burger	29	550	-1	Burger	-1	0
+38	Chicken Grill	30	430	-1	Burger	-1	0
+39	Olive &Mashroom Grill	31	500	-1	Burger	-1	0
+40	Alepeno Grill	32	700	-1	Burger	-1	0
+41	Chicken Black Pepper	33	1000	-1	Steak Chicken	-1	0
+42	Chicken Mashroom	34	1000	-1	Steak Chicken	-1	0
+43	Chicken Red Chilli	35	1000	-1	Steak Chicken	-1	0
+44	Beef Mashroom	36	1540	-1	Steak Beef	-1	0
+45	Beef Red Chilli	37	1540	-1	Steak Beef	-1	0
+46	Beef Black Pepper	38	1540	-1	Steak Beef	-1	0
+47	Extra Sauce	39	200	-1	Steak Beef	-1	0
+48	Turkish Chicken	40	1100	-1	Steak Chicken	-1	0
+49	Extra Sauce	41	200	-1	Steak Chicken	-1	0
+50	Tikka small	42	720	-1	Pizza	-1	0
+51	Tikka Medium	43	1130	-1	Pizza	-1	0
+52	Tikka Large	44	1590	-1	Pizza	-1	0
+53	Tikka XL	45	2140	-1	Pizza	-1	0
+54	Fajita small	46	720	-1	Pizza	-1	0
+55	Fajita Medium	47	1130	-1	Pizza	-1	0
+61	Fajita XL	49	2140	-1	Pizza	-1	0
+62	Tandoori small	50	720	-1	Pizza	-1	0
+63	Tandoori Medium	51	1130	-1	Pizza	-1	0
+64	Tandoori Large	52	1590	-1	Pizza	-1	0
+65	Tandoori XL	53	2140	-1	Pizza	-1	0
+66	S&M small	54	770	-1	Pizza	-1	0
+67	S&M Medium	55	1210	-1	Pizza	-1	0
+68	S&M Large	56	1660	-1	Pizza	-1	0
+69	S&M XL	57	2230	-1	Pizza	-1	0
+70	Crown Crust small	58	770	-1	Pizza	-1	0
+71	Crown Crust Medium	59	1210	-1	Pizza	-1	0
+72	Crown Crust Large	60	1660	-1	Pizza	-1	0
+73	Crown Crust XL	61	2230	-1	Pizza	-1	0
+74	BBQ small	62	770	-1	Pizza	-1	0
+75	BBQ Medium	63	1210	-1	Pizza	-1	0
+76	BBQ Large	64	1660	-1	Pizza	-1	0
+77	BBQ XL	65	2230	-1	Pizza	-1	0
+78	Malai Boti small	66	770	-1	Pizza	-1	0
+79	Malai Boti Medium	67	1210	-1	Pizza	-1	0
+80	Malai Boti Large	68	1660	-1	Pizza	-1	0
+81	Malai Boti XL	69	2230	-1	Pizza	-1	0
+82	Seekh Kabab small	70	770	-1	Pizza	-1	0
+83	Seekh Kabab Medium	71	1210	-1	Pizza	-1	0
+84	Seekh Kabab Large	72	1660	-1	Pizza	-1	0
+85	Seekh Kabab XL	73	2230	-1	Pizza	-1	0
+86	Extra Topping small	74	100	-1	Pizza	-1	0
+87	Extra Topping Medium	75	150	-1	Pizza	-1	0
+88	Extra Topping Large	76	200	-1	Pizza	-1	0
+89	Extra Topping XL	77	250	-1	Pizza	-1	0
+90	Latte	78	180	-1	Coffee	-1	0
+91	Cappuccino	79	180	-1	Coffee	-1	0
+92	Black Coffee	80	140	-1	Coffee	-1	0
+93	Cold Coffee	81	250	-1	Coffee	-1	0
+94	Matka Special	82	160	-1	Tea	-1	0
+95	Karak Special	83	130	-1	Tea	-1	0
+96	Cardamom Tea	84	130	-1	Tea	-1	0
+97	Green Tea	85	50	-1	Tea	-1	0
+98	Chicken Corn	86	150	-1	Soup	-1	0
+99	Hot & Sour	87	150	-1	Soup	-1	0
+100	Thai Soup	88	150	-1	Soup	-1	0
+101	Mint Margrita	89	150	-1	Drinks	-1	0
+102	Fresh lime	90	140	-1	Drinks	-1	0
+103	Lemo pani	91	80	-1	Drinks	-1	0
+104	Pina Colada	92	270	-1	Drinks	-1	0
+105	Ice Tea	93	100	-1	Drinks	-1	0
+106	Oreo Shake	94	220	-1	Shakes	-1	0
+107	Ice Cream Shake	95	410	-1	Shakes	-1	0
+108	Chocolate Shake	96	280	-1	Shakes	-1	0
+109	Strawberry Shake	97	370	-1	Shakes	-1	0
+110	Mango Shake	98	220	-1	Shakes	-1	0
+111	Malai Boti 4pcs	99	560	-1	BBQ	-1	0
+112	Tikka Boti 6pcs	100	410	-1	BBQ	-1	0
+113	1/4 Tikka 1 pcs	101	330	-1	BBQ	-1	0
+114	Reshmi Kabab	102	200	-1	BBQ	-1	0
+115	Seekh Kabab	103	160	-1	BBQ	-1	0
+116	Beef Kabab	104	220	-1	BBQ	-1	0
+117	Chicken Sajji	105	1950	-1	BBQ	-1	0
+118	Grill Fish Boneless 1Kg	106	2750	-1	BBQ	-1	0
+119	Grill Fish Boneless 1/2Kg	107	1400	-1	BBQ	-1	0
+120	Grill Fish Rahu 1Kg	108	1300	-1	BBQ	-1	0
+121	Grill Fish Rahu 1/2Kg	109	750	-1	BBQ	-1	0
+122	Veg Fried Rice	110	600	-1	Rice	-1	0
+123	Manchorian	111	770	-1	Chineese	-1	0
+124	Chowmein	112	770	-1	Chineese	-1	0
+125	Chicken Chilli Dry	113	940	-1	Chineese	-1	0
+126	Red Karhai Full	114	1500	-1	Pakistani	-1	0
+127	Red Karhai Half	115	750	-1	Pakistani	-1	0
+128	Red Boneless Full	116	1700	-1	Pakistani	-1	0
+129	Red Boneless  Half	117	850	-1	Pakistani	-1	0
+130	White Karhai Full	118	1800	-1	Pakistani	-1	0
+131	White Karhai Half	119	900	-1	Pakistani	-1	0
+132	white Boneless Full	120	1900	-1	Pakistani	-1	0
+133	White Boneless Half	121	950	-1	Pakistani	-1	0
+134	BBQ Karhai Full	122	1900	-1	Pakistani	-1	0
+135	BBQ Karhai Half	123	950	-1	Pakistani	-1	0
+136	Seekh Kabab Full	124	1900	-1	Pakistani	-1	0
+137	Seekh Kabab Half	125	950	-1	Pakistani	-1	0
+138	Mutton Karhai Full	126	3200	-1	Pakistani	-1	0
+139	Mutton Karhai Half	127	1600	-1	Pakistani	-1	0
+140	Mutton Shanwari Full	128	3500	-1	Pakistani	-1	0
+141	Mutton Shanwari Half	129	1750	-1	Pakistani	-1	0
+142	Chicken Shanwari Full	130	1600	-1	Pakistani	-1	0
+143	Chicken Shanwari Half	131	800	-1	Pakistani	-1	0
+144	Plane Naan	132	35	-1	Pakistani	-1	0
+145	Roghni Naan	133	45	-1	Pakistani	-1	0
+146	Garlic Naan	134	45	-1	Pakistani	-1	0
+147	Capati	135	20	-1	Pakistani	-1	0
+148	Tandoori Pratha	136	65	-1	Pakistani	-1	0
+149	Raita	137	80	-1	Pakistani	-1	0
+150	Fresh Salad Plate	138	90	-1	Pakistani	-1	0
+151	Chicken Biryani 1Kg	139	2400	-1	Rice	-1	0
+152	Chicken Biryani Dish	140	800	-1	Rice	-1	0
+153	Chicken Biryani plate	141	440	-1	Rice	-1	0
+154	Peas Pulao Dish	142	650	-1	Rice	-1	0
+155	Chana Pulao Dish	143	650	-1	Rice	-1	0
+156	Chicken Pulao Dish	144	750	-1	Rice	-1	0
+157	Beef Pulao Dish	145	800	-1	Rice	-1	0
+158	Kabli Pulao Dish	146	1200	-1	Rice	-1	0
+159	Rabri Dish	147	1900	-1	Desserts	-1	0
+160	Oreo Delight Dish	148	2200	-1	Desserts	-1	0
+161	Mango Delight Dish	149	2300	-1	Desserts	-1	0
+162	Fruit Trifle Dish	150	2200	-1	Desserts	-1	0
+163	Gajjar Halwa 200grm	151	310	-1	Desserts	-1	0
+164	Molten Lava Cake	152	330	-1	Desserts	-1	0
+165	Pasty	153	140	-1	Bakery Items	0	0
+166	Donut	154	130	-1	Bakery Items	0	0
+167	Cake Slice	155	170	-1	Bakery Items	0	0
+168	Browni	156	220	-1	Bakery Items	0	0
+351	Pepsi 1.5 ltr	012000800085	200	-1	Pepsi Drink	0	0
+352	Pepsi 1Ltr	012000002946	180	-1	Pepsi Drink	0	0
+353	Pepsi NR	8964000103289	80	-1	Pepsi Drink	0	0
+354	Pepsi Tin	8964000101476	120	-1	Pepsi Drink	0	0
+358	String 500ml	8964000101704	130	-1	Pepsi Drink	0	0
+359	Water Large	157	70	-1	Water	0	0
+360	Water Small	158	40	-1	Water	0	0
+361	Slice 200ml	8964000101957	60	-1	Nestle Juice	0	0
+368	Nesfruta 200ml	8961008221922	70	-1	Nestle Juice	0	0
+369	Fruita Vital 200ml	8961008223506	80	-1	Nestle Juice	0	0
+370	Fruita Vital 1ltr	8961008223063	400	-1	Nestle Juice	0	0
+371	Nesfruta 1ltr	8961008223698	260	-1	Nestle Juice	0	0
+377	MOCHA JUICE	8961008238166	160	-1	Nestle Juice	0	0
+378	CAPPUCCINO JUICE	8961008238180	160	-1	Nestle Juice	0	0
+379	LATTE JUICE	8961008238173	160	-1	Nestle Juice	0	0
+381	Milo	8961008219882	200	-1	Nestle Juice	0	0
+382	Gol Gappay 12  pcs	159	190	-1	Desserts	-1	0
+383	Gol Gappay 6pcs	160	100	-1	Desserts	-1	0
+384	Chicken Haleem	161	1200	-1	Pakistani	-1	0
+389	Scoop Ice Cream	162	80	-1	Bliss Scoop	0	0
+390	Biscut Cone	8960000440980	100	-1	Bliss Ice cream	0	0
+391			0	0	Bliss Ice cream	0	0
+392			0	0	Bliss Ice cream	0	0
+393			0	0	Bliss Ice cream	0	0
+394			0	0	Bliss Ice creamBliss Ice cream	0	0
+395			0	0	Bliss Ice cream	0	0
+396			0	0	Bliss Ice cream	0	0
+397			0	0	Bliss Ice cream	0	0
+398			0	0	Bliss Ice cream	0	0
+399			0	0	Bliss Ice cream	0	0
+400			0	0	Walls Ice cream	0	0
+401	Magnum Classic	8961014034622	299	-1	Walls Ice cream	0	0
+402	Cornetto	8721274610420	190	-1	Walls Ice cream	0	0
+403	Double Cocolate	8961014033458	150	-1	Walls Ice cream	0	0
+404	Pop Cone Cocolate	8961014032246	90	-1	Walls Ice cream	0	0
+405	Pop Cone Strawberry	8961014032239	90	-1	Walls Ice cream	0	0
+406	Pop Cone Carimal	8961014034240	100	-1	Walls Ice cream	0	0
+407	Feast	8721274610406	100	-1	Walls Ice cream	0	0
+408	Choc Bar	8721274610581	50	-1	Walls Ice cream	0	0
+409	Jet Sport	8721274610482	40	-1	Walls Ice cream	0	0
+410	Donut	8961014017564	100	-1	Walls Ice cream	0	0
+411	Dassi Kulfi	163	100	-1	Walls Ice cream	0	0
+412	Peshawri Falooda	164	350	-1	Bliss Scoop	0	0
+413	Biscut	165	10	-1	Snacks	0	0
+414	Biscut	166	20	-1	Snacks	0	0
+415	Biscut	167	30	-1	Snacks	0	0
+416	Biscut	168	50	-1	Snacks	0	0
+417	Lays	169	20	-1	Snacks	0	0
+418	Lays	170	30	-1	Snacks	0	0
+419	Lays	171	40	-1	Snacks	0	0
+420	Lays	172	50	-1	Snacks	0	0
+421	Lays	173	60	-1	Snacks	0	0
+422	Lays	174	70	-1	Snacks	0	0
+423	Lays	175	100	-1	Snacks	0	0
+424	Lays	176	130	-1	Snacks	0	0
+425	Nimko	177	100	-1	Snacks	0	0
+426	Penut		100	-1	Snacks	0	0
+427			0	0	Snacks	0	0
+428			0	0	Snacks	0	0
+429			0	0	Snacks	0	0
+430			0	0	Snacks	0	0
+431			0	0	Snacks	0	0
+432			0	0	Snacks	0	0
+433			0	0	Snacks	0	0
+434	Lemon Pound	8964000176542	370	-1	Bread & Beyond	0	0
+435	Marble Pound	8964000178973	370	-1	Bread & Beyond	0	0
+436	Old Fashionend	8964000178782	370	-1	Bread & Beyond	0	0
+437	Fruit Cake Small	8961101815899	140	-1	Bread & Beyond	0	0
+438			0	0	Bread & Beyond	0	0
+439	Bar Cake	8964000178652	370	-1	Bread & Beyond	0	0
+440	Fruit Cake	8964000178805	230	-1	Bread & Beyond	0	0
+441	 Chip Muffin	8964003878443	170	-1	Bread & Beyond	0	0
+442	Cocolate Muffin	8964003878436	190	-1	Bread & Beyond	0	0
+443	Cup Cake	8964001123170	50	-1	Bread & Beyond	0	0
+444			0	-1	Bread & Beyond	0	0
+445	Packing	178	10	-1	Packing	0	0
+446	Packing	179	20	-1	Packing	0	0
+447	Packing	180	30	-1	Packing	0	0
+448	Packing	181	40	-1	Packing	0	0
+449	PS5  30 Mint	182	100	-1	Gaming	0	0
+450	PS5 1Hour	183	200	-1	Gaming	0	0
+451	VR Set Meta 30 Nint	184	300	-1	Gaming	0	0
+452	VR Set Meta 1Hour	185	600	-1	Gaming	0	0
+453	VR Set PS5 30 mint	186	500	-1	Gaming	0	0
+454	VR Set PS5 1 Hour	187	1000	-1	Gaming	0	0
+455	Party Charge	188	2000	-1	Gaming	0	0
+456	Party Charge	189	5000	-1	Gaming	0	0
+457	Gas Heater 30 mint	190	200	-1	Gaming	0	0
+458	Gas Heater 1 Hour	191	400	-1	Gaming	0	0
+459	Firewood	192	400	-1	Gaming	0	0
+460	Russian Salad	193	750	-1	Desserts	-1	0
+461	Italian Salad	194	750	-1	Desserts	-1	0
+465	Fajita Large	488	1590	-1	Pizza	-1	0
+466	2.25 Ltr Jumbo	012000004070	260	-1	Pepsi Drink	0	0
+467	Beef Korma Full	195	2500	-1	Pakistani	-1	0
+468	Beef Korma Half	196	1250	-1	Pakistani	-1	0
+469	Spc Small Pizza	197	770	-1	Pizza	-1	0
+470	Spc Medium Pizza	198	1210	-1	Pizza	-1	0
+471	Spc Large Pizza	199	1660	-1	Pizza	-1	0
+472	Spc XL Pizza	200	2230	-1	Pizza	-1	0
+473	Turkish kubab	201	250	-1	BBQ	-1	0
+474	Caremal Delight Dish	202	2200	-1	Desserts	-1	0
+475	Fresh Juice	203	100	-1	Drinks	-1	0
+476	Shahi Dall	204	900	-1	Pakistani	-1	0
+477	Karahi Plate	205	400	-1	Pakistani	-1	0
+478	Butter Full	206	500	-1	Pakistani	-1	0
+479	Mix Kheer Dish	207	700	-1	Desserts	-1	0
+480	Finger Fish Boneless 1Kg	208	2750	-1	BBQ	-1	0
+481	Chicken Korma Full	209	1600	-1	Pakistani	-1	0
+482	Qeema 1kg	210	2400	-1	Pakistani	-1	0
+483	Chicken Korma Half	211	800	-1	Pakistani	-1	0
+484	Butter Half	212	250	-1	Pakistani	0	0
+485	Classoco	8961014032512	140	-1	Walls Ice cream	0	0
+486	Mutton Pullao Dish Dish	213	1100	-1	Rice	0	0
+487	Mutton Namkeen Full	214	3600	-1	Pakistani	0	0
+488	Mutton Namkeen Half	215	1800	-1	Pakistani	0	0
+489	Gulab Jaman 1p	216	50	-1	Desserts	-1	0
+490	Fish Cracker 6 Piece	217	30	-1	Soup	-1	0

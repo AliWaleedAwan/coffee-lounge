@@ -3,7 +3,9 @@
  * can be ordered, its modifier groups, and its sizes. Prices of existing sizes change
  * only through "Change price", which asks for a reason and keeps history.
  */
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
+import { API_BASE, errorFrom, messageOf } from '../../api/client.ts';
 import { CheckField, Field, SelectField, TextAreaField } from '../../components/Field.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import {
@@ -238,8 +240,94 @@ export function ItemEditor({
           </div>
         </form>
       </section>
+      {item ? <Photo item={item} /> : null}
       {item ? <Sizes item={item} canPrice={canPrice} /> : null}
     </>
+  );
+}
+
+const PHOTO_TYPES = ['image/jpeg', 'image/png'];
+const MAX_PHOTO = 2 * 1024 * 1024;
+
+/** The item's photo, shown on the guest menu and the counter: choose, replace or remove. */
+function Photo({ item }: { item: MenuItem }) {
+  const writes = useWritesAllowed();
+  const client = useQueryClient();
+  const [problem, setProblem] = useState<string | null>(null);
+  const change = useMutation({
+    mutationFn: async (file: File | null) => {
+      const res = await fetch(`${API_BASE}/menu/items/${item.id}/photo`, {
+        method: file ? 'PUT' : 'DELETE',
+        headers: {
+          ...(file ? { 'content-type': file.type } : {}),
+          'x-cl-request': '1',
+          accept: 'application/json',
+        },
+        credentials: 'same-origin',
+        ...(file ? { body: file } : {}),
+      });
+      if (!res.ok) throw await errorFrom(res);
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['menu'] }),
+  });
+  const choose = (file: File | undefined): void => {
+    if (!file) return;
+    if (!PHOTO_TYPES.includes(file.type)) setProblem('Choose a photo (JPEG or PNG)');
+    else if (file.size > MAX_PHOTO) setProblem('At most 2 MB: use a smaller photo');
+    else {
+      setProblem(null);
+      change.mutate(file);
+    }
+  };
+  return (
+    <section className="card stack" aria-labelledby="photo">
+      <h2 id="photo">Photo</h2>
+      <div className="row" style={{ alignItems: 'center' }}>
+        {item.imageUrl ? (
+          <img
+            src={`${API_BASE}/${item.imageUrl}`}
+            alt={`Photo of ${item.name}`}
+            style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 8 }}
+          />
+        ) : (
+          <p className="muted">No photo yet. Guests see the name only.</p>
+        )}
+        <div className="stack">
+          <label className="btn btn-secondary">
+            {item.imageUrl ? 'Replace photo' : 'Add photo'}
+            <input
+              type="file"
+              accept={PHOTO_TYPES.join(',')}
+              hidden
+              disabled={!writes || change.isPending}
+              onChange={(e) => {
+                choose(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {item.imageUrl ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={!writes || change.isPending}
+              onClick={() => {
+                change.mutate(null);
+              }}
+            >
+              Remove photo
+            </button>
+          ) : null}
+          <p className="muted">JPEG or PNG, at most 2 MB. A square photo looks best.</p>
+        </div>
+      </div>
+      {problem || change.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {problem ?? messageOf(change.error)}
+        </div>
+      ) : null}
+      {change.isPending ? <p className="muted">Saving the photo…</p> : null}
+    </section>
   );
 }
 

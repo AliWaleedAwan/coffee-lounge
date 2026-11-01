@@ -92,6 +92,7 @@ function menuData(management: boolean): Menu {
             id: '21',
             name: 'Latte',
             description: null,
+            imageUrl: null,
             dietaryTags: ['Contains MILK', 'nut-free '],
             allowDineIn: true,
             allowTakeaway: true,

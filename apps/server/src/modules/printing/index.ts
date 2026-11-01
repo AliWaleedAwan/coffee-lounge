@@ -29,3 +29,9 @@ export {
   type SendResult,
   type Transport,
 } from './transports.ts';
+export {
+  previewReceipt,
+  readReceiptDesign,
+  receiptLayout,
+  saveReceiptDesign,
+} from './receipt-design.ts';

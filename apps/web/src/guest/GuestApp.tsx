@@ -350,6 +350,7 @@ function OrderPage() {
           {menu.data ? (
             <MenuPicker
               categories={menu.data.categories}
+              photoBase={GUEST_API}
               disabled={!place.orderingOpen}
               onAdd={(line) => {
                 setCart([...cart, line]);

@@ -13,6 +13,7 @@ import { publish } from '../../platform/outbox.ts';
 import { shopTimeZone } from '../../platform/settings.ts';
 import { stockAvailability, type OrderType } from '../stock/index.ts';
 import { bestPromotion, localMoment, type PromotionRule } from './promotions.ts';
+import { photoUrl } from './photos.ts';
 
 export interface Who {
   actor: Actor & { kind: 'user'; userId: string };
@@ -1070,11 +1071,12 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
         allow_dine_in: boolean;
         allow_takeaway: boolean;
         allow_delivery: boolean;
+        image_path: string | null;
         sort: number;
         is_active: boolean;
         version: number;
       }>(
-        `SELECT id::text, category_id::text, name, description, dietary_tags, allow_dine_in, allow_takeaway,
+        `SELECT id::text, category_id::text, name, description, image_path, dietary_tags, allow_dine_in, allow_takeaway,
               allow_delivery, sort, is_active, version
          FROM cl.menu_items WHERE archived_at IS NULL ${live ? 'AND is_active' : ''} ORDER BY sort, name, menu_items.id`,
       ),
@@ -1142,7 +1144,7 @@ export async function readMenu(db: pg.Pool, options: MenuOptions) {
     id: item.id,
     name: item.name,
     description: item.description,
-    imageUrl: null,
+    imageUrl: photoUrl(item.image_path),
     dietaryTags: item.dietary_tags,
     allowDineIn: item.allow_dine_in,
     allowTakeaway: item.allow_takeaway,
