@@ -76,3 +76,45 @@ describe('POST /products', () => {
     ).toBe(1);
   });
 });
+
+describe('the item card', () => {
+  it('sets the price, which puts it on sale, and corrects an expiry date with a reason', async () => {
+    const { rows } = await fx.pool.query<{ id: string }>(
+      `SELECT id::text FROM cl.inventory_items WHERE name = 'Pepsi 1Ltr'`,
+    );
+    const itemId = rows[0]?.id ?? '';
+    const priced = await post(owner, `/products/by-item/${itemId}/price`, {
+      price: '180',
+      reason: 'First price',
+    });
+    expect(priced.json()).toMatchObject({ soldAs: { onSale: true, price: '180.00' } });
+
+    const made = await post(owner, '/products', {
+      barcode: '8964000999999',
+      name: 'Juice box',
+      categoryId,
+      trackExpiry: true,
+      opening: { qty: '5', unitCost: '40', expiryDate: '2027-01-01' },
+    });
+    expect(made.statusCode).toBe(201);
+    const lot = await fx.pool.query<{ id: string }>(
+      `SELECT l.id::text FROM cl.inventory_lots l JOIN cl.inventory_items i ON i.id = l.item_id
+        WHERE i.name = 'Juice box'`,
+    );
+    const lotId = lot.rows[0]?.id ?? '';
+    const fixed = await post(owner, `/inventory/lots/${lotId}/expiry`, {
+      expiryDate: '2027-02-02',
+      reason: 'Misread',
+    });
+    expect(fixed.statusCode).toBe(200);
+    expect(
+      await count(
+        `SELECT 1 FROM cl.inventory_lots WHERE id = $1 AND expiry_date = '2027-02-02'`,
+        lotId,
+      ),
+    ).toBe(1);
+    expect(
+      await count(`SELECT 1 FROM cl.audit_events WHERE action = 'stock.lot.expiry_corrected'`),
+    ).toBe(1);
+  });
+});

@@ -13,6 +13,7 @@ import { Loading } from '../../components/Loading.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { writeMessage } from '../menu/menu-api.ts';
 import { InventoryItemEditor } from './InventoryItemEditor.tsx';
+import { ProductForm } from './ProductForm.tsx';
 import {
   formatQty,
   looksLikeBarcode,
@@ -37,6 +38,7 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
   const [scanError, setScanError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const client = useQueryClient();
+  const [newProduct, setNewProduct] = useState<string | null>(null);
   const items = useItems({ q: search, category, includeArchived });
 
   const close = (): void => {
@@ -44,6 +46,22 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
     setSearch('');
     searchRef.current?.focus();
   };
+
+  if (newProduct) {
+    return (
+      <ProductForm
+        barcode={newProduct}
+        onCreated={(id) => {
+          setNewProduct(null);
+          setOpen({ id, linkCode: null });
+        }}
+        onCancel={() => {
+          setNewProduct(null);
+          searchRef.current?.focus();
+        }}
+      />
+    );
+  }
 
   if (open) {
     return (
@@ -167,7 +185,7 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
                 className="btn btn-primary"
                 disabled={!writes}
                 onClick={() => {
-                  setOpen({ id: null, linkCode: unknownCode });
+                  setNewProduct(unknownCode);
                   setUnknownCode(null);
                 }}
               >

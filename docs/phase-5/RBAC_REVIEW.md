@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (263)
+### A. Every staff route (266)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -115,6 +115,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/inventory/items/:id/barcodes` | `inventory.items_manage` |
 | GET | `/inventory/items/:id/movements` | `inventory.read` |
 | POST | `/inventory/items/:id/pack-sizes` | `inventory.items_manage` |
+| POST | `/inventory/lots/:id/expiry` | `inventory.items_manage` |
 | GET | `/inventory/overview` | `inventory.read` |
 | PATCH | `/inventory/pack-sizes/:id` | `inventory.items_manage` |
 | GET | `/inventory/scan` | `inventory.read` |
@@ -171,6 +172,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/printers/:id/test` | `printers.manage` |
 | GET | `/printers/status` | `kitchen.read` |
 | POST | `/products` | `inventory.items_manage` |
+| GET | `/products/by-item/:id` | `inventory.read` |
+| POST | `/products/by-item/:id/price` | `menu.price_change` |
 | GET | `/promotions` | `promotions.manage` |
 | POST | `/promotions` | `promotions.manage` |
 | PATCH | `/promotions/:id` | `promotions.manage` |

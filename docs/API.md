@@ -331,6 +331,8 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 
 `POST /products` [I] (`inventory.items_manage`): `{barcode, name, categoryId, sku?, baseUom?, price?, lowThreshold?, trackExpiry?, opening?: {qty, unitCost, expiryDate?}}`. One transaction: inventory item, barcode, menu item with one size, one-to-one recipe, and stock tracking on if `opening` is given. Without `opening` the recipe stays a draft, to activate on Menu → Recipes after stock is received. Without `price`, or without `menu.price_change`, the menu item is saved not on sale (P8-3). `opening` needs `inventory.opening_balance` or `inventory.receive`. A code already in use: 409 `BARCODE_IN_USE`.
 
+Step 8.2: `GET /products/by-item/{id}` (`inventory.read`) `{soldAs}`. `POST /products/by-item/{id}/price` (`menu.price_change`) `{price, reason}`, which also puts it on sale. `POST /inventory/lots/{id}/expiry` (`inventory.items_manage`) `{expiryDate, reason}`, audited.
+
 ### 5.12 Asset register (Phase 5 step 5.4)
 
 What the shop owns (D-31): the row is the asset as it is now, and every change is an event in its history (AT-106, AT-23). Disposal is a status, never a delete. No depreciation (D-19).

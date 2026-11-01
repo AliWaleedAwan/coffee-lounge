@@ -4,6 +4,10 @@
  * limited to the item's own dimension, so a pack can never mix mass and volume (AT-32).
  */
 import { convertQty, Decimal, unitsFor, type BaseUnit, type UnitCode } from '@cl/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../api/client.ts';
+import { permissionSet } from '../../auth/session.ts';
+import { useSignedIn } from '../Shell.tsx';
 import { useState, type SubmitEvent } from 'react';
 import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
@@ -84,8 +88,9 @@ export function InventoryItemEditor({
       </section>
       {data ? (
         <>
+          <SellingPrice itemId={data.id} />
           <Stock item={data} />
-          {data.trackLots ? <Lots item={data} /> : null}
+          {data.trackLots ? <Lots item={data} editable={editable} /> : null}
           <Packs item={data} editable={editable} />
           <Barcodes item={data} editable={editable} linkCode={linkCode} />
           <History item={data} />
@@ -93,6 +98,135 @@ export function InventoryItemEditor({
         </>
       ) : null}
     </>
+  );
+}
+
+/** The menu size selling this item: its price and whether it is on sale. */
+function SellingPrice({ itemId }: { itemId: string }) {
+  const me = useSignedIn();
+  const canPrice = permissionSet(me).has('menu.price_change');
+  const writes = useWritesAllowed();
+  const client = useQueryClient();
+  const sold = useQuery({
+    queryKey: ['inventory', 'sold-as', itemId],
+    queryFn: ({ signal }) =>
+      api<{ soldAs: { name: string; price: string; onSale: boolean } | null }>(
+        `/products/by-item/${itemId}`,
+        { signal },
+      ),
+  });
+  const [price, setPrice] = useState('');
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/products/by-item/${itemId}/price`, {
+        method: 'POST',
+        body: { price, reason: 'Set on the item card' },
+      }),
+    onSuccess: () => {
+      setPrice('');
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['inventory', 'sold-as', itemId] }),
+  });
+  const s = sold.data?.soldAs;
+  if (!s) return null;
+  return (
+    <section className="card stack" aria-labelledby="item-selling">
+      <h2 id="item-selling">Selling price</h2>
+      <p>
+        {s.onSale ? `Rs ${s.price}` : 'No price yet'}{' '}
+        <span className={s.onSale ? 'chip chip-ok' : 'chip chip-warning'}>
+          {s.onSale ? 'On sale' : 'Not on sale'}
+        </span>
+      </p>
+      {canPrice ? (
+        <div className="row">
+          <Field
+            label="New selling price (Rs)"
+            inputMode="decimal"
+            value={price}
+            onChange={(e) => {
+              setPrice(e.target.value.trim());
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={!writes || !/^\d{1,10}(\.\d{1,2})?$/.test(price) || save.isPending}
+            onClick={() => {
+              save.mutate();
+            }}
+          >
+            Set price
+          </button>
+        </div>
+      ) : (
+        <p className="muted">A manager sets the selling price.</p>
+      )}
+      {save.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {writeMessage(save.error)}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** A wrong expiry date on a delivery, corrected with a reason. */
+function LotExpiry({ lotId, date }: { lotId: string; date: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(date ?? '');
+  const [reason, setReason] = useState('');
+  const save = useInventoryWrite(() => {
+    setOpen(false);
+  });
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Correct date
+      </button>
+    );
+  }
+  return (
+    <div className="stack stack-tight">
+      <Field
+        label="Correct expiry date"
+        type="date"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+        }}
+      />
+      <Field
+        label="Why"
+        maxLength={200}
+        value={reason}
+        error={save.isError ? writeMessage(save.error) : null}
+        onChange={(e) => {
+          setReason(e.target.value);
+        }}
+      />
+      <div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={!value || reason.trim().length < 3 || save.isPending}
+          onClick={() => {
+            save.mutate({
+              path: `/inventory/lots/${lotId}/expiry`,
+              body: { expiryDate: value, reason: reason.trim() },
+            });
+          }}
+        >
+          Save date
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -332,7 +466,7 @@ function Stock({ item }: { item: ItemDetail }) {
 }
 
 /** Lots with stock, earliest expiry first: the order pickups use them (FEFO). */
-function Lots({ item }: { item: ItemDetail }) {
+function Lots({ item, editable }: { item: ItemDetail; editable: boolean }) {
   return (
     <section className="card stack" aria-labelledby="item-lots">
       <h2 id="item-lots">Lots</h2>
@@ -353,6 +487,7 @@ function Lots({ item }: { item: ItemDetail }) {
               <tr key={lot.id}>
                 <td>{lot.lotCode ?? '—'}</td>
                 <td>
+                  {editable ? <LotExpiry lotId={lot.id} date={lot.expiryDate} /> : null}
                   {lot.expiryDate ?? 'Unknown'}
                   {lot.expired ? (
                     <>
