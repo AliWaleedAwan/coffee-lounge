@@ -46,6 +46,8 @@ const schema = z
       .string()
       .regex(/^postgres(ql)?:\/\//)
       .optional(),
+    /** Folder for the continuous local copy of the change log (backup/live-wal.ts). Unset: off. */
+    LIVE_WAL_DIR: z.string().min(1).optional(),
     /** The scratch database of the weekly test restore, owned by the backup login (step 7.2). */
     RESTORE_TEST_DATABASE_URL: z
       .string()

@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { registerStaffAuth } from './http.ts';
 import { identityRoutes } from './routes.ts';
 
-export { authOf, deviceOf, factsOf, type AccessConfig } from './http.ts';
+export { authOf, deviceOf, factsOf, setSessionCookie, type AccessConfig } from './http.ts';
 export type { Grant, Scope, EffectivePermissions } from './permissions.ts';
 export { loadEffectivePermissions } from './permissions.ts';
 export {
@@ -15,6 +15,7 @@ export {
   type DeviceKind,
   recoverOwner,
   sessionStillValid,
+  startDemoSession,
   STEP_UP_ACTIONS,
   type AuthContext,
   type DeviceInfo,

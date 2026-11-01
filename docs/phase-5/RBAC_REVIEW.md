@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (257)
+### A. Every staff route (261)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -50,6 +50,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/assets/:id/changes` | `assets.manage` |
 | POST | `/assets/:id/dispose` | `assets.manage` |
 | POST | `/assets/:id/maintenance` | `assets.manage` |
+| POST | `/assets/categories` | `assets.manage` |
 | GET | `/assets/choices` | `assets.manage` |
 | GET | `/assignable-staff` | `tables.assign` |
 | GET | `/audit` | `audit.read` |
@@ -79,6 +80,9 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/deliveries/:id/dispatch` | `delivery.dispatch` |
 | POST | `/deliveries/:id/resolve` | `delivery.resolve_failed` |
 | POST | `/deliveries/:id/return` | `delivery.record_return` |
+| GET | `/demo` | device |
+| POST | `/demo/switch` | device |
+| POST | `/demo/wipe` | session |
 | GET | `/devices` | `devices.manage` |
 | POST | `/devices/:deviceId/revoke` | `devices.manage` |
 | POST | `/devices/register` | public |

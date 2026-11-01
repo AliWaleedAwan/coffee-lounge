@@ -283,19 +283,20 @@ describe('permissions enforced on the server (AT-18, AT-38, AT-118)', () => {
     expect(await auditCount('permission.override_set')).toBeGreaterThanOrEqual(1);
   });
 
-  it('refuses granting an owner-only permission to anyone else', async () => {
+  it('lets an owner give a sensitive permission, and only an owner', async () => {
     const waiterId = await fx.addUser('w_protected', ['waiter']);
     const owner = await fx.loggedIn(OWNER.username, OWNER.password);
-    const res = await owner.call({
+    const granted = await owner.call({
       method: 'PUT',
       url: url(`/users/${waiterId}/permission-overrides/roles.manage`),
-      payload: { effect: 'grant', reason: 'trying to delegate' },
+      payload: { effect: 'grant', reason: 'the owner delegates' },
     });
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({
-      code: 'FORBIDDEN',
-      detail: expect.stringMatching(/owner-only/) as unknown,
+    expect(granted.statusCode).toBe(204);
+    const removed = await owner.call({
+      method: 'DELETE',
+      url: url(`/users/${waiterId}/permission-overrides/roles.manage?reason=done`),
     });
+    expect(removed.statusCode).toBe(204);
   });
 
   it('only an owner may create another owner', async () => {

@@ -13,7 +13,18 @@ import { AppError } from '../../platform/errors.ts';
 import { composeReceipt, type ReceiptData, type ReceiptLayout } from './documents.ts';
 import type { PreviewLine } from './escpos.ts';
 
-const size = z.enum(['normal', 'wide', 'big']);
+const size = z.enum(['normal', 'wide', 'big', 'x3', 'x4']);
+// At most the 80 mm paper's 576 dots across, and a few centimetres tall.
+const logo = z
+  .object({
+    width: z.number().int().min(8).max(576),
+    height: z.number().int().min(1).max(300),
+    data: z.base64().max(32_000),
+  })
+  .strict()
+  .refine((l) => Buffer.from(l.data, 'base64').length === Math.ceil(l.width / 8) * l.height, {
+    message: 'The logo does not match its size',
+  });
 export const receiptBlock = z
   .object({
     text: z.string().max(400),
@@ -29,6 +40,7 @@ export const receiptLayout = z
     shopNameSize: size,
     showContact: z.boolean(),
     showCashier: z.boolean(),
+    logo: logo.optional(),
   })
   .strict();
 

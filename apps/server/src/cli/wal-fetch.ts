@@ -3,9 +3,12 @@
  * segment `%f`, opened with the owner's key and unzipped, written to `%p`. A segment that is
  * not there exits 1, which tells PostgreSQL it has reached the end of the archive.
  *
- *   node wal-fetch.js --dir B:\CoffeeLounge\wal --key E:\coffee-lounge-backup-key.txt "%f" "%p"
+ * `--live` is the PC's continuous local copy (LIVE_WAL_DIR): plain files, for what the drive
+ * does not have yet, including the segment being written when the copy stopped.
+ *
+ *   node wal-fetch.js --dir B:\CoffeeLounge\wal --key E:\coffee-lounge-backup-key.txt [--live <folder>] "%f" "%p"
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
@@ -13,7 +16,7 @@ import { decrypt } from '../modules/backup/keys.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { dir: { type: 'string' }, key: { type: 'string' } },
+  options: { dir: { type: 'string' }, key: { type: 'string' }, live: { type: 'string' } },
 });
 const [name, target] = positionals;
 if (!values.dir || !values.key || !name || !target) {
@@ -21,7 +24,16 @@ if (!values.dir || !values.key || !name || !target) {
   process.exit(2);
 }
 const file = join(values.dir, `${name}.gz.age`);
-if (!existsSync(file)) process.exit(1);
+if (!existsSync(file)) {
+  for (const copy of values.live ? [name, `${name}.partial`] : []) {
+    const local = join(values.live ?? '', copy);
+    if (existsSync(local)) {
+      copyFileSync(local, target);
+      process.exit(0);
+    }
+  }
+  process.exit(1);
+}
 try {
   writeFileSync(
     target,

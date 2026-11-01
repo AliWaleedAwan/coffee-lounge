@@ -36,9 +36,16 @@ test('users & roles, the effective-permission preview and the audit log', async 
 
   await page.getByRole('tab', { name: 'Roles' }).click();
   await page.getByLabel('Role', { exact: true }).selectOption({ label: 'Manager' });
-  const grants = page.getByRole('table', { name: /Permissions of/ });
-  await expect(grants.getByRole('row', { name: /roles\.manage/ })).toContainText('🔒 owner only');
-  await expect(grants.getByRole('checkbox', { name: /payments\.collect/ })).toBeDisabled();
+  // Plain words, in groups; technical names only on request; sensitive ones can be given too.
+  await expect(page.getByText('roles.manage')).toHaveCount(0);
+  await page.getByText('People & security').click();
+  const delegate = page.getByRole('checkbox', { name: /Change what roles and people may do/ });
+  await expect(delegate).toBeEnabled();
+  await expect(page.locator('.perm-row', { hasText: 'Change what roles' })).toContainText(
+    'Sensitive',
+  );
+  await page.getByLabel('Show technical names').check();
+  await expect(page.getByText('roles.manage')).toBeVisible();
   await expectAccessible(page, 'roles');
 
   await page.getByRole('link', { name: 'Audit log' }).click();

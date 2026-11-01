@@ -323,6 +323,10 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 | `PUT /expenses/{id}/attachment` | `expenses.manage` | The bill itself as the body, `Content-Type` `image/jpeg`, `image/png` or `application/pdf`, at most 5 MB; its real type is read from its first bytes (`400` otherwise). Kept under `FILES_DIR` (P5-3), the database holds path, type, size and SHA-256; a replaced file stays on disk and both are in the audit. Only while recorded (`409` once voided) |
 | `GET /expenses/{id}/attachment` | `expenses.read` | The file with its type, `X-Content-Type-Options: nosniff`, a sandboxing CSP and `no-store`; `404` when none, missing on disk or not matching its SHA-256 |
 
+### 5.11a Demo (only where a demo is loaded; docs/phase-8/DEMO.md)
+
+`GET /demo` (device) `{active, people}`. `POST /demo/switch` (device) `{username}`, made-up people only. `POST /demo/wipe` (owner) `{confirm: "DELETE"}`, once. Customer: `GET /demo/tables`. Elsewhere: 404, or an empty list. Assets also gain `POST /assets/categories` `{add?, remove?}` (`assets.manage`).
+
 ### 5.12 Asset register (Phase 5 step 5.4)
 
 What the shop owns (D-31): the row is the asset as it is now, and every change is an event in its history (AT-106, AT-23). Disposal is a status, never a delete. No depreciation (D-19).

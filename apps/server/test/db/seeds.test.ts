@@ -119,11 +119,15 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
     expect(new Set(rows.map((r) => r.key))).toEqual(documented);
     expect(Object.fromEntries(rows.map((r) => [r.key, r.value]))).toEqual({
       'assets.categories': [
+        'Furniture',
+        'Cutlery & crockery',
+        'Kitchen equipment',
         'Coffee equipment',
         'Refrigeration',
-        'Kitchen equipment',
-        'Furniture',
+        'Devices & electronics',
         'POS hardware',
+        'Decoration',
+        'Cleaning',
         'Other',
       ],
       'assets.locations': ['Bar', 'Kitchen', 'Dining area', 'Store room', 'Office'],

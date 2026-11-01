@@ -94,13 +94,13 @@ describe('effective permissions (RBAC.md §1)', () => {
     expect(unscoped.get('orders.accept')?.scopes).toBe('all');
   });
 
-  it('removes protected permissions from anyone who is not an owner', () => {
+  it('gives protected permissions to whoever the owner granted them (0032)', () => {
     const input = {
       roleGrants: [{ key: 'roles.manage', role: 'owner', scope: null }],
       overrides: [],
       protectedKeys,
     };
-    expect(resolveEffective({ ...input, isOwner: false }).has('roles.manage')).toBe(false);
+    expect(resolveEffective({ ...input, isOwner: false }).has('roles.manage')).toBe(true);
     expect(resolveEffective({ ...input, isOwner: true }).has('roles.manage')).toBe(true);
   });
 });

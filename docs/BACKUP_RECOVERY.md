@@ -78,6 +78,10 @@ Stop services → `cl-admin restore --point-in-time latest` (same as 5.1 step 4)
 ### 5.4 Restore to a specific time (e.g., just before corruption)
 Owner-only (`backup.restore` 🔒): choose a timestamp; everything after it is lost and must be re-entered. Requires the owner's password and a typed confirmation.
 
+## 5a. Continuous local copy (added 1 Nov 2026)
+
+The worker runs `pg_receivewal --synchronous` into `LIVE_WAL_DIR` (`C:\\ProgramData\\CoffeeLounge\\live-wal`): every committed change is appended to the current file on this PC, with no work while nothing changes. The newest 64 segments (about 1 GB) are kept; `max_slot_wal_keep_size` (4 GB) stops a stopped copy from filling the SSD. A restore reads it for what the drive lacks (`wal-fetch --live`). It is on the same disk as the database, so it protects against a damaged database, not a dead disk; D-23's drives and off-site copy remain the protection for that. It is not yet shown on the health page, and has not been run on Windows.
+
 ## 6. Recovery objectives (proposed, D-23)
 
 | Scenario | RPO (data loss) | RTO (downtime) |

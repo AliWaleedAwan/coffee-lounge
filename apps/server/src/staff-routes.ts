@@ -20,6 +20,7 @@ import { backupRoutes } from './modules/backup/index.ts';
 import { ledgerRoutes } from './modules/ledger/index.ts';
 import { mailRoutes, type MailDeps } from './modules/mail/index.ts';
 import { reportRoutes } from './modules/reports/index.ts';
+import { demoRoutes } from './modules/demo/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -67,6 +68,7 @@ export async function registerStaffRoutes(
   await orderRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await printingRoutes(app, { pool: deps.pool });
   await settingsRoutes(app, { pool: deps.pool });
+  await demoRoutes(app, { pool: deps.pool, secureCookies: deps.secureCookies });
   await operationsRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await deliveryRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });

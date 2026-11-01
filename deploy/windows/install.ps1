@@ -349,6 +349,7 @@ BACKUP_DRIVE_PATH=$BackupDrive
 BACKUP_PUBLIC_KEY_FILE=$backupPub
 PG_BIN_DIR=$PgDir\bin
 BACKUP_REPLICATION_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/$Database
+LIVE_WAL_DIR=$DataDir\live-wal
 RESTORE_TEST_DATABASE_URL=postgres://cl_backup:$backupPassword@127.0.0.1:$PgPort/coffee_lounge_restore_test
 LOG_DIR=$DataDir\logs
 FILES_DIR=$DataDir\files
@@ -387,6 +388,7 @@ if (Test-Path $backupPub) {
   Invoke-Sql 'postgres' $superForArchive 'postgres' @"
 ALTER SYSTEM SET archive_mode = 'on';
 ALTER SYSTEM SET archive_timeout = '300';
+ALTER SYSTEM SET max_slot_wal_keep_size = '4GB';
 ALTER SYSTEM SET archive_command = '$($walCmd.Replace("'", "''"))';
 "@ @($superForArchive)
   Restart-Service -Name $PgService

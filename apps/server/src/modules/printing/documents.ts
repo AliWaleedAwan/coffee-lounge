@@ -156,11 +156,16 @@ export interface ReceiptData {
 }
 
 /** A block of the owner's own text: each line of `text` is printed, wrapped to the paper. */
+export type ReceiptSize = 'normal' | 'wide' | 'big' | 'x3' | 'x4';
+
+/** Printed on every receipt under the owner's own text. Not part of any design: nobody edits it. */
+export const POWERED_BY = 'Powered by Eerel. www.eerel.com 03284147552';
+
 export interface ReceiptBlock {
   text: string;
   align: Align;
   bold: boolean;
-  size: 'normal' | 'wide' | 'big';
+  size: ReceiptSize;
 }
 
 export interface ReceiptLayout {
@@ -168,7 +173,9 @@ export interface ReceiptLayout {
   header: ReceiptBlock[];
   /** Printed after the totals, in place of the one-line footer. */
   footer: ReceiptBlock[];
-  shopNameSize: 'normal' | 'wide' | 'big';
+  shopNameSize: ReceiptSize;
+  /** The shop's logo, above its name: base64 of 1-bit rows (the screen prepares it). */
+  logo?: { width: number; height: number; data: string } | undefined;
   showContact: boolean;
   showCashier: boolean;
 }
@@ -177,11 +184,14 @@ const SIZE = {
   normal: {},
   wide: { width: true },
   big: { width: true, height: true },
+  x3: { width: 3, height: 3 },
+  x4: { width: 4, height: 4 },
 } as const;
+const ACROSS: Record<ReceiptSize, number> = { normal: 1, wide: 2, big: 2, x3: 3, x4: 4 };
 
 function block(doc: EscPos, b: ReceiptBlock, w: number): void {
   // Double width halves the characters a line holds.
-  const width = b.size === 'normal' ? w : Math.floor(w / 2);
+  const width = Math.floor(w / ACROSS[b.size]);
   doc.align(b.align).bold(b.bold).size(SIZE[b.size]);
   for (const part of b.text.split('\n')) {
     const lines = part.trim() ? wrap(part.trim(), width) : [''];
@@ -200,13 +210,18 @@ export function composeReceipt(r: ReceiptData, o: PrintOptions): EscPos {
   const doc = new EscPos();
   const layout = r.layout;
   reprintBanner(doc, o.copyNo);
-  doc
-    .align('center')
-    .bold(true)
-    .size(SIZE[layout?.shopNameSize ?? 'wide'])
-    .line(r.shop.name.toUpperCase())
-    .size({})
-    .bold(false);
+  if (layout?.logo) {
+    doc.align('center').raster({
+      width: layout.logo.width,
+      height: layout.logo.height,
+      data: Buffer.from(layout.logo.data, 'base64'),
+    });
+  }
+  const nameSize = layout?.shopNameSize ?? 'wide';
+  doc.align('center').bold(true).size(SIZE[nameSize]);
+  for (const text of wrap(r.shop.name.toUpperCase(), Math.floor(w / ACROSS[nameSize])))
+    doc.line(text);
+  doc.size({}).bold(false);
   const contact = [r.shop.addressLine, r.shop.phone]
     .filter((x): x is string => Boolean(x))
     .join('  ·  ');
@@ -269,6 +284,9 @@ export function composeReceipt(r: ReceiptData, o: PrintOptions): EscPos {
     for (const text of wrap(r.footer, w)) doc.line(text);
     doc.align('left');
   }
+  doc.align('center');
+  for (const text of wrap(POWERED_BY, w)) doc.line(text);
+  doc.align('left');
   return doc.cut(o.canCut);
 }
 

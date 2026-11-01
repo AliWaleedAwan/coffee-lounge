@@ -5,6 +5,7 @@
  * needs `inventory.items_manage`; the server checks every write.
  */
 import { useRef, useState, type SubmitEvent } from 'react';
+import { Link } from 'react-router';
 import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
@@ -85,6 +86,10 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
   const list = items.data?.items ?? [];
   return (
     <>
+      <p className="muted">
+        Things you keep in stock. Dishes you cook and sell, such as pizzas and karhai, are on the{' '}
+        <Link to="/menu">Menu</Link>.
+      </p>
       {canManage ? (
         <div className="row">
           <button

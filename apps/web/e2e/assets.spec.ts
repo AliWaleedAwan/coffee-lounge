@@ -17,7 +17,7 @@ test('an asset from registration to disposal, all in its history', async ({ page
   const form = page.getByRole('form', { name: 'Register an asset' });
   await form.getByLabel('Tag (empty: next AST number)').fill('ESP-01');
   await form.getByLabel('Name').fill('Espresso machine');
-  await form.getByLabel('Category').fill('Coffee equipment');
+  await form.getByLabel('Category').selectOption('Coffee equipment');
   await form.getByLabel('Where').fill('Bar');
   await form.getByLabel('Condition').selectOption({ label: 'Good' });
   await form.getByLabel('Price (Rs)').fill('850000');
@@ -47,17 +47,17 @@ test('an asset from registration to disposal, all in its history', async ({ page
   );
   await expectAccessible(page, 'asset detail');
 
-  await page.getByRole('button', { name: 'Dispose of it' }).click();
-  const dispose = page.getByRole('form', { name: 'Dispose of ESP-01' });
-  await dispose.getByLabel('How').selectOption({ label: 'Sold' });
-  await dispose.getByLabel('Why').fill('Replaced by a new machine');
-  await dispose.getByRole('button', { name: 'Dispose of ESP-01' }).click();
-  await expect(history).toContainText('Disposed: Sold · Replaced by a new machine');
+  await page.getByRole('button', { name: 'Remove it' }).click();
+  const dispose = page.getByRole('form', { name: 'Remove ESP-01' });
+  await dispose.getByLabel('Why is it going').selectOption({ label: 'Sold' });
+  await dispose.getByLabel('Note (optional)').fill('Replaced by a new machine');
+  await dispose.getByRole('button', { name: 'Remove ESP-01' }).click();
+  await expect(history).toContainText('Removed: Sold · Replaced by a new machine');
   await expect(history.getByRole('listitem')).toHaveCount(4);
   await expect(page.getByRole('button', { name: 'Change details' })).toHaveCount(0);
 
-  await page.getByLabel('Status').selectOption({ label: 'Disposed' });
+  await page.getByLabel('Status').selectOption({ label: 'Removed' });
   await expect(
     page.getByRole('table', { name: 'Assets' }).getByRole('row', { name: /ESP-01/ }),
-  ).toContainText('Disposed');
+  ).toContainText('Removed');
 });

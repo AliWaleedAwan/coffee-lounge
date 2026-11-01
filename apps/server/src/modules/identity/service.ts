@@ -523,6 +523,22 @@ export async function pinSwitch(
   return { token: outcome.token, userId: outcome.userId };
 }
 
+/** Demo mode (modules/demo): become one of the made-up people, without a secret. */
+export async function startDemoSession(
+  pool: pg.Pool,
+  device: DeviceInfo,
+  username: string,
+  demoUserIds: readonly string[],
+  facts: RequestFacts,
+): Promise<string> {
+  return withTransaction(pool, async (tx) => {
+    const user = await lockUser(tx, { username });
+    if (!user || !demoUserIds.includes(user.id))
+      throw new AppError('NOT_FOUND', 'No such demo person');
+    return startSession(tx, user, device, facts, 'demo_switch');
+  });
+}
+
 /**
  * Resolves a session cookie on a device; null when missing, expired, revoked or mismatched.
  * `extend: false` (background reads the user did not trigger) leaves the idle timer
@@ -885,6 +901,24 @@ export async function setUserStatus(
   }
 }
 
+/** Only an owner hands out what RBAC.md keeps from a role or from everyone but the owner. */
+async function requireOwnerForSensitive(
+  tx: Tx,
+  auth: AuthContext,
+  permissionKey: string,
+  roleKey: string | null,
+): Promise<void> {
+  if (auth.user.isOwner) return;
+  const { rows } = await tx.query(
+    `SELECT 1 FROM cl.permissions p
+      WHERE p.key = $1 AND (p.is_protected OR EXISTS (
+        SELECT 1 FROM cl.role_permission_policy x JOIN cl.roles r ON r.id = x.role_id
+         WHERE x.permission_key = p.key AND x.policy = 'forbidden' AND ($2::text IS NULL OR r.key = $2)))`,
+    [permissionKey, roleKey],
+  );
+  if (rows.length > 0) throw new AppError('FORBIDDEN', 'Only an owner can give this permission');
+}
+
 export async function setPermissionOverride(
   pool: pg.Pool,
   auth: AuthContext,
@@ -893,6 +927,8 @@ export async function setPermissionOverride(
 ): Promise<void> {
   try {
     await withTransaction(pool, async (tx) => {
+      if (input.effect === 'grant')
+        await requireOwnerForSensitive(tx, auth, input.permissionKey, null);
       const { rows: before } = await tx.query<{ effect: string }>(
         'SELECT effect FROM cl.user_permission_overrides WHERE user_id = $1 AND permission_key = $2',
         [input.userId, input.permissionKey],
@@ -1098,6 +1134,8 @@ export async function setRoleGrant(
       );
       const role = rows[0];
       if (!role) throw new AppError('NOT_FOUND', 'No such role');
+      if (input.granted)
+        await requireOwnerForSensitive(tx, auth, input.permissionKey, input.roleKey);
       const changed = input.granted
         ? await tx.query(
             `INSERT INTO cl.role_permissions (role_id, permission_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

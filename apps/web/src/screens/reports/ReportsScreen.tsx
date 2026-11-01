@@ -148,73 +148,30 @@ export function ReportsScreen() {
   return (
     <>
       <h1>Reports</h1>
-      <div className="tabs" role="tablist" aria-label="Reports">
-        {overview ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-overview"
-            aria-selected={open === null}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo(null);
-            }}
-          >
-            Overview
-          </button>
-        ) : null}
-        {overview ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-day-end"
-            aria-selected={open === 'day-end'}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo('day-end');
-            }}
-          >
-            Day-end
-          </button>
-        ) : null}
-        {schedules ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-emails"
-            aria-selected={open === 'emails'}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo('emails');
-            }}
-          >
-            E-mails
-          </button>
-        ) : null}
-        {items
-          .filter((r) => !r.drillOnly)
-          .map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              role="tab"
-              id={`reports-tab-${r.key}`}
-              aria-selected={open === r.key}
-              aria-controls="reports-panel"
-              onClick={() => {
-                goTo(r.key);
-              }}
-            >
-              {r.title}
-            </button>
-          ))}
+      <div className="report-picker">
+        <SelectField
+          label="Report"
+          value={open ?? 'overview'}
+          options={[
+            ...(overview
+              ? [
+                  { value: 'overview', label: 'Overview' },
+                  { value: 'day-end', label: 'Day-end' },
+                ]
+              : []),
+            ...(schedules ? [{ value: 'emails', label: 'E-mails' }] : []),
+            ...items.filter((r) => !r.drillOnly).map((r) => ({ value: r.key, label: r.title })),
+            // Reached from another report: shown, so the box says where you are.
+            ...(entry?.drillOnly ? [{ value: entry.key, label: entry.title }] : []),
+          ]}
+          onChange={(v) => {
+            goTo(v === 'overview' ? null : v);
+          }}
+        />
       </div>
       <div
         id="reports-panel"
-        role="tabpanel"
-        {...(entry?.drillOnly
-          ? { 'aria-label': entry.title }
-          : { 'aria-labelledby': `reports-tab-${open ?? 'overview'}` })}
+        aria-label={entry?.title ?? (open === null ? 'Overview' : open)}
         className="stack"
       >
         {catalog.isPending ? null : open === null ? (
@@ -240,44 +197,52 @@ function PeriodPicker({
   value: { from: string; to: string };
   onChange: (p: { from: string; to: string }) => void;
 }) {
+  const keys = ['today', 'yesterday', 'week', 'month', 'last-month'] as const;
+  const current = keys.find((k) => {
+    const p = preset(k);
+    return p.from === value.from && p.to === value.to;
+  });
+  const [custom, setCustom] = useState(false);
   return (
-    <div className="row" role="group" aria-label="Period">
-      {[
-        ['today', 'Today'],
-        ['yesterday', 'Yesterday'],
-        ['week', 'This week'],
-        ['month', 'This month'],
-        ['last-month', 'Last month'],
-      ].map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => {
-            onChange(preset(key ?? 'today'));
-          }}
-        >
-          {label}
-        </button>
-      ))}
-      <Field
-        label="From"
-        type="date"
-        value={value.from}
-        max={value.to}
-        onChange={(e) => {
-          onChange({ ...value, from: e.target.value });
+    <div className="row" role="group" aria-label="Dates">
+      <SelectField
+        label="Period"
+        value={custom || !current ? 'custom' : current}
+        options={[
+          { value: 'today', label: 'Today' },
+          { value: 'yesterday', label: 'Yesterday' },
+          { value: 'week', label: 'This week' },
+          { value: 'month', label: 'This month' },
+          { value: 'last-month', label: 'Last month' },
+          { value: 'custom', label: 'Choose dates…' },
+        ]}
+        onChange={(v) => {
+          setCustom(v === 'custom');
+          if (v !== 'custom') onChange(preset(v));
         }}
       />
-      <Field
-        label="To"
-        type="date"
-        value={value.to}
-        min={value.from}
-        onChange={(e) => {
-          onChange({ ...value, to: e.target.value });
-        }}
-      />
+      {custom || !current ? (
+        <>
+          <Field
+            label="From"
+            type="date"
+            value={value.from}
+            max={value.to}
+            onChange={(e) => {
+              onChange({ ...value, from: e.target.value });
+            }}
+          />
+          <Field
+            label="To"
+            type="date"
+            value={value.to}
+            min={value.from}
+            onChange={(e) => {
+              onChange({ ...value, to: e.target.value });
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

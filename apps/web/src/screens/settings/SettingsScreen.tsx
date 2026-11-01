@@ -4,10 +4,11 @@
  * kitchen tickets and which takes receipts (step 3.7), and a test print (W-4); the shop's
  * branding, guest ordering hours and thresholds (step 3.12, OwnerSettings).
  */
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { permissionSet } from '../../auth/session.ts';
 import { CheckField, Field, SelectField } from '../../components/Field.tsx';
-import { messageOf } from '../../api/client.ts';
+import { api, messageOf } from '../../api/client.ts';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { useManagedPrinters, usePrintWrite } from '../printing/printing-api.ts';
 import { MailboxForm } from './MailboxForm.tsx';
@@ -20,11 +21,64 @@ export function SettingsScreen() {
   return (
     <>
       <h1>Settings</h1>
+      <DemoData />
       {permissions.has('settings.manage') ? <OwnerSettings /> : null}
       {permissions.has('settings.mailbox') ? <MailboxForm /> : null}
       {permissions.has('backup.manage') ? <OffsiteForm /> : null}
       {permissions.has('printers.manage') ? <Printers /> : null}
     </>
+  );
+}
+
+/** Demo only: one irreversible button that ends the demo for good (docs/phase-8/DEMO.md). */
+function DemoData() {
+  const me = useSignedIn();
+  const [typed, setTyped] = useState('');
+  const demo = useQuery({
+    queryKey: ['demo'],
+    queryFn: ({ signal }) => api<{ active: boolean }>('/demo', { signal }),
+  });
+  const wipe = useMutation({
+    mutationFn: () => api<undefined>('/demo/wipe', { method: 'POST', body: { confirm: 'DELETE' } }),
+    onSuccess: () => {
+      window.location.assign('/');
+    },
+  });
+  if (!demo.data?.active || !me.roles.includes('owner')) return null;
+  return (
+    <section className="card stack" aria-labelledby="demo-data">
+      <h2 id="demo-data">Demo data</h2>
+      <p className="muted">
+        Deletes all made-up sales, stock, people, tables and assets, and starts numbering again. The
+        menu and inventory items stay. It works only once and cannot be undone; the demo switcher
+        goes with it.
+      </p>
+      <div className="row">
+        <Field
+          label="Type DELETE to confirm"
+          autoComplete="off"
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={typed !== 'DELETE' || wipe.isPending}
+          onClick={() => {
+            wipe.mutate();
+          }}
+        >
+          Delete the demo data
+        </button>
+      </div>
+      {wipe.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {messageOf(wipe.error)}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

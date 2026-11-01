@@ -119,6 +119,8 @@ describe('no route forgets its permission', () => {
       'GET /api/staff/v1/reports',
       // Whether backups have a problem, in words, for the banner on every device (step 7.1).
       'GET /api/staff/v1/system/backup-status',
+      // Refuses anyone but an owner, and answers only where a demo is loaded (modules/demo).
+      'POST /api/staff/v1/demo/wipe',
     ];
     const sessionOnly = fx.routes
       .filter((r) => !r.config.permission && (r.config.auth ?? 'session') === 'session')

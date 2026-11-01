@@ -195,37 +195,23 @@ describe('at least one active owner (AT-39, database part)', () => {
 });
 
 describe('grant rules (RBAC.md §1)', () => {
-  it('refuses a permission RBAC.md marks as never grantable for the role', async () => {
-    await expect(
-      db.client.query(
-        `INSERT INTO cl.role_permissions (role_id, permission_key)
-         SELECT id, 'menu.read' FROM cl.roles WHERE key = 'kitchen'`,
-      ),
-    ).rejects.toMatchObject({ code: CHECK });
-  });
-
-  it('refuses owner-only permissions on other roles and users', async () => {
-    // Remove the "forbidden" policy so only the protected-permission rule is being tested.
+  it('lets the owner give any permission to any role or person (0032)', async () => {
     await db.client.query(
-      `DELETE FROM cl.role_permission_policy
-        WHERE permission_key = 'backup.restore'
-          AND role_id = (SELECT id FROM cl.roles WHERE key = 'manager')`,
+      `INSERT INTO cl.role_permissions (role_id, permission_key)
+       SELECT id, 'menu.read' FROM cl.roles WHERE key = 'kitchen'`,
     );
-    await expect(
-      db.client.query(
-        `INSERT INTO cl.role_permissions (role_id, permission_key)
-         SELECT id, 'backup.restore' FROM cl.roles WHERE key = 'manager'`,
-      ),
-    ).rejects.toThrow(/owner-only/);
-
+    await db.client.query(
+      `INSERT INTO cl.role_permissions (role_id, permission_key)
+       SELECT id, 'backup.restore' FROM cl.roles WHERE key = 'manager'`,
+    );
     const waiter = await addUser('waiter_one');
-    await expect(
-      db.client.query(
-        `INSERT INTO cl.user_permission_overrides (user_id, permission_key, effect, reason, granted_by)
-         VALUES ($1, 'roles.manage', 'grant', 'test', $2)`,
-        [waiter, ownerId],
-      ),
-    ).rejects.toThrow(/owner-only/);
+    await db.client.query(
+      `INSERT INTO cl.user_permission_overrides (user_id, permission_key, effect, reason, granted_by)
+       VALUES ($1, 'roles.manage', 'grant', 'test', $2)
+       ON CONFLICT (user_id, permission_key) DO NOTHING`,
+      [waiter, ownerId],
+    );
+    await db.client.query(`DELETE FROM cl.user_permission_overrides WHERE user_id = $1`, [waiter]);
     // A deny override for a non-owner is fine; a grant to an owner is fine.
     await db.client.query(
       `INSERT INTO cl.user_permission_overrides (user_id, permission_key, effect, reason, granted_by)

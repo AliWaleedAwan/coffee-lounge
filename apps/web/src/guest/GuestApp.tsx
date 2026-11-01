@@ -114,6 +114,27 @@ function Message({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Demo only: where a demo is loaded, a table can be picked instead of scanning its code. */
+function DemoTables() {
+  const tables = useQuery({
+    queryKey: ['demo-tables'],
+    queryFn: () => guestApi<{ tables: { label: string; token: string }[] }>('/demo/tables'),
+  });
+  if (!tables.data?.tables.length) return null;
+  return (
+    <>
+      <h2>Demo: pick a table</h2>
+      <div className="row">
+        {tables.data.tables.map((t) => (
+          <a key={t.token} className="btn btn-secondary" href={`/t/${t.token}`}>
+            {t.label}
+          </a>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function VisitEnded() {
   return (
     <Message title="Scan the QR code on your table">
@@ -121,6 +142,7 @@ function VisitEnded() {
         Your visit has ended, or this phone has not scanned a code yet. Scan the code on your table,
         or at the counter, to see the menu and order.
       </p>
+      <DemoTables />
     </Message>
   );
 }
@@ -572,6 +594,7 @@ export function GuestRoutes() {
         element={
           <Message title="Scan the QR code on your table">
             <p>Every table has a code. Scan it with your phone camera to see the menu and order.</p>
+            <DemoTables />
           </Message>
         }
       />

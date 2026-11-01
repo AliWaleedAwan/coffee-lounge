@@ -5,6 +5,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { photoRoute } from './modules/catalog/index.ts';
+import { customerDemoRoutes } from './modules/demo/index.ts';
 import { customerFloorRoutes } from './modules/floor/index.ts';
 import { customerLiveRoutes, type LiveRouteOptions } from './modules/live/index.ts';
 import { customerOrderRoutes } from './modules/orders/index.ts';
@@ -48,6 +49,7 @@ export async function registerCustomerRoutes(
       photoRoute(photos, filesDir, { auth: 'public' });
     });
   }
+  await customerDemoRoutes(app, { pool: deps.pool });
   await customerFloorRoutes(app, { pool: deps.pool, ...clock });
   await customerOrderRoutes(app, {
     pool: deps.pool,

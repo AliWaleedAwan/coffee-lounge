@@ -60,9 +60,11 @@ test('every screen, tab and button the guides name exists as written', async ({ 
   await expect(page.getByRole('link', { name: 'Refunds & corrections' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New takeaway' })).toBeVisible();
   await visit('Reports');
-  for (const tab of ['Day-end', 'E-mails'])
-    await expect(page.getByRole('tab', { name: tab })).toBeVisible();
-  await page.getByRole('tab', { name: 'Sales by day' }).click();
+  for (const report of ['Day-end', 'E-mails'])
+    await expect(
+      page.getByLabel('Report', { exact: true }).getByRole('option', { name: report }),
+    ).toBeAttached();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Sales by day' });
   for (const link of ['Download CSV', 'Download PDF'])
     await expect(page.getByRole('link', { name: link })).toBeVisible();
   await visit('System health');

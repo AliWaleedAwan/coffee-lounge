@@ -90,5 +90,5 @@
 | `shop.business_hours` | 00:00–00:00 (always open until the owner sets the hours; guests order by QR only within them) | AT-130 |
 | `brand.primary` | #6B4435 (Coffee) | DEC-14 |
 | `refunds.reasons` | Wrong order · Quality · Cold or late · Order cancelled · Charged twice · Other | Phase 5 step 5.6 (refund form) |
-| `assets.categories` | Coffee equipment · Refrigeration · Kitchen equipment · Furniture · POS hardware · Other | Phase 5 step 5.6 |
+| `assets.categories` | Furniture · Cutlery & crockery · Kitchen equipment · Coffee equipment · Refrigeration · Devices & electronics · POS hardware · Decoration · Cleaning · Other | Phase 5 step 5.6 |
 | `assets.locations` | Bar · Kitchen · Dining area · Store room · Office | Phase 5 step 5.6 |
