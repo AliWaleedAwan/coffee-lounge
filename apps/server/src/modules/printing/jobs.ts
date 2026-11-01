@@ -1,3 +1,4 @@
+import { DRAWER_PULSE } from './escpos.ts';
 /**
  * Print jobs (PRINTING_HARDWARE.md §5). A job is created in the business transaction
  * (accepting a round makes its kitchen ticket's job), so it exists exactly when the
@@ -46,6 +47,8 @@ export interface PrinterRow extends PrinterTarget {
   chars_per_line: number;
   can_cut: boolean;
   is_active: boolean;
+  drawer_enabled: boolean;
+  drawer_on_cash: boolean;
 }
 
 interface JobRow {
@@ -178,6 +181,30 @@ async function kitchenTicketData(db: Queryable, ticketId: string): Promise<Kitch
   };
 }
 
+/** The drawer opens with the first copy of a cash receipt, never with a reprint. Off by default. */
+export function withDrawerPulse(
+  bytes: Buffer,
+  job: { document_type: DocumentType; copy_no: number },
+  printer: { drawer_enabled: boolean; drawer_on_cash: boolean },
+  paidInCash: boolean,
+): Buffer {
+  const opens =
+    printer.drawer_enabled &&
+    printer.drawer_on_cash &&
+    paidInCash &&
+    job.document_type === 'receipt' &&
+    job.copy_no === 1;
+  return opens ? Buffer.concat([bytes, DRAWER_PULSE]) : bytes;
+}
+
+async function paidInCash(db: Queryable, invoiceId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT 1 FROM cl.payments WHERE invoice_id = $1 AND method = 'cash' LIMIT 1`,
+    [invoiceId],
+  );
+  return rows.length > 0;
+}
+
 export async function renderJob(db: Queryable, job: JobRow, printer: PrinterRow): Promise<Buffer> {
   const timeZone = await readSetting(db, 'shop.timezone', z.string().min(1));
   const options = {
@@ -195,7 +222,12 @@ export async function renderJob(db: Queryable, job: JobRow, printer: PrinterRow)
         options,
       );
     case 'receipt':
-      return renderReceipt(await receiptData(db, job.document_id), options);
+      return withDrawerPulse(
+        renderReceipt(await receiptData(db, job.document_id), options),
+        job,
+        printer,
+        printer.drawer_enabled && (await paidInCash(db, job.document_id)),
+      );
     case 'shift_report':
       return renderShiftReport(await shiftReportData(db, job.document_id), options);
     case 'refund_slip':
@@ -222,7 +254,7 @@ type Claim =
 async function claimHead(pool: pg.Pool, printerId: string, now: Date): Promise<Claim> {
   return withTransaction(pool, async (tx) => {
     const { rows: printers } = await tx.query<PrinterRow>(
-      `SELECT id::text, name, connection, address, supports_status, chars_per_line, can_cut, is_active
+      `SELECT id::text, name, connection, address, supports_status, chars_per_line, can_cut, is_active, drawer_enabled, drawer_on_cash
          FROM cl.printers WHERE id = $1`,
       [printerId],
     );

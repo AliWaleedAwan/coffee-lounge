@@ -202,6 +202,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
 | `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
 | `GET /printers/detect` | `printers.manage` | The Windows print queues the counter PC finds, `{supported, queues: [{name, driver, port}], problem?}` (step 8.6) |
+| `GET /drawer`, `POST /printers/{id}/drawer/open` | `drawer.open` | The till printer with a drawer switched on, or null; send the pulse now, never queued, audited (step 8.7). `PATCH /printers/{id}` takes `drawerEnabled`, `drawerOnCash` |
 | `PUT /stations/{stationId}/printer` | `printers.manage` | `{printerId \| null}`: where kitchen tickets print |
 | `PUT /tills/{tillId}/printer` | `printers.manage` | `{printerId \| null}`: where receipts print (step 3.7); `GET /printers` lists the tills |
 | `POST /printers/{id}/test` | `printers.manage` | Queue a test page (W-4) |

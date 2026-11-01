@@ -170,6 +170,52 @@ function Printers() {
                       {p.isActive ? 'Turn off' : 'Turn on'}{' '}
                       <span className="visually-hidden">{p.name}</span>
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={!writes || act.isPending}
+                      onClick={() => {
+                        act.mutate({
+                          path: `/printers/${p.id}`,
+                          method: 'PATCH',
+                          body: { expectedVersion: p.version, drawerEnabled: !p.drawerEnabled },
+                        });
+                      }}
+                    >
+                      {p.drawerEnabled ? 'Drawer connected: turn off' : 'Drawer connected: turn on'}{' '}
+                      <span className="visually-hidden">{p.name}</span>
+                    </button>
+                    {p.drawerEnabled ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={!writes || act.isPending}
+                        onClick={() => {
+                          act.mutate({
+                            path: `/printers/${p.id}`,
+                            method: 'PATCH',
+                            body: { expectedVersion: p.version, drawerOnCash: !p.drawerOnCash },
+                          });
+                        }}
+                      >
+                        {p.drawerOnCash
+                          ? 'Opens on cash payments: turn off'
+                          : 'Opens on cash payments: turn on'}{' '}
+                        <span className="visually-hidden">{p.name}</span>
+                      </button>
+                    ) : null}
+                    {p.drawerEnabled ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!writes || act.isPending}
+                        onClick={() => {
+                          act.mutate({ path: `/printers/${p.id}/drawer/open` });
+                        }}
+                      >
+                        Test open <span className="visually-hidden">{p.name}</span>
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>

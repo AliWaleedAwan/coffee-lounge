@@ -50,6 +50,9 @@ function encode(text: string): number[] {
   return bytes;
 }
 
+/** Opens a drawer on the printer's RJ11 port: ESC p, pin 2, 50 ms on, 500 ms off (step 8.7). */
+export const DRAWER_PULSE = Buffer.from([ESC, 0x70, 0, 25, 250]);
+
 export type Align = 'left' | 'center' | 'right';
 
 /** One printed line as the paper shows it: for on-screen previews (receipt design). */

@@ -36,6 +36,8 @@ export interface ManagedPrinter {
   supportsStatus: boolean;
   canCut: boolean;
   isActive: boolean;
+  drawerEnabled: boolean;
+  drawerOnCash: boolean;
   version: number;
 }
 

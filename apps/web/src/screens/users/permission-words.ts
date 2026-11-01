@@ -82,6 +82,7 @@ const WORDS: Record<string, string> = {
   'settings.financial': 'Change money settings (business day, rounding, tax)',
   'settings.mailbox': "Set up the shop's e-mail",
   'printers.manage': 'Set up printers',
+  'drawer.open': 'Open the cash drawer by hand',
   'audit.read': 'See the record of who did what',
   'system.health': 'See the system health page',
   'backup.manage': 'Run and download backups',

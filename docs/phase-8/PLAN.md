@@ -1,6 +1,6 @@
 # Phase 8 — Scan-to-Add Products, One-Click App, Device Setup: Build Plan
 
-> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.6 are built, the wizard's screens not yet clicked through on Windows; 8.5 and 8.6 await a green Windows CI run; 8.7 is next.
+> **Approved, 1 Nov 2026, with the recommendations in §5.** Steps 8.1 to 8.7 are built, the wizard's screens not yet clicked through on Windows; 8.6 and 8.7 await a green Windows CI run; automatic updates are next.
 
 | | |
 |---|---|
@@ -91,7 +91,7 @@ Detection runs on the server, which is the counter PC, so it sees that PC's prin
 | 8.4 ✅ | **Setup wizard:** NSIS pages, protected secrets, progress and a log, Finish opens the app | Windows CI: fresh install, upgrade and restore drills all still pass |
 | 8.5 ✅ | **Start-up screen:** service status, start a stopped service, plain-language errors, limited service right | Windows CI: stop each service, click the icon, app recovers as a non-administrator |
 | 8.6 ✅ | **Hardware page:** printer detection and guided setup, scanner test | Tests with the simulator; Windows CI lists a real print queue |
-| 8.7 | **Cash drawer:** pulse command, open rules, permission and audit log; off by default | Golden file of the bytes; simulator sees the pulse; receipts unchanged with it off |
+| 8.7 ✅ | **Cash drawer:** pulse command, open rules, permission and audit log; off by default | Golden file of the bytes; simulator sees the pulse; receipts unchanged with it off |
 | 8.8 | **Docs and hand-over:** owner guide, training, checklists (add drawer, scanner test), UAT sheets, known issues, RBAC review, DATABASE and API notes | Doc checks pass; ready for the visit |
 
 ## 7. Risks

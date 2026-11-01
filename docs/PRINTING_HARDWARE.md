@@ -7,7 +7,7 @@
 | Device | Model | Connection | Role | Status |
 |---|---|---|---|---|
 | Thermal printer | Sonic SNC-101, 80 mm | Unknown (USB expected) | Kitchen tickets + receipts + refund slips + shift reports | **Unverified** |
-| Cash drawer | — | — | None installed | Not built, not claimed |
+| Cash drawer | — | — | None installed | Built, off by default (step 8.7); tested with the simulator only, unproven on a real drawer |
 | Barcode scanner | Sonic SNC-930D, wired | USB expected (keyboard emulation) | Stock receiving/lookup on the counter PC | **Unverified** |
 | Card terminal (counter) | HBL | Standalone | Card payments; slip reference typed in | Not integrated (by design) |
 | Card terminal (portable) | HBL (D-37) | Standalone | Card on delivery | Not integrated (by design) |
