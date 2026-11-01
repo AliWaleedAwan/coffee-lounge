@@ -94,6 +94,13 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-bundle.ps1
       - name: Build CoffeeLounge-Setup.exe (NSIS)
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
+      - name: Keep the installer for download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: CoffeeLounge-Setup
+          path: out/CoffeeLounge-Setup-*.exe
+          retention-days: 14
+          if-no-files-found: error
       - name: Install with CoffeeLounge-Setup.exe (unattended)
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName

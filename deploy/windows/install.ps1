@@ -485,6 +485,12 @@ $link.TargetPath = $counterExe
 $link.WorkingDirectory = Join-Path $InstallDir 'desktop'
 $link.Description = 'Coffee Lounge counter app'
 $link.Save()
+# The same icon on the desktop of every Windows user of this PC.
+$link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Coffee Lounge.lnk'))
+$link.TargetPath = $counterExe
+$link.WorkingDirectory = Join-Path $InstallDir 'desktop'
+$link.Description = 'Coffee Lounge counter app'
+$link.Save()
 
 # H-11: the counter app opens (full screen, per desktop.json) when the Counter user logs in.
 $taskName = 'Coffee Lounge counter app'

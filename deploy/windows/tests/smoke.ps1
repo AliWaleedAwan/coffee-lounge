@@ -198,6 +198,7 @@ Check "the counter app is installed and opens at the $CounterUser login in full 
   $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
   if (-not $settings.fullscreen) { throw 'not full screen' }
   if (-not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk'))) { throw 'no Start menu shortcut' }
+  if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Coffee Lounge.lnk'))) { throw 'no desktop icon' }
   $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge' -ErrorAction Stop
   ($entry.DisplayName -eq 'Coffee Lounge') -and ($entry.UninstallString -match 'uninstall\.ps1')
 }
