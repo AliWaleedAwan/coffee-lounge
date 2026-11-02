@@ -47,6 +47,7 @@ if (-not (Test-Admin)) { throw 'Run the installer as an Administrator.' }
 if (-not [Environment]::Is64BitProcess) { throw 'Run the installer in 64-bit PowerShell.' }
 # Unattended runs through CoffeeLounge-Setup.exe pass the CA passphrase in the environment.
 if (-not $CaPassphrase -and $env:CL_CA_PASSPHRASE) { $CaPassphrase = $env:CL_CA_PASSPHRASE }
+if (-not $CaExportDir -and $env:CL_CA_EXPORT_DIR) { $CaExportDir = $env:CL_CA_EXPORT_DIR }
 foreach ($d in @($DataDir, $Config, (Join-Path $DataDir 'logs'), (Join-Path $DataDir 'files'), (Join-Path $DataDir 'desktop'))) {
   New-Item -ItemType Directory -Force -Path $d | Out-Null
 }
@@ -383,7 +384,8 @@ if (Test-Path $backupPub) {
   try { $sysId = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c 'SELECT system_identifier FROM pg_control_system()').Trim() }
   finally { Remove-Item Env:\PGPASSWORD }
   if ($sysId -notmatch '^\d+$') { throw "Could not read the database system id: $sysId" }
-  $walDir = Join-Path $BackupDrive "CoffeeLounge\wal\$sysId"
+  # Not Join-Path: it fails while the backup drive is not plugged in, as on a first install.
+  $walDir = [IO.Path]::Combine($BackupDrive, "CoffeeLounge\wal\$sysId")
   $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_DIR=*' }
   Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_DIR=$walDir")
   $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + $walDir + '" --key "' + $backupPub + '" "%p" "%f"'

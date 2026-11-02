@@ -47,6 +47,8 @@ Var F2
 Var F3
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "..\..\apps\desktop\assets\icon.ico"
+!define MUI_UNICON "..\..\apps\desktop\assets\icon.ico"
 !define MUI_WELCOMEPAGE_TITLE "Install Coffee Lounge"
 !define MUI_WELCOMEPAGE_TEXT "This installs everything the shop needs on this PC: the database, the server and the counter app. Nothing else needs to be installed and no internet is needed.$\r$\n$\r$\nFor a first install, plug in the owner's USB key before you continue."
 !define MUI_FINISHPAGE_TITLE "Coffee Lounge is ready"
@@ -68,8 +70,11 @@ Function .onInit
     SetSilent silent
   ExpandEnvStrings $0 "%ProgramData%"
   StrCpy $IsUpgrade 0
-  IfFileExists "$0\CoffeeLounge\pgdata\PG_VERSION" 0 +2
+  ; Finished installs only: one that stopped half way still needs the USB folder and passwords.
+  ${If} ${FileExists} "$0\CoffeeLounge\config\server.env"
+  ${AndIf} ${FileExists} "$0\CoffeeLounge\config\tls\server.pem"
     StrCpy $IsUpgrade 1
+  ${EndIf}
   StrCpy $ShopIp "192.168.100.250"
 FunctionEnd
 
@@ -186,7 +191,10 @@ Section
     ${Else}
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", t "$Passphrase")'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", t "$Owner")'
-      nsExec::ExecToLog '$R1 -Unattended -Wizard -ShopIp "$ShopIp" -CaExportDir "$KeyDir"'
+      ; In the environment, not the command line: "E:\" would read as an escaped quote.
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", t "$KeyDir")'
+      nsExec::ExecToLog '$R1 -Unattended -Wizard -ShopIp "$ShopIp"'
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", n)'
     ${EndIf}
