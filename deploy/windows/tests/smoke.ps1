@@ -346,9 +346,9 @@ Check 'a crashed database process is recovered by PostgreSQL and the API carries
   Start-Sleep -Seconds 5
   if ((Get-Service $PgService).Status -ne 'Running') { throw 'PostgreSQL service stopped' }
   if (-not (Wait-Ready 120)) { throw 'API not ready again' }
-  $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
+  $log = Get-ChildItem (Join-Path $Db.DataDir 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
   # Evidence only: how PostgreSQL logs a killed child depends on its exit code.
-  Get-Content $log.FullName -Tail 8 | ForEach-Object { Write-Step "  pg log: $_" }
+  if ($log) { Get-Content $log.FullName -Tail 8 | ForEach-Object { Write-Step "  pg log: $_" } }
   ((Get-Service 'coffeelounge-api').Status -eq 'Running') -and ((Get-Service 'coffeelounge-worker').Status -eq 'Running')
 }
 
@@ -371,8 +371,8 @@ Check 'backups: WAL segments are archived to the drive, encrypted, by PostgreSQL
   if ($ok -ne 't') { throw 'the archiver did not archive the switched segment (or keeps failing)' }
   $files = @(Get-ChildItem $wal -Filter '*.gz.age' -ErrorAction SilentlyContinue)
   if ($files.Count -eq 0) {
-    $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
-    Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" }
+    $log = Get-ChildItem (Join-Path $Db.DataDir 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($log) { Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" } }
     throw "no archived segment in $wal"
   }
   $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($files[0].FullName), 0, 21)
