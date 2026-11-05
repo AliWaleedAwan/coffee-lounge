@@ -183,8 +183,9 @@ function Get-DbConfig([string]$DataDir) {
   return $null
 }
 
-# The plan for this PC; $Ours is the data folder our own copy uses.
-function Resolve-DbPlan([string]$DataDir) {
+# The plan for this PC. $PreferOwn: the owner does not know the existing PostgreSQL 17's password,
+# so ours runs beside it instead.
+function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false) {
   $saved = Get-DbConfig $DataDir
   if ($saved) { return $saved }
   $ours = Join-Path $DataDir 'pgdata'
@@ -195,7 +196,7 @@ function Resolve-DbPlan([string]$DataDir) {
     return [pscustomobject]@{ Mode = 'own'; Service = $mine.Service; Port = $mine.Port; PgDir = (Split-Path -Parent $mine.BinDir); DataDir = $ours; Account = 'NT AUTHORITY\NETWORK SERVICE' }
   }
   $shared = $all | Where-Object { $_.Version -eq '17' } | Select-Object -First 1
-  if ($shared) {
+  if ($shared -and -not $PreferOwn) {
     $account = $shared.Account
     if (-not $account -or $account -match '^(NT AUTHORITY\\)?NetworkService$') { $account = 'NT AUTHORITY\NETWORK SERVICE' }
     return [pscustomobject]@{ Mode = 'shared'; Service = $shared.Service; Port = $shared.Port; PgDir = (Split-Path -Parent $shared.BinDir); DataDir = $shared.DataDir; Account = $account }

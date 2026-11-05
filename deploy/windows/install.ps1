@@ -57,7 +57,7 @@ trap {
 $script:UpgradeArmed = $false
 
 # Which PostgreSQL: decided on the first install and kept (lib.ps1).
-$Db = Resolve-DbPlan $DataDir
+$Db = Resolve-DbPlan $DataDir ($env:CL_PG_MODE -eq 'own')
 $Shared = $Db.Mode -eq 'shared'
 $PgService = $Db.Service
 $PgPort = [int]$Db.Port

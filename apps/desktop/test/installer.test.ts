@@ -40,6 +40,27 @@ describe('PostgreSQL already on the PC', () => {
   });
 });
 
+describe('the wizard and an existing PostgreSQL 17', () => {
+  it('checks the password before installing, and offers our own database instead', () => {
+    const nsi = read('installer.nsi');
+    expect(nsi).toContain('check-postgres-password.ps1');
+    expect(nsi).toContain('CL_PG_MODE');
+    expect(nsi).toContain('reset-postgres-password.html');
+    expect(read('install.ps1')).toContain("$env:CL_PG_MODE -eq 'own'");
+  });
+
+  it('reads the install result straight after the install, before anything else', () => {
+    expect(read('installer.nsi')).toMatch(
+      /ExecToLog '\$R1 -Unattended -Wizard -ShopIp "\$ShopIp"'\n\s*;[^\n]*\n\s*Pop \$0/,
+    );
+  });
+
+  it('the reset guide always restores the login settings', () => {
+    const guide = read('reset-postgres-password.html');
+    expect(guide.indexOf('pg_hba.conf.bak" "C:')).toBeGreaterThan(guide.indexOf('trust'));
+  });
+});
+
 describe('the icon', () => {
   it('is a real Windows icon with the sizes the desktop uses', () => {
     const ico = readFileSync(new URL('../assets/icon.ico', import.meta.url));

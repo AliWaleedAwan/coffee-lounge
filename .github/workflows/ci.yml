@@ -64,9 +64,11 @@ jobs:
         # clean: no PostgreSQL, so ours is installed (and every drill runs). beside: another version
         # already runs on 5432, so ours goes next to it. shared: PostgreSQL 17 is already there and
         # is used, with its password (owner's decision, Nov 2026).
-        postgres: [clean, beside, shared]
+        postgres: [clean, beside, shared, shared-own]
     env:
       CL_PG_SUPERPASSWORD: ci-existing-pg-${{ github.run_id }}-password
+      # shared-own: PostgreSQL 17 is there, but the owner chose to run ours beside it.
+      CL_PG_MODE: ${{ matrix.postgres == 'shared-own' && 'own' || '' }}
       # One shop CA passphrase for the whole job: the restore drill reuses the root (step 7.3).
       CL_CA_PASSPHRASE: ci-ca-${{ github.run_id }}-${{ github.run_attempt }}-passphrase
       # The test owner's password, for the load script too (step 7.5).
@@ -107,7 +109,7 @@ jobs:
           Get-NetTCPConnection -State Listen -LocalPort 5432 | Select-Object -First 1 | Format-List LocalAddress, LocalPort
           Write-Host "running: $($other.Name)"
       - name: PostgreSQL 17 already installed (the shop's own)
-        if: matrix.postgres == 'shared'
+        if: startsWith(matrix.postgres, 'shared')
         run: |
           choco install postgresql17 --params "/Password:$env:CL_PG_SUPERPASSWORD" -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -188,7 +190,7 @@ jobs:
           $db = Get-Content -Raw 'C:\ProgramData\CoffeeLounge\config\database.json' | ConvertFrom-Json
           Write-Host "chosen: $($db.Mode) $($db.Service) port $($db.Port)"
           if ($env:CASE -eq 'shared' -and $db.Mode -ne 'shared') { throw 'the PostgreSQL 17 already here was not used' }
-          if ($env:CASE -eq 'beside' -and ($db.Mode -ne 'own' -or $db.Port -eq 5432)) { throw 'ours was not put beside the other one' }
+          if ($env:CASE -in @('beside', 'shared-own') -and ($db.Mode -ne 'own' -or $db.Port -eq 5432)) { throw 'ours was not put beside the other one' }
           $keep = @(Get-Service -Name 'postgresql*' | Where-Object { $db.Mode -eq 'shared' -or $_.Name -ne $db.Service })
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

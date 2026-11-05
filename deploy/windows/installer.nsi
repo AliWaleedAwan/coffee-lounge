@@ -48,6 +48,9 @@ Var F3
 Var F4
 Var PgAsk
 Var PgPass
+Var PgOwn
+Var RUse
+Var ROwn
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "..\..\apps\desktop\assets\icon.ico"
@@ -63,6 +66,7 @@ Var PgPass
 !insertmacro MUI_PAGE_WELCOME
 Page custom ShopPage ShopLeave
 Page custom SecretsPage SecretsLeave
+Page custom DatabasePage DatabaseLeave
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
@@ -87,6 +91,8 @@ Function .onInit
     SetOutPath "$PLUGINSDIR\detect"
     File "${BUNDLE}\setup\lib.ps1"
     File "${BUNDLE}\setup\detect-postgres.ps1"
+    File "${BUNDLE}\setup\check-postgres-password.ps1"
+    File "${BUNDLE}\setup\reset-postgres-password.html"
     ${If} ${RunningX64}
       ${DisableX64FSRedirection}
     ${EndIf}
@@ -166,12 +172,6 @@ Function SecretsPage
   Pop $0
   ${NSD_CreatePassword} 0 79u 70% 13u ""
   Pop $F3
-  ${If} $PgAsk == "ask"
-    ${NSD_CreateLabel} 0 98u 100% 12u "This PC already has PostgreSQL 17. Its 'postgres' password:"
-    Pop $0
-    ${NSD_CreatePassword} 0 111u 70% 13u ""
-    Pop $F4
-  ${EndIf}
   nsDialogs::Show
 FunctionEnd
 
@@ -193,12 +193,71 @@ Function SecretsLeave
     MessageBox MB_ICONEXCLAMATION "The owner's password needs at least 10 characters."
     Abort
   ${EndIf}
-  ${If} $PgAsk == "ask"
-    ${NSD_GetText} $F4 $PgPass
-    ${If} $PgPass == ""
-      MessageBox MB_ICONEXCLAMATION "Enter the password of the PostgreSQL already on this PC."
-      Abort
-    ${EndIf}
+FunctionEnd
+
+; Only when this PC already has PostgreSQL 17: use it (its password is checked here, before
+; anything is installed), or run our own beside it, which needs no password.
+Function DatabasePage
+  ${If} $IsUpgrade == 1
+  ${OrIf} $PgAsk != "ask"
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "Database" "This PC already has PostgreSQL 17."
+  nsDialogs::Create 1018
+  Pop $0
+  ${NSD_CreateLabel} 0 0 100% 20u "Coffee Lounge can keep its data in it, or run its own database beside it. Both work the same; nothing of the existing one is removed."
+  Pop $0
+  ${NSD_CreateRadioButton} 0 26u 100% 12u "Use it. Its 'postgres' password:"
+  Pop $RUse
+  ${NSD_CreatePassword} 12u 40u 60% 13u ""
+  Pop $F4
+  ${NSD_CreateRadioButton} 0 62u 100% 12u "I don't know the password: run Coffee Lounge's own database (no password needed)"
+  Pop $ROwn
+  ${NSD_CreateLink} 0 86u 100% 12u "Forgot the password? Step-by-step help to reset it"
+  Pop $0
+  ${NSD_OnClick} $0 ResetHelp
+  ${If} $PgOwn == 1
+    ${NSD_Check} $ROwn
+  ${Else}
+    ${NSD_Check} $RUse
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function ResetHelp
+  Pop $0
+  ExecShell "open" "$PLUGINSDIR\detect\reset-postgres-password.html"
+FunctionEnd
+
+Function DatabaseLeave
+  ${NSD_GetState} $ROwn $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $PgOwn 1
+    StrCpy $PgPass ""
+    Return
+  ${EndIf}
+  StrCpy $PgOwn 0
+  ${NSD_GetText} $F4 $PgPass
+  ${If} $PgPass == ""
+    MessageBox MB_ICONEXCLAMATION "Enter the password, or choose to run Coffee Lounge's own database."
+    Abort
+  ${EndIf}
+  ; Checked now, so a typing mistake never stops the install half way.
+  System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", t "$PgPass")'
+  ${If} ${RunningX64}
+    ${DisableX64FSRedirection}
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\detect\check-postgres-password.ps1"'
+  Pop $1
+  Pop $2
+  ${If} ${RunningX64}
+    ${EnableX64FSRedirection}
+  ${EndIf}
+  System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", n)'
+  StrCpy $2 $2 2
+  ${If} $2 != "ok"
+    MessageBox MB_ICONEXCLAMATION "That password did not work. Check it and try again, or choose to run Coffee Lounge's own database. The link below the choices explains how to reset it."
+    Abort
   ${EndIf}
 FunctionEnd
 
@@ -228,19 +287,25 @@ Section
   ${Else}
     ${If} $IsUpgrade == 1
       nsExec::ExecToLog '$R1 -Unattended -Wizard'
+      Pop $0
     ${Else}
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", t "$Passphrase")'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", t "$Owner")'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", t "$PgPass")'
+      ${If} $PgOwn == 1
+        System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_MODE", t "own")'
+      ${EndIf}
       ; In the environment, not the command line: "E:\" would read as an escaped quote.
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", t "$KeyDir")'
       nsExec::ExecToLog '$R1 -Unattended -Wizard -ShopIp "$ShopIp"'
+      ; The exit code first: nothing else may sit on the stack in between.
+      Pop $0
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", n)'
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_MODE", n)'
     ${EndIf}
-    Pop $0
     ${If} $0 != 0
       SetOutPath "$TEMP"
       SetDetailsView show
