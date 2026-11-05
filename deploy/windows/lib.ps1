@@ -145,6 +145,74 @@ function Show-ServiceFailure([string]$Name, [string[]]$Providers = @()) {
   }
 }
 
+# ------------------------------------------------------------------ the database server
+# Which PostgreSQL the shop uses (owner's decision, Nov 2026): one already on this PC when it is
+# version 17 ('shared': its postgres password is asked once), otherwise our own copy ('own'),
+# beside any other version, on the first free port. Chosen once, on the first install, and kept
+# in config\database.json; every other script reads it from there.
+
+# Every PostgreSQL service on this PC, from its service command line and its data folder.
+function Find-PostgresServices {
+  $found = @()
+  foreach ($svc in @(Get-CimInstance Win32_Service | Where-Object { $_.PathName -match 'pg_ctl(\.exe)?"?\s+runservice' })) {
+    $bin = $null
+    if ($svc.PathName -match '^\s*"([^"]+)"') { $bin = Split-Path -Parent $Matches[1] }
+    elseif ($svc.PathName -match '^\s*(\S+)') { $bin = Split-Path -Parent $Matches[1] }
+    $data = $null
+    if ($svc.PathName -match '-D\s+"([^"]+)"') { $data = $Matches[1] }
+    elseif ($svc.PathName -match '-D\s+(\S+)') { $data = $Matches[1] }
+    $version = ''
+    $port = 5432
+    if ($data -and (Test-Path (Join-Path $data 'PG_VERSION'))) {
+      $version = (Get-Content -TotalCount 1 (Join-Path $data 'PG_VERSION')).Trim()
+      foreach ($conf in @('postgresql.conf', 'postgresql.auto.conf')) {
+        $file = Join-Path $data $conf
+        if (Test-Path $file) {
+          foreach ($line in (Get-Content $file)) { if ($line -match '^\s*port\s*=\s*''?(\d+)') { $port = [int]$Matches[1] } }
+        }
+      }
+    }
+    $found += [pscustomobject]@{ Service = $svc.Name; Version = $version; Port = $port; BinDir = $bin; DataDir = $data; Account = $svc.StartName }
+  }
+  return $found
+}
+
+function Get-DbConfig([string]$DataDir) {
+  $file = Join-Path $DataDir 'config\database.json'
+  if (Test-Path $file) { return (Get-Content -Raw $file | ConvertFrom-Json) }
+  return $null
+}
+
+# The plan for this PC; $Ours is the data folder our own copy uses.
+function Resolve-DbPlan([string]$DataDir) {
+  $saved = Get-DbConfig $DataDir
+  if ($saved) { return $saved }
+  $ours = Join-Path $DataDir 'pgdata'
+  $all = @(Find-PostgresServices)
+  $mine = $all | Where-Object { $_.DataDir -and ($_.DataDir.TrimEnd('\') -eq $ours) } | Select-Object -First 1
+  if ($mine) {
+    # Installed before database.json existed.
+    return [pscustomobject]@{ Mode = 'own'; Service = $mine.Service; Port = $mine.Port; PgDir = (Split-Path -Parent $mine.BinDir); DataDir = $ours; Account = 'NT AUTHORITY\NETWORK SERVICE' }
+  }
+  $shared = $all | Where-Object { $_.Version -eq '17' } | Select-Object -First 1
+  if ($shared) {
+    $account = $shared.Account
+    if (-not $account -or $account -match '^(NT AUTHORITY\\)?NetworkService$') { $account = 'NT AUTHORITY\NETWORK SERVICE' }
+    return [pscustomobject]@{ Mode = 'shared'; Service = $shared.Service; Port = $shared.Port; PgDir = (Split-Path -Parent $shared.BinDir); DataDir = $shared.DataDir; Account = $account }
+  }
+  $service = 'postgresql-x64-17'
+  if (Get-Service -Name $service -ErrorAction SilentlyContinue) { $service = 'coffeelounge-db' }
+  $pgDir = 'C:\Program Files\PostgreSQL\17'
+  if (Test-Path (Join-Path $pgDir 'bin')) { $pgDir = 'C:\Program Files\CoffeeLounge-PostgreSQL\17' }
+  $taken = @($all | ForEach-Object { $_.Port })
+  $port = 5432
+  while (($taken -contains $port) -or -not (Test-PortFree $port)) {
+    $port++
+    if ($port -gt 5499) { throw 'No free port for the database between 5432 and 5499.' }
+  }
+  return [pscustomobject]@{ Mode = 'own'; Service = $service; Port = $port; PgDir = $pgDir; DataDir = $ours; Account = 'NT AUTHORITY\NETWORK SERVICE' }
+}
+
 # Lets one Windows account see and start a service, and nothing more: no stop, no
 # configuration (Phase 8 step 8.5). Safe to run again.
 function Grant-ServiceStart([string]$Service, [string]$Account) {

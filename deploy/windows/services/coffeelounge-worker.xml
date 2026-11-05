@@ -12,7 +12,7 @@
   <workingdirectory>{{INSTALL_DIR}}\app</workingdirectory>
   <startmode>Automatic</startmode>
   <delayedAutoStart>true</delayedAutoStart>
-  <depend>postgresql-x64-17</depend>
+  <depend>{{PG_SERVICE}}</depend>
   <!-- Ctrl+C reaches Node as SIGINT: it finishes requests and closes the database cleanly. -->
   <stoptimeout>20 sec</stoptimeout>
   <onfailure action="restart" delay="5 sec"/>

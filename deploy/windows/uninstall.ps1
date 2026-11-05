@@ -3,7 +3,6 @@
 # folder unless -RemoveData is given together with -ConfirmShopName (typed by the owner).
 param(
   [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
   [switch]$RemoveData,
   [string]$ConfirmShopName = ''
@@ -26,10 +25,15 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
   }
 }
 Unregister-ScheduledTask -TaskName 'Coffee Lounge database watchdog' -Confirm:$false -ErrorAction SilentlyContinue
-if (Get-Service -Name 'postgresql-x64-17' -ErrorAction SilentlyContinue) {
-  Stop-Service -Name 'postgresql-x64-17' -Force
-  Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @('unregister', '-N', 'postgresql-x64-17') | Out-Null
-  Write-Step 'Removed service postgresql-x64-17 (the database files stay)'
+# Our own PostgreSQL goes; one that was on this PC before stays untouched (our database inside it
+# stays too, like the data folder).
+$db = Get-DbConfig $DataDir
+if (-not $db) { $db = [pscustomobject]@{ Mode = 'own'; Service = 'postgresql-x64-17'; PgDir = 'C:\Program Files\PostgreSQL\17' } }
+$PgDir = $db.PgDir
+if ($db.Mode -eq 'own' -and (Get-Service -Name $db.Service -ErrorAction SilentlyContinue)) {
+  Stop-Service -Name $db.Service -Force
+  Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @('unregister', '-N', $db.Service) | Out-Null
+  Write-Step "Removed service $($db.Service) (the database files stay)"
 }
 Get-NetFirewallRule -DisplayName 'CoffeeLounge *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -40,7 +44,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:ProgramData 'Mi
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Coffee Lounge.lnk')
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge'
 Write-Step 'Removed the counter app start-up task, shortcut and Add/Remove Programs entry'
-foreach ($dir in @($InstallDir, $PgDir)) {
+$remove = @($InstallDir)
+if ($db.Mode -eq 'own') { $remove += $PgDir }
+foreach ($dir in $remove) {
   if (Test-Path $dir) { Remove-Item -Recurse -Force $dir; Write-Step "Removed $dir" }
 }
 if ($RemoveData) {

@@ -207,8 +207,11 @@ function makeSupervisor(cfg: DesktopConfig): ServiceSupervisor | null {
   if (!local || (!scStateOverride && !(app.isPackaged && process.platform === 'win32')))
     return null;
   const programData = process.env['ProgramData'] ?? 'C:\\ProgramData';
-  return new ServiceSupervisor(scStateOverride ? fakeSc(scStateOverride) : systemSc, () =>
-    existsSync(join(programData, 'CoffeeLounge', 'maintenance.flag')),
+  return new ServiceSupervisor(
+    scStateOverride ? fakeSc(scStateOverride) : systemSc,
+    () => existsSync(join(programData, 'CoffeeLounge', 'maintenance.flag')),
+    Date.now,
+    cfg.databaseService,
   );
 }
 

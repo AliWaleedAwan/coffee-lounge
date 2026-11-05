@@ -34,8 +34,8 @@ interface Managed {
   needs?: RowId;
 }
 
-const MANAGED: readonly Managed[] = [
-  { id: 'database', label: 'Database', service: 'postgresql-x64-17' },
+const managed = (databaseService: string): readonly Managed[] => [
+  { id: 'database', label: 'Database', service: databaseService },
   { id: 'server', label: 'Server', service: 'coffeelounge-api', needs: 'database' },
   { id: 'jobs', label: 'Background jobs', service: 'coffeelounge-worker', needs: 'database' },
 ];
@@ -73,8 +73,15 @@ export class ServiceSupervisor {
   private readonly sc: Sc;
   private readonly inMaintenance: () => boolean;
   private readonly now: () => number;
+  private readonly items: readonly Managed[];
 
-  constructor(sc: Sc, inMaintenance: () => boolean, now: () => number = Date.now) {
+  constructor(
+    sc: Sc,
+    inMaintenance: () => boolean,
+    now: () => number = Date.now,
+    databaseService = 'postgresql-x64-17',
+  ) {
+    this.items = managed(databaseService);
     this.sc = sc;
     this.inMaintenance = inMaintenance;
     this.now = now;
@@ -90,7 +97,7 @@ export class ServiceSupervisor {
   async check(onStart?: (service: string, result: ScResult) => void): Promise<ServiceRow[]> {
     const rows: ServiceRow[] = [];
     const running = new Set<RowId>();
-    for (const item of MANAGED) {
+    for (const item of this.items) {
       const status = parseScQuery(await this.sc(['query', item.service]));
       if (status === 'running') {
         running.add(item.id);

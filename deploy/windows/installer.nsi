@@ -45,14 +45,17 @@ Var Owner
 Var F1
 Var F2
 Var F3
+Var F4
+Var PgAsk
+Var PgPass
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "..\..\apps\desktop\assets\icon.ico"
 !define MUI_UNICON "..\..\apps\desktop\assets\icon.ico"
 !define MUI_WELCOMEPAGE_TITLE "Install Coffee Lounge"
-!define MUI_WELCOMEPAGE_TEXT "This installs everything the shop needs on this PC: the database, the server and the counter app. Nothing else needs to be installed and no internet is needed.$\r$\n$\r$\nFor a first install, plug in the owner's USB key before you continue."
+!define MUI_WELCOMEPAGE_TEXT "This installs everything the shop needs on this PC: the database, the server and the counter app. Nothing else needs to be installed and no internet is needed.$\r$\n$\r$\nFor a first install, have ready a folder for the owner's keys: a USB key is best, but any folder the owner keeps safe will do."
 !define MUI_FINISHPAGE_TITLE "Coffee Lounge is ready"
-!define MUI_FINISHPAGE_TEXT "It starts by itself with Windows from now on.$\r$\n$\r$\nOn a first install, the owner's recovery code and the shop keys are on the USB key. Print the code, keep it in the safe, and keep the USB key away from this PC."
+!define MUI_FINISHPAGE_TEXT "It starts by itself with Windows from now on.$\r$\n$\r$\nOn a first install, the owner's recovery code and the shop keys are in the folder you chose. Print the code and keep it in the safe; copy the folder somewhere safe away from this PC."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open Coffee Lounge"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenApp
@@ -76,6 +79,27 @@ Function .onInit
     StrCpy $IsUpgrade 1
   ${EndIf}
   StrCpy $ShopIp "192.168.100.250"
+  StrCpy $KeyDir "$DOCUMENTS\Coffee Lounge keys"
+  ; Is there a PostgreSQL 17 on this PC already? Then its postgres password is asked.
+  StrCpy $PgAsk "no"
+  ${If} $IsUpgrade == 0
+    InitPluginsDir
+    SetOutPath "$PLUGINSDIR\detect"
+    File "${BUNDLE}\setup\lib.ps1"
+    File "${BUNDLE}\setup\detect-postgres.ps1"
+    ${If} ${RunningX64}
+      ${DisableX64FSRedirection}
+    ${EndIf}
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\detect\detect-postgres.ps1"'
+    Pop $1
+    Pop $2
+    ${If} ${RunningX64}
+      ${EnableX64FSRedirection}
+    ${EndIf}
+    ${If} $1 == 0
+      StrCpy $PgAsk $2 3
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Function ShopPage
@@ -89,7 +113,7 @@ Function ShopPage
   Pop $0
   ${NSD_CreateText} 0 13u 50% 13u "$ShopIp"
   Pop $F1
-  ${NSD_CreateLabel} 0 36u 100% 12u "Folder on the owner's USB key:"
+  ${NSD_CreateLabel} 0 36u 100% 12u "Folder for the owner's keys (a USB key is best, any safe folder will do):"
   Pop $0
   ${NSD_CreateDirRequest} 0 49u 75% 13u "$KeyDir"
   Pop $F2
@@ -101,7 +125,7 @@ FunctionEnd
 
 Function BrowseKey
   Pop $0
-  nsDialogs::SelectFolderDialog "Choose a folder on the owner's USB key" ""
+  nsDialogs::SelectFolderDialog "Choose a folder for the owner's keys" ""
   Pop $0
   StrCmp $0 error +2
     ${NSD_SetText} $F2 "$0"
@@ -114,8 +138,11 @@ Function ShopLeave
     MessageBox MB_ICONEXCLAMATION "Enter this PC's address."
     Abort
   ${EndIf}
+  ${If} $KeyDir != ""
+    CreateDirectory "$KeyDir"
+  ${EndIf}
   ${IfNot} ${FileExists} "$KeyDir\*.*"
-    MessageBox MB_ICONEXCLAMATION "Choose a folder that exists on the owner's USB key."
+    MessageBox MB_ICONEXCLAMATION "Choose a folder for the owner's keys that can be written to."
     Abort
   ${EndIf}
 FunctionEnd
@@ -139,6 +166,12 @@ Function SecretsPage
   Pop $0
   ${NSD_CreatePassword} 0 79u 70% 13u ""
   Pop $F3
+  ${If} $PgAsk == "ask"
+    ${NSD_CreateLabel} 0 98u 100% 12u "This PC already has PostgreSQL 17. Its 'postgres' password:"
+    Pop $0
+    ${NSD_CreatePassword} 0 111u 70% 13u ""
+    Pop $F4
+  ${EndIf}
   nsDialogs::Show
 FunctionEnd
 
@@ -159,6 +192,13 @@ Function SecretsLeave
   ${If} $1 < 10
     MessageBox MB_ICONEXCLAMATION "The owner's password needs at least 10 characters."
     Abort
+  ${EndIf}
+  ${If} $PgAsk == "ask"
+    ${NSD_GetText} $F4 $PgPass
+    ${If} $PgPass == ""
+      MessageBox MB_ICONEXCLAMATION "Enter the password of the PostgreSQL already on this PC."
+      Abort
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -191,12 +231,14 @@ Section
     ${Else}
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", t "$Passphrase")'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", t "$Owner")'
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", t "$PgPass")'
       ; In the environment, not the command line: "E:\" would read as an escaped quote.
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", t "$KeyDir")'
       nsExec::ExecToLog '$R1 -Unattended -Wizard -ShopIp "$ShopIp"'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_PASSPHRASE", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", n)'
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", n)'
     ${EndIf}
     Pop $0
     ${If} $0 != 0

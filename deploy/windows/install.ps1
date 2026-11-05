@@ -4,19 +4,18 @@
 #
 #   powershell -ExecutionPolicy Bypass -File setup\install.ps1 -CaExportDir E:\CoffeeLounge-Keys
 #
-# First install needs -CaExportDir: the owner's separate USB key. The shop CA's private
-# key is written there and removed from this PC. Not automated: static IP and network
+# First install needs -CaExportDir: a folder the owner keeps (a USB key is best). The shop CA's
+# private key is written there and removed from this PC. An existing PostgreSQL 17 is used, with
+# its postgres password in CL_PG_SUPERPASSWORD; otherwise our own copy (lib.ps1 Resolve-DbPlan). Not automated: static IP and network
 # profile (H-1, H-2), test print and setup sheet (Phase 3/7).
 param(
   [string]$Source = (Split-Path -Parent $PSScriptRoot),
   [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
   [string]$ShopIp = '192.168.100.250',
   [string]$CaExportDir = '',
   # Unattended installs only (tests); otherwise typed without echo.
   [string]$CaPassphrase = '',
-  [int]$PgPort = 5432,
   # Windows account the counter app starts for at login (H-9, H-11).
   [string]$CounterUser = 'Counter',
   # The backup drive's root (BACKUP_RECOVERY.md §3: the CL-BACKUP drive at B:\). Tests use a folder.
@@ -34,14 +33,11 @@ param(
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
 
-$PgService = 'postgresql-x64-17'
 $AppServices = @('coffeelounge-api', 'coffeelounge-worker')
 $Database = 'coffee_lounge'
 $Config = Join-Path $DataDir 'config'
 $Tls = Join-Path $Config 'tls'
-$PgData = Join-Path $DataDir 'pgdata'
 $Node = Join-Path $InstallDir 'runtime\node.exe'
-$Psql = Join-Path $PgDir 'bin\psql.exe'
 
 if (-not (Test-Admin)) { throw 'Run the installer as an Administrator.' }
 if (-not [Environment]::Is64BitProcess) { throw 'Run the installer in 64-bit PowerShell.' }
@@ -59,6 +55,16 @@ trap {
   exit 1
 }
 $script:UpgradeArmed = $false
+
+# Which PostgreSQL: decided on the first install and kept (lib.ps1).
+$Db = Resolve-DbPlan $DataDir
+$Shared = $Db.Mode -eq 'shared'
+$PgService = $Db.Service
+$PgPort = [int]$Db.Port
+$PgDir = $Db.PgDir
+$PgData = $Db.DataDir
+$PgAccount = $Db.Account
+$Psql = Join-Path $PgDir 'bin\psql.exe'
 $MaintenanceFlag = Join-Path $DataDir 'maintenance.flag'
 $Previous = Join-Path $DataDir 'previous-version'
 $PreUpgradeDir = Join-Path $DataDir 'pre-upgrade'
@@ -74,7 +80,7 @@ function Invoke-Rollback {
       & robocopy.exe (Join-Path $Previous $part) (Join-Path $InstallDir $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
     }
     Copy-Item (Join-Path $Previous 'VERSION.txt') $InstallDir -Force
-    & robocopy.exe (Join-Path $Previous 'pgsql') $PgDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if (-not $Shared) { & robocopy.exe (Join-Path $Previous 'pgsql') $PgDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null }
     if ((Get-Service -Name $PgService).Status -ne 'Running') { Start-Service -Name $PgService }
     $dump = Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -Last 1
     $super = Unprotect-FromFile (Join-Path $Config 'postgres.secret')
@@ -112,12 +118,16 @@ if (-not $ourServicesExist) {
   foreach ($port in @(8080, 8443)) { if (-not (Test-PortFree $port)) { throw "Port $port is in use by another program." } }
 }
 $pgServiceObj = Get-Service -Name $PgService -ErrorAction SilentlyContinue
-if ($pgServiceObj) {
-  $imagePath = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$PgService").ImagePath
-  if ($imagePath -notlike "*$PgData*") { throw "A different $PgService service exists ($imagePath). Remove it first." }
-} elseif (-not (Test-PortFree $PgPort)) {
-  throw "Port $PgPort is in use (another PostgreSQL?)."
+if ($Shared) {
+  if (-not $pgServiceObj) { throw "The PostgreSQL service $PgService chosen on the first install is gone." }
+  Write-Step "Using the PostgreSQL 17 already on this PC (service $PgService, port $PgPort)"
+} elseif (-not $pgServiceObj -and -not (Test-PortFree $PgPort)) {
+  throw "Port $PgPort is in use by another program; the database needs it."
+} else {
+  Write-Step "Our own PostgreSQL 17: service $PgService, port $PgPort, in $PgDir"
 }
+# Kept from now on, so a retry or an upgrade makes the same choice.
+Write-Utf8NoBom (Join-Path $Config 'database.json') (@{ Mode = $Db.Mode; Service = $PgService; Port = $PgPort; PgDir = $PgDir; DataDir = $PgData; Account = $PgAccount } | ConvertTo-Json)
 
 # ------------------------------------------------------------------ 1b. upgrade (step 7.4)
 $upgrading = (-not $firstInstall) -and (Test-Path (Join-Path $InstallDir 'app')) -and $pgServiceObj -and ($pgServiceObj.Status -eq 'Running')
@@ -151,7 +161,7 @@ if ($upgrading) {
     if ($LASTEXITCODE -ge 8) { throw 'Could not keep a copy of the current version: nothing was changed.' }
   }
   Copy-Item (Join-Path $InstallDir 'VERSION.txt') $Previous -Force
-  & robocopy.exe $PgDir (Join-Path $Previous 'pgsql') /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+  if (-not $Shared) { & robocopy.exe $PgDir (Join-Path $Previous 'pgsql') /MIR /NFL /NDL /NJH /NJS /NP | Out-Null }
   Write-Step "The current version is kept in $Previous"
   $script:UpgradeArmed = $true
 }
@@ -172,30 +182,38 @@ foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) { Cop
 Copy-Item (Join-Path $Source 'VERSION.txt') $InstallDir -Force
 
 # ------------------------------------------------------------------ 3. PostgreSQL
-if ($pgServiceObj -and $pgServiceObj.Status -eq 'Running') { Stop-Service -Name $PgService -Force }
-Write-Step "Copying PostgreSQL to $PgDir"
-Copy-Tree (Join-Path $Source 'pgsql') $PgDir
-
 $superSecret = Join-Path $Config 'postgres.secret'
-if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
-  Write-Step "Creating the database cluster in $PgData"
-  New-Item -ItemType Directory -Force -Path $PgData | Out-Null
-  $superPassword = New-Secret
-  $pwFile = Join-Path $Config 'initdb.pw'
-  Set-Content -Path $pwFile -Value $superPassword -NoNewline -Encoding ASCII
-  try {
-    Invoke-Native -FilePath (Join-Path $PgDir 'bin\initdb.exe') -Arguments @(
-      '-D', $PgData, '-U', 'postgres', "--pwfile=$pwFile", '-E', 'UTF8', '--locale=C', '-A', 'scram-sha-256'
-    ) | Out-Null
-  } finally { Remove-Item -Force $pwFile }
-  Protect-ToFile $superPassword $superSecret
-  # H-8: no UPS, so committed data must reach the disk itself (write-through), and the
-  # server only listens on this PC (LOCAL_LAN_HOSTING.md §4).
-  Add-Content -Path (Join-Path $PgData 'postgresql.conf') -Value @"
+if ($Shared) {
+  # Someone else's PostgreSQL: its files and service stay as they are.
+  if ($pgServiceObj.Status -ne 'Running') { Start-Service -Name $PgService }
+  if (-not (Test-Path $superSecret)) {
+    if (-not $env:CL_PG_SUPERPASSWORD) { throw 'This PC already has PostgreSQL 17: enter its postgres password in the wizard.' }
+    Protect-ToFile $env:CL_PG_SUPERPASSWORD $superSecret
+  }
+} else {
+  if ($pgServiceObj -and $pgServiceObj.Status -eq 'Running') { Stop-Service -Name $PgService -Force }
+  Write-Step "Copying PostgreSQL to $PgDir"
+  Copy-Tree (Join-Path $Source 'pgsql') $PgDir
+  if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
+    # A folder left by an install that stopped half way is started again.
+    if (Test-Path $PgData) { Remove-Item -Recurse -Force $PgData }
+    Write-Step "Creating the database cluster in $PgData"
+    New-Item -ItemType Directory -Force -Path $PgData | Out-Null
+    $superPassword = New-Secret
+    $pwFile = Join-Path $Config 'initdb.pw'
+    Set-Content -Path $pwFile -Value $superPassword -NoNewline -Encoding ASCII
+    try {
+      Invoke-Native -FilePath (Join-Path $PgDir 'bin\initdb.exe') -Arguments @(
+        '-D', $PgData, '-U', 'postgres', "--pwfile=$pwFile", '-E', 'UTF8', '--locale=C', '-A', 'scram-sha-256'
+      ) | Out-Null
+    } finally { Remove-Item -Force $pwFile }
+    Protect-ToFile $superPassword $superSecret
+    # H-8: no UPS, so committed data must reach the disk itself (write-through), and the
+    # server only listens on this PC (LOCAL_LAN_HOSTING.md §4).
+    Add-Content -Path (Join-Path $PgData 'postgresql.conf') -Value @'
 
 # --- Coffee Lounge ---
 listen_addresses = 'localhost'
-port = $PgPort
 # Flush each commit through to the disk (H-8). fsync_writethrough is not accepted by
 # this PostgreSQL build; the power-cut drill measures the choice on the iMac.
 wal_sync_method = fsync
@@ -206,36 +224,48 @@ log_directory = 'log'
 log_filename = 'postgresql-%a.log'
 log_truncate_on_rotation = on
 log_rotation_age = 1d
-"@
-  Set-Content -Path (Join-Path $PgData 'pg_hba.conf') -Encoding ASCII -Value @"
+'@
+    Add-Content -Path (Join-Path $PgData 'postgresql.conf') -Value "port = $PgPort"
+    Set-Content -Path (Join-Path $PgData 'pg_hba.conf') -Encoding ASCII -Value @'
 # Coffee Lounge: password logins from this PC only.
 host all all 127.0.0.1/32 scram-sha-256
 host all all ::1/128      scram-sha-256
-"@
-}
-Set-RestrictedAcl -Path $PgData -Modify @('NT AUTHORITY\NETWORK SERVICE')
-# initdb may leave explicit permissions on files inside: grant the service account
-# down the whole tree, as the EDB installer does.
-Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M', '/T', '/Q') | Out-Null
-if (-not $pgServiceObj) {
-  Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @(
-    'register', '-N', $PgService, '-U', 'NT AUTHORITY\NetworkService', '-D', $PgData, '-S', 'auto', '-w'
-  ) | Out-Null
-}
-Invoke-Native -FilePath 'sc.exe' -Arguments @('failure', $PgService, 'reset=', '86400', 'actions=', 'restart/10000/restart/30000/restart/60000') | Out-Null
-try {
-  Start-Service -Name $PgService
-} catch {
-  Show-ServiceFailure $PgService @('PostgreSQL', 'postgres')
-  $pgLog = Join-Path $PgData 'log'
-  if (Test-Path $pgLog) { Get-ChildItem $pgLog | ForEach-Object { Write-Step "--- $($_.Name)"; Write-Step (Get-Content -Raw $_.FullName) } }
-  throw
+'@
+  }
+  Set-RestrictedAcl -Path $PgData -Modify @($PgAccount)
+  # initdb may leave explicit permissions on files inside: grant the service account
+  # down the whole tree, as the EDB installer does.
+  Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', "$($PgAccount):(OI)(CI)M", '/T', '/Q') | Out-Null
+  if (-not $pgServiceObj) {
+    Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @(
+      'register', '-N', $PgService, '-U', 'NT AUTHORITY\NetworkService', '-D', $PgData, '-S', 'auto', '-w'
+    ) | Out-Null
+  }
+  Invoke-Native -FilePath 'sc.exe' -Arguments @('failure', $PgService, 'reset=', '86400', 'actions=', 'restart/10000/restart/30000/restart/60000') | Out-Null
+  try {
+    Start-Service -Name $PgService
+  } catch {
+    Show-ServiceFailure $PgService @('PostgreSQL', 'postgres')
+    $pgLog = Join-Path $PgData 'log'
+    if (Test-Path $pgLog) { Get-ChildItem $pgLog | ForEach-Object { Write-Step "--- $($_.Name)"; Write-Step (Get-Content -Raw $_.FullName) } }
+    throw
+  }
 }
 $superPassword = Unprotect-FromFile $superSecret
 for ($i = 0; $i -lt 30; $i++) {
   & (Join-Path $PgDir 'bin\pg_isready.exe') -h 127.0.0.1 -p $PgPort | Out-Null
   if ($LASTEXITCODE -eq 0) { break }
   Start-Sleep -Seconds 2
+}
+$savedPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$env:PGPASSWORD = $superPassword
+try { $probe = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c 'SHOW server_version_num' 2>&1 | ForEach-Object { "$_" }) -join ' ' }
+finally { Remove-Item Env:\PGPASSWORD; $ErrorActionPreference = $savedPreference }
+if ($probe -notmatch '^17\d{4}$') {
+  # A wrong password must be asked again, not kept.
+  if ($Shared) { Remove-Item -Force $superSecret }
+  throw "Cannot use PostgreSQL on port $PgPort as postgres ($probe). If this PC's own PostgreSQL 17 is used, check its postgres password and run the setup again."
 }
 
 function Invoke-Sql([string]$User, [string]$Password, [string]$Db, [string]$Sql, [string[]]$Hide = @()) {
@@ -246,17 +276,28 @@ function Invoke-Sql([string]$User, [string]$Password, [string]$Db, [string]$Sql,
 # ------------------------------------------------------------------ 4. logins and database
 $migratorSecret = Join-Path $Config 'migrator.secret'
 $serviceSecret = Join-Path $Config 'service.secret'
+# Safe to repeat: an install that stopped half way may have made some of these already.
+function Set-Login([string]$Name, [string]$Options, [string]$Password) {
+  $verb = 'CREATE'
+  $env:PGPASSWORD = $superPassword
+  try { if ((& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c "SELECT 1 FROM pg_roles WHERE rolname = '$Name'") -eq '1') { $verb = 'ALTER' } }
+  finally { Remove-Item Env:\PGPASSWORD }
+  Invoke-Sql 'postgres' $superPassword 'postgres' "$verb ROLE $Name $Options PASSWORD '$Password';" @($Password)
+}
+function New-DatabaseIfMissing([string]$Name, [string]$Owner) {
+  $env:PGPASSWORD = $superPassword
+  try { $exists = (& $Psql -h 127.0.0.1 -p $PgPort -U postgres -d postgres -At -c "SELECT 1 FROM pg_database WHERE datname = '$Name'") -eq '1' }
+  finally { Remove-Item Env:\PGPASSWORD }
+  if (-not $exists) { Invoke-Sql 'postgres' $superPassword 'postgres' "CREATE DATABASE $Name OWNER $Owner ENCODING 'UTF8' TEMPLATE template0;" }
+}
 if (-not (Test-Path $migratorSecret)) {
   $migratorPassword = New-Secret
   $servicePassword = New-Secret
   Write-Step 'Creating the database and its logins'
-  Invoke-Sql 'postgres' $superPassword 'postgres' @"
-CREATE ROLE cl_migrator LOGIN CREATEROLE PASSWORD '$migratorPassword';
-CREATE ROLE cl_service LOGIN PASSWORD '$servicePassword';
-CREATE DATABASE $Database OWNER cl_migrator ENCODING 'UTF8' TEMPLATE template0;
-REVOKE CONNECT ON DATABASE $Database FROM PUBLIC;
-GRANT CONNECT ON DATABASE $Database TO cl_service;
-"@ @($migratorPassword, $servicePassword)
+  Set-Login 'cl_migrator' 'LOGIN CREATEROLE' $migratorPassword
+  Set-Login 'cl_service' 'LOGIN' $servicePassword
+  New-DatabaseIfMissing $Database 'cl_migrator'
+  Invoke-Sql 'postgres' $superPassword 'postgres' "REVOKE CONNECT ON DATABASE $Database FROM PUBLIC; GRANT CONNECT ON DATABASE $Database TO cl_service;"
   Protect-ToFile $migratorPassword $migratorSecret
   Protect-ToFile $servicePassword $serviceSecret
 }
@@ -274,10 +315,8 @@ Invoke-Sql 'cl_migrator' $migratorPassword $Database 'GRANT cl_app TO cl_service
 $backupSecret = Join-Path $Config 'backup-login.secret'
 if (-not (Test-Path $backupSecret)) {
   $backupPassword = New-Secret
-  Invoke-Sql 'postgres' $superPassword 'postgres' @"
-CREATE ROLE cl_backup LOGIN REPLICATION PASSWORD '$backupPassword';
-CREATE DATABASE coffee_lounge_restore_test OWNER cl_backup ENCODING 'UTF8' TEMPLATE template0;
-"@ @($backupPassword)
+  Set-Login 'cl_backup' 'LOGIN REPLICATION' $backupPassword
+  New-DatabaseIfMissing 'coffee_lounge_restore_test' 'cl_backup'
   Invoke-Sql 'postgres' $superPassword 'coffee_lounge_restore_test' 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
   Protect-ToFile $backupPassword $backupSecret
 }
@@ -285,6 +324,7 @@ $backupPassword = Unprotect-FromFile $backupSecret
 $hba = Join-Path $PgData 'pg_hba.conf'
 if (-not (Select-String -Path $hba -Pattern '^host\s+replication\s+cl_backup' -Quiet)) {
   Add-Content -Path $hba -Encoding ASCII -Value 'host replication cl_backup 127.0.0.1/32 scram-sha-256'
+  Invoke-Sql 'postgres' $superPassword 'postgres' 'SELECT pg_reload_conf();'
 }
 
 # ------------------------------------------------------------------ 5. certificates
@@ -424,7 +464,7 @@ foreach ($s in $AppServices) {
   }
   Copy-Item (Join-Path $InstallDir 'winsw\WinSW-x64.exe') $exe -Force
   $xml = Get-Content -Raw (Join-Path $InstallDir "setup\services\$s.xml")
-  $xml = $xml.Replace('{{INSTALL_DIR}}', $InstallDir).Replace('{{DATA_DIR}}', $DataDir)
+  $xml = $xml.Replace('{{INSTALL_DIR}}', $InstallDir).Replace('{{DATA_DIR}}', $DataDir).Replace('{{PG_SERVICE}}', $PgService)
   Set-Content -Path (Join-Path $servicesDir "$s.xml") -Value $xml -Encoding UTF8
   Invoke-Native -FilePath $exe -Arguments @('install') | Out-Null
   # Each service runs as its own virtual account with no password (WINDOWS_DEPLOYMENT.md §2).
@@ -434,7 +474,7 @@ foreach ($s in $AppServices) {
 $serviceAccounts = $AppServices | ForEach-Object { "NT SERVICE\$_" }
 Set-RestrictedAcl -Path $Config -Read $serviceAccounts
 # PostgreSQL's own account reads the backup public key for WAL archiving (nothing secret).
-if (Test-Path $backupPub) { Set-RestrictedAcl -Path $backupPub -Read ($serviceAccounts + @('NT AUTHORITY\NETWORK SERVICE')) }
+if (Test-Path $backupPub) { Set-RestrictedAcl -Path $backupPub -Read ($serviceAccounts + @($PgAccount)) }
 Set-RestrictedAcl -Path (Join-Path $DataDir 'logs') -Modify $serviceAccounts
 Set-RestrictedAcl -Path (Join-Path $DataDir 'files') -Modify $serviceAccounts
 foreach ($s in $AppServices) {
@@ -512,7 +552,7 @@ if (-not $SkipHostSettings) {
 # ------------------------------------------------------------------ 10. counter app settings (WINDOWS_DEPLOYMENT.md §10)
 $desktopDir = Join-Path $DataDir 'desktop'
 Copy-Item $RootCa (Join-Path $desktopDir 'coffee-lounge-root.pem') -Force
-Write-Utf8NoBom (Join-Path $desktopDir 'desktop.json') '{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true }'
+Write-Utf8NoBom (Join-Path $desktopDir 'desktop.json') ('{{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true, "databaseService": "{0}" }}' -f $PgService)
 Set-RestrictedAcl -Path $desktopDir -Read @('*S-1-5-32-545') # Users: read only
 
 $counterExe = Join-Path $InstallDir 'desktop\CoffeeLounge.exe'

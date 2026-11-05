@@ -3,7 +3,8 @@
  *
  *   { "serverUrl": "https://127.0.0.1:8443",
  *     "caCertFile": "coffee-lounge-root.pem",   // relative to this file
- *     "fullscreen": true }
+ *     "fullscreen": true,
+ *     "databaseService": "postgresql-x64-17" }   // the PostgreSQL service the installer chose
  *
  * HTTPS requires the shop root certificate: the app trusts that root and nothing else
  * for the server (LOCAL_LAN_HOSTING.md §5). Plain HTTP is accepted only for a loopback
@@ -21,6 +22,8 @@ export interface DesktopConfig {
   /** The pinned shop root, or null for development over loopback HTTP. */
   root: X509Certificate | null;
   fullscreen: boolean;
+  /** The PostgreSQL service behind the server (step 8.5); the default for older installs. */
+  databaseService: string;
 }
 
 export class ConfigError extends Error {
@@ -51,7 +54,7 @@ export async function parseDesktopConfig(
   raw: Record<string, unknown>,
   readCa: (name: string) => Promise<string>,
 ): Promise<DesktopConfig> {
-  const { serverUrl, caCertFile, fullscreen } = raw;
+  const { serverUrl, caCertFile, fullscreen, databaseService } = raw;
   if (typeof serverUrl !== 'string') throw new ConfigError('serverUrl is missing');
   let url: URL;
   try {
@@ -61,6 +64,12 @@ export async function parseDesktopConfig(
   }
   if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
     throw new ConfigError('serverUrl must be an origin only, e.g. https://127.0.0.1:8443');
+  }
+  if (
+    databaseService !== undefined &&
+    (typeof databaseService !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(databaseService))
+  ) {
+    throw new ConfigError('databaseService must be a Windows service name');
   }
   if (fullscreen !== undefined && typeof fullscreen !== 'boolean') {
     throw new ConfigError('fullscreen must be true or false');
@@ -90,5 +99,6 @@ export async function parseDesktopConfig(
     serverHost: url.hostname.replace(/^\[|\]$/g, ''),
     root,
     fullscreen: fullscreen ?? false,
+    databaseService: databaseService ?? 'postgresql-x64-17',
   };
 }

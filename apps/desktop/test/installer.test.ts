@@ -20,6 +20,26 @@ describe('the setup scripts', () => {
   });
 });
 
+describe('PostgreSQL already on the PC', () => {
+  it('no script names the database service or port itself: all follow database.json', () => {
+    for (const name of ['install.ps1', 'uninstall.ps1', 'restore.ps1', 'watchdog.ps1']) {
+      const text = read(name).replace(/^\s*#.*$/gm, '');
+      const fixed = text
+        .split('\n')
+        .filter(
+          (l) =>
+            l.includes("'postgresql-x64-17'") && !l.includes('Mode =') && !l.includes('$name = '),
+        );
+      expect(fixed, name).toEqual([]);
+    }
+    expect(read('services/coffeelounge-api.xml')).toContain('{{PG_SERVICE}}');
+  });
+
+  it('a point-in-time restore refuses on a shared PostgreSQL', () => {
+    expect(read('restore.ps1')).toMatch(/Mode -eq 'shared'\) \{\s*throw/);
+  });
+});
+
 describe('the icon', () => {
   it('is a real Windows icon with the sizes the desktop uses', () => {
     const ico = readFileSync(new URL('../assets/icon.ico', import.meta.url));

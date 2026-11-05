@@ -255,6 +255,16 @@ describe('start-up screen: services (step 8.5)', () => {
     expect(starts()).toBe(MAX_START_ATTEMPTS + 1);
   });
 
+  it('watches the database service the installer chose', async () => {
+    const calls: string[] = [];
+    const sc = (args: readonly string[]) => {
+      calls.push(args.join(' '));
+      return Promise.resolve(output('4  RUNNING'));
+    };
+    await new ServiceSupervisor(sc, () => false, Date.now, 'coffeelounge-db').check();
+    expect(calls[0]).toBe('query coffeelounge-db');
+  });
+
   it('a service that is not installed sends for the technician', async () => {
     const sc = () => Promise.resolve({ code: 1060, stdout: '' });
     const rows = await new ServiceSupervisor(sc, () => false).check();
@@ -305,6 +315,9 @@ describe('configuration', () => {
       message: 'Plain http is allowed only for a loopback address (development)',
     });
     expect(await bad({ serverUrl: 'not a url' })).toBeInstanceOf(ConfigError);
+    expect(
+      await bad({ serverUrl: 'http://127.0.0.1:8443', databaseService: 'x & calc.exe' }),
+    ).toBeInstanceOf(ConfigError);
     expect(await bad({ serverUrl: 'http://127.0.0.1:8443', fullscreen: 'yes' })).toBeInstanceOf(
       ConfigError,
     );
@@ -317,6 +330,7 @@ describe('configuration', () => {
       serverOrigin: 'http://127.0.0.1:8443',
       root: null,
       fullscreen: false,
+      databaseService: 'postgresql-x64-17',
     });
   });
 });

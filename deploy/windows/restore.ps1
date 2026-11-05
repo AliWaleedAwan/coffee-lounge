@@ -11,9 +11,7 @@ param(
   [Parameter(Mandatory)] [string]$KeyFile,
   [string]$PointInTime = 'latest',
   [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
-  [int]$PgPort = 5432,
   [switch]$Unattended
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
@@ -22,8 +20,16 @@ if (-not (Test-Admin)) { throw 'Run the restore as an Administrator.' }
 $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Admin = Join-Path $InstallDir 'app\dist\admin.js'
 $EnvFile = Join-Path $DataDir 'config\server.env'
-$PgData = Join-Path $DataDir 'pgdata'
-$PgService = 'postgresql-x64-17'
+$db = Get-DbConfig $DataDir
+if (-not $db) { $db = [pscustomobject]@{ Mode = 'own'; Service = 'postgresql-x64-17'; Port = 5432; PgDir = 'C:\Program Files\PostgreSQL\17'; DataDir = (Join-Path $DataDir 'pgdata') } }
+# A point-in-time restore replaces the whole PostgreSQL, and with it the other programs' data.
+if ($db.Mode -eq 'shared') {
+  throw 'This shop uses the PostgreSQL that was already on this PC, which other programs share, so it cannot be rewound as a whole. Restore the nightly copy instead: run the setup with -RestoreFrom latest (BACKUP_RECOVERY.md).'
+}
+$PgData = $db.DataDir
+$PgService = $db.Service
+$PgPort = [int]$db.Port
+$PgDir = $db.PgDir
 $AppServices = @('coffeelounge-api', 'coffeelounge-worker')
 if (-not (Test-Path $KeyFile)) { throw "The backup key $KeyFile is not there: plug in the owner's USB key." }
 $target = 'latest'

@@ -3,14 +3,22 @@
 # (WINDOWS_DEPLOYMENT.md §2, AT-17). Run as Administrator after install.ps1.
 param(
   [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
+  [string]$PgDir = '',
   [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
   [string]$CaExportDir = '',
-  [int]$PgPort = 5432,
+  [int]$PgPort = 0,
   [string]$CounterUser = 'Counter',
   [string]$BackupDrive = 'B:\'
 )
 . (Join-Path $PSScriptRoot '..\lib.ps1')
+
+# The PostgreSQL the installer chose (own copy, or the one already on this PC).
+$Db = Get-DbConfig $DataDir
+if (-not $Db) { throw 'config\database.json is missing' }
+if (-not $PgDir) { $PgDir = $Db.PgDir }
+if (-not $PgPort) { $PgPort = [int]$Db.Port }
+$PgService = $Db.Service
+Write-Step "Database: $($Db.Mode), service $PgService, port $PgPort"
 
 $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Tls = Join-Path $DataDir 'config\tls'
@@ -78,7 +86,7 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
   }
   Check "$s depends on PostgreSQL and restarts after 5 s, 10 s, 30 s" {
     $deps = (Get-Service $s).ServicesDependedOn.Name
-    if ($deps -notcontains 'postgresql-x64-17') { throw "depends on: $deps" }
+    if ($deps -notcontains $PgService) { throw "depends on: $deps" }
     $failure = (& sc.exe qfailure $s) -join "`n"
     foreach ($ms in @('5000', '10000', '30000')) {
       if ($failure -notmatch "RESTART -- Delay = $ms") { throw "recovery actions: $failure" }
@@ -86,14 +94,17 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
     $true
   }
 }
-Check 'PostgreSQL runs automatically as NetworkService and listens on this PC only' {
-  $svc = Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'"
-  if ($svc.State -ne 'Running' -or $svc.StartMode -ne 'Auto') { throw "$($svc.State) $($svc.StartMode)" }
-  if ($svc.StartName -notmatch 'NetworkService') { throw "account $($svc.StartName)" }
-  $listen = Get-NetTCPConnection -State Listen -LocalPort $PgPort
-  $outside = $listen | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }
-  if ($outside) { throw "listening on $($outside.LocalAddress -join ', ')" }
-  $true
+# Only our own copy: one that was already on this PC keeps its owner's settings.
+if ($Db.Mode -eq 'own') {
+  Check 'PostgreSQL runs automatically as NetworkService and listens on this PC only' {
+    $svc = Get-CimInstance Win32_Service -Filter "Name='$PgService'"
+    if ($svc.State -ne 'Running' -or $svc.StartMode -ne 'Auto') { throw "$($svc.State) $($svc.StartMode)" }
+    if ($svc.StartName -notmatch 'NetworkService') { throw "account $($svc.StartName)" }
+    $listen = Get-NetTCPConnection -State Listen -LocalPort $PgPort
+    $outside = $listen | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }
+    if ($outside) { throw "listening on $($outside.LocalAddress -join ', ')" }
+    $true
+  }
 }
 
 # ------------------------------------------------------------------ listeners and TLS
@@ -260,7 +271,7 @@ function Invoke-AsCounter([string[]]$ScArguments) {
   $p = Start-Process -FilePath 'sc.exe' -ArgumentList $ScArguments -Credential $counterCredential -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -Wait -PassThru
   return $p.ExitCode
 }
-$startupServices = @('postgresql-x64-17', 'coffeelounge-api', 'coffeelounge-worker')
+$startupServices = @($PgService, 'coffeelounge-api', 'coffeelounge-worker')
 Check "$CounterUser may start these services, but not stop or reconfigure them, nor start another" {
   foreach ($s in $startupServices) {
     $code = Invoke-AsCounter @('stop', $s)
@@ -278,7 +289,7 @@ Check "$CounterUser may start these services, but not stop or reconfigure them, 
   $true
 }
 $counterLog = "C:\Users\$CounterUser\AppData\Roaming\Coffee Lounge\desktop.log"
-foreach ($stopped in @('coffeelounge-worker', 'coffeelounge-api', 'postgresql-x64-17')) {
+foreach ($stopped in @('coffeelounge-worker', 'coffeelounge-api', $PgService)) {
   Check "$stopped stopped: the app, run as $CounterUser, starts it and opens" {
     Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'exit' -Credential $counterCredential -LoadUserProfile -WindowStyle Hidden -Wait | Out-Null
     if (Test-Path $counterLog) { Remove-Item $counterLog -Force }
@@ -325,7 +336,7 @@ Check 'a crashed API is restarted by Windows and serves again' {
 Check 'a crashed database process is recovered by PostgreSQL and the API carries on (AT-17)' {
   # The postmaster is the child of the pg_ctl service process; kill one of its backends,
   # as a crash would. PostgreSQL then resets every connection and recovers on its own.
-  $wrapper = (Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'").ProcessId
+  $wrapper = (Get-CimInstance Win32_Service -Filter "Name='$PgService'").ProcessId
   $postmaster = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapper AND Name='postgres.exe'"
   # A client backend (not the logger or another helper process): its command line says so.
   $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($postmaster.ProcessId) AND Name='postgres.exe'")
@@ -333,7 +344,7 @@ Check 'a crashed database process is recovered by PostgreSQL and the API carries
   if (-not $backend) { throw ("no client backend among: " + (($children | ForEach-Object { $_.CommandLine }) -join ' | ')) }
   Stop-Process -Id $backend.ProcessId -Force
   Start-Sleep -Seconds 5
-  if ((Get-Service 'postgresql-x64-17').Status -ne 'Running') { throw 'PostgreSQL service stopped' }
+  if ((Get-Service $PgService).Status -ne 'Running') { throw 'PostgreSQL service stopped' }
   if (-not (Wait-Ready 120)) { throw 'API not ready again' }
   $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
   # Evidence only: how PostgreSQL logs a killed child depends on its exit code.
