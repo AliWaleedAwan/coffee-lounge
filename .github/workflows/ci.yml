@@ -136,11 +136,12 @@ jobs:
           CASE: ${{ matrix.postgres }}
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
-          # As on a PC whose PATH lost the Windows folders (seen on a real laptop): the setup must not care.
-          if ($env:CASE -eq 'beside') { $env:Path = 'C:\cl-no-such-folder' }
           # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
           New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
           icacls 'C:\cl-test-drive' /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+          # As on a PC whose PATH lost the Windows folders (seen on a real laptop): the setup must not care.
+          # Only for the setup itself, after this step's own commands.
+          if ($env:CASE -eq 'beside') { $env:Path = 'C:\cl-no-such-folder' }
           $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb", '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
           Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }

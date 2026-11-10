@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const read = (name: string) =>
-  readFileSync(new URL(`../../../deploy/windows/${name}`, import.meta.url), 'utf8');
+  readFileSync(new URL(`../../../deploy/windows/${name}`, import.meta.url), 'utf8').replace(
+    /\r\n/g,
+    '\n',
+  );
 
 describe('the setup scripts', () => {
   it('never Join-Path the backup drive: it fails while the drive is not plugged in', () => {
