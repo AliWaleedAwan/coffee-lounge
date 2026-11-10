@@ -1,0 +1,10 @@
+# The same line endings on every machine: on Windows checkouts, Git otherwise turns text files to
+# CRLF, which breaks the golden-file tests and the format check (Prettier expects LF).
+* text=auto eol=lf
+# Windows-only scripts keep Windows line endings.
+*.ps1 text eol=crlf
+*.nsi text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ico binary
+*.png binary

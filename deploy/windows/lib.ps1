@@ -9,6 +9,22 @@ $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# Windows' own folders first, whatever this PC's PATH says: some PCs lose them (another program's
+# installer, a hand edit), and then robocopy, icacls or sc "is not recognized". The same for the
+# PowerShell modules the firewall, task and account cmdlets live in.
+$windowsDir = $env:SystemRoot
+if (-not $windowsDir) { $windowsDir = 'C:\Windows' }
+$env:Path = (@(
+    (Join-Path $windowsDir 'System32'),
+    $windowsDir,
+    (Join-Path $windowsDir 'System32\Wbem'),
+    (Join-Path $windowsDir 'System32\WindowsPowerShell\v1.0')
+  ) -join ';') + ';' + $env:Path
+$systemModules = Join-Path $windowsDir 'System32\WindowsPowerShell\v1.0\Modules'
+if (-not $env:PSModulePath -or ($env:PSModulePath -notlike "*$systemModules*")) {
+  $env:PSModulePath = $systemModules + ';' + $env:PSModulePath
+}
+
 $script:LogFile = $null
 $script:MissingPins = @()
 
@@ -193,12 +209,15 @@ function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false) {
   $mine = $all | Where-Object { $_.DataDir -and ($_.DataDir.TrimEnd('\') -eq $ours) } | Select-Object -First 1
   if ($mine) {
     # Installed before database.json existed.
-    return [pscustomobject]@{ Mode = 'own'; Service = $mine.Service; Port = $mine.Port; PgDir = (Split-Path -Parent $mine.BinDir); DataDir = $ours; Account = 'NT AUTHORITY\NETWORK SERVICE' }
+    return [pscustomobject]@{ Mode = 'own'; Service = $mine.Service; Port = $mine.Port; PgDir = (Split-Path -Parent $mine.BinDir); DataDir = $ours; Account = '*S-1-5-20' }
   }
   $shared = $all | Where-Object { $_.Version -eq '17' } | Select-Object -First 1
   if ($shared -and -not $PreferOwn) {
     $account = $shared.Account
-    if (-not $account -or $account -match '^(NT AUTHORITY\\)?NetworkService$') { $account = 'NT AUTHORITY\NETWORK SERVICE' }
+    # By fixed ID where Windows has one: the names are translated on non-English Windows.
+    if (-not $account -or $account -match 'NetworkService$') { $account = '*S-1-5-20' }
+    elseif ($account -match 'LocalService$') { $account = '*S-1-5-19' }
+    elseif ($account -match '^(\.\\)?LocalSystem$') { $account = '*S-1-5-18' }
     return [pscustomobject]@{ Mode = 'shared'; Service = $shared.Service; Port = $shared.Port; PgDir = (Split-Path -Parent $shared.BinDir); DataDir = $shared.DataDir; Account = $account }
   }
   $service = 'postgresql-x64-17'
@@ -211,7 +230,7 @@ function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false) {
     $port++
     if ($port -gt 5499) { throw 'No free port for the database between 5432 and 5499.' }
   }
-  return [pscustomobject]@{ Mode = 'own'; Service = $service; Port = $port; PgDir = $pgDir; DataDir = $ours; Account = 'NT AUTHORITY\NETWORK SERVICE' }
+  return [pscustomobject]@{ Mode = 'own'; Service = $service; Port = $port; PgDir = $pgDir; DataDir = $ours; Account = '*S-1-5-20' }
 }
 
 # Lets one Windows account see and start a service, and nothing more: no stop, no

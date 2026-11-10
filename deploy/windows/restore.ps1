@@ -56,11 +56,11 @@ New-Item -ItemType Directory -Force -Path $PgData | Out-Null
 # PostgreSQL's own account reads the key while it replays the WAL; the copy is removed after.
 $replayKey = Join-Path $DataDir 'restore-key.txt'
 Copy-Item $KeyFile $replayKey -Force
-Set-RestrictedAcl -Path $replayKey -Read @('NT AUTHORITY\NETWORK SERVICE')
+Set-RestrictedAcl -Path $replayKey -Read @('*S-1-5-20')
 try {
   Invoke-Native -FilePath $Node -Arguments @("--env-file=$EnvFile", $Admin, 'restore-prepare', '--key', $replayKey, '--to', $PgData, '--time', $target) | Out-Null
-  Set-RestrictedAcl -Path $PgData -Modify @('NT AUTHORITY\NETWORK SERVICE')
-  Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M', '/T', '/Q') | Out-Null
+  Set-RestrictedAcl -Path $PgData -Modify @('*S-1-5-20')
+  Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', '*S-1-5-20:(OI)(CI)M', '/T', '/Q') | Out-Null
   Write-Step 'Starting PostgreSQL to replay the archived changes'
   try {
     Start-Service -Name $PgService

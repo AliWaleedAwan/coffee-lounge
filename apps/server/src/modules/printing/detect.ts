@@ -4,6 +4,7 @@
  * PC (PLAN.md §7), so typing the name stays possible, and a failure here is never fatal.
  */
 import { execFile } from 'node:child_process';
+import { WINDOWS_POWERSHELL } from './transports.ts';
 
 export interface DetectedQueue {
   name: string;
@@ -40,7 +41,7 @@ export function parseQueues(output: string): DetectedQueue[] {
 const powershellQueues: QueueLister = () =>
   new Promise((resolve, reject) => {
     execFile(
-      'powershell.exe',
+      WINDOWS_POWERSHELL,
       ['-NoProfile', '-NonInteractive', '-Command', SCRIPT],
       { windowsHide: true, timeout: 20_000 },
       (error, stdout) => {

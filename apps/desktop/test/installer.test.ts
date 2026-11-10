@@ -61,6 +61,20 @@ describe('the wizard and an existing PostgreSQL 17', () => {
   });
 });
 
+describe('whatever the PC', () => {
+  it('the scripts restore the Windows folders to PATH before using any Windows tool', () => {
+    const lib = read('lib.ps1');
+    expect(lib.indexOf('$env:Path =')).toBeGreaterThan(-1);
+    expect(lib.indexOf('$env:Path =')).toBeLessThan(lib.indexOf('function '));
+  });
+
+  it('accounts are named by fixed ID, never by a name Windows translates', () => {
+    for (const name of ['install.ps1', 'lib.ps1', 'restore.ps1']) {
+      expect(read(name), name).not.toMatch(/'NT AUTHORITY\\NETWORK SERVICE/);
+    }
+  });
+});
+
 describe('the icon', () => {
   it('is a real Windows icon with the sizes the desktop uses', () => {
     const ico = readFileSync(new URL('../assets/icon.ico', import.meta.url));
