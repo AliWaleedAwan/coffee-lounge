@@ -279,7 +279,7 @@ try {
     if (!Array.isArray(data.products)) throw new Error(`${file} has no products list`);
     const plan = planMenu(data.products);
     const { rows: owners } = await pool.query<{ id: string }>(
-      'SELECT id::text FROM cl.users WHERE is_owner ORDER BY id LIMIT 1',
+      'SELECT id::text FROM cl.users WHERE is_owner ORDER BY users.id LIMIT 1',
     );
     const ownerId = owners[0]?.id;
     if (!ownerId) throw new Error('Create the owner account first.');

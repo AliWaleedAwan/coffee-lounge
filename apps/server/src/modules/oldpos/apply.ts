@@ -30,7 +30,7 @@ export async function applyMenuPlan(tx: Tx, who: Who, plan: MenuPlan): Promise<M
   for (const [sort, name] of plan.categories.entries()) {
     const { rows } = await tx.query<{ id: string }>(
       `SELECT id::text FROM cl.menu_categories WHERE lower(name) = lower($1) AND archived_at IS NULL
-        ORDER BY id LIMIT 1`,
+        ORDER BY menu_categories.id LIMIT 1`,
       [name],
     );
     let id = rows[0]?.id;
