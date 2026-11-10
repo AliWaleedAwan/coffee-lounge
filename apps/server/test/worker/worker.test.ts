@@ -4,7 +4,12 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { enqueueJob } from '../../src/platform/jobs.ts';
 import { workerStatus } from '../../src/platform/health.ts';
-import { Heartbeat, pruneIdempotencyKeys, pruneOutbox } from '../../src/worker/maintenance.ts';
+import {
+  Heartbeat,
+  pruneIdempotencyKeys,
+  pruneOutbox,
+  releaseStaleLocks,
+} from '../../src/worker/maintenance.ts';
 import { CRONTAB, makeTasks, silentLogger, startRunner } from '../../src/worker/runner.ts';
 import { urlFor } from '../support/db.ts';
 import { platformFixture, type PlatformFixture } from '../support/platform.ts';
@@ -146,6 +151,24 @@ describe('job queue', () => {
     expect(second).toBe(first);
     expect(await jobsFor('test:keyed')).toBe(1);
     await expect(enqueueJob(fx.pool, 'Drop Table', {})).rejects.toThrow(/Invalid task name/);
+  });
+
+  it('releases a printer queue left locked by a killed worker, as the application role', async () => {
+    const id = await enqueueJob(fx.pool, 'test:locked', {}, { queueName: 'print-test' });
+    await fx.pool.query(
+      `UPDATE graphile_worker._private_jobs SET locked_at = now(), locked_by = 'dead' WHERE id = $1`,
+      [id],
+    );
+    await fx.pool.query(
+      `UPDATE graphile_worker._private_job_queues SET locked_at = now(), locked_by = 'dead'
+        WHERE queue_name = 'print-test'`,
+    );
+    expect(await releaseStaleLocks(appPool)).toBe(2);
+    const { rows } = await fx.pool.query<{ n: number }>(
+      `SELECT ((SELECT count(*) FROM graphile_worker._private_jobs WHERE locked_by IS NOT NULL)
+             + (SELECT count(*) FROM graphile_worker._private_job_queues WHERE locked_by IS NOT NULL))::int AS n`,
+    );
+    expect(rows[0]?.n).toBe(0);
   });
 
   it('runs queued maintenance jobs with the project task list', async () => {

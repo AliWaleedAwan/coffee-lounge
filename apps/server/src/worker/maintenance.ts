@@ -90,3 +90,24 @@ export async function pruneLogs(
   }
   return removed;
 }
+
+/**
+ * Releases job and queue locks left by a worker that was killed mid-job (a service stop
+ * during uninstall or upgrade). The shop runs one worker service, so at its start-up every
+ * lock is stale. Without this, graphile-worker keeps the queue (e.g. a printer's) locked
+ * for 4 hours and nothing on it runs.
+ */
+export async function releaseStaleLocks(db: Queryable): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(
+    `WITH j AS (
+       UPDATE graphile_worker._private_jobs
+          SET locked_at = NULL, locked_by = NULL
+        WHERE locked_at IS NOT NULL RETURNING 1),
+     q AS (
+       UPDATE graphile_worker._private_job_queues
+          SET locked_at = NULL, locked_by = NULL
+        WHERE locked_at IS NOT NULL RETURNING 1)
+     SELECT (SELECT count(*) FROM j)::int + (SELECT count(*) FROM q)::int AS n`,
+  );
+  return rows[0]?.n ?? 0;
+}

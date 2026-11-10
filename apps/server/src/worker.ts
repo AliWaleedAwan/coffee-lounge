@@ -11,7 +11,7 @@ import { createPool } from './platform/db/pool.ts';
 import { DEV_FILES_DIR, DEV_MAIL_KEY_FILE, MIGRATIONS_DIR } from './platform/paths.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
-import { Heartbeat } from './worker/maintenance.ts';
+import { Heartbeat, releaseStaleLocks } from './worker/maintenance.ts';
 import { LiveWal } from './modules/backup/index.ts';
 import { startRunner } from './worker/runner.ts';
 
@@ -81,6 +81,8 @@ if (!stop.signal.aborted) {
     });
     liveWal.start();
   }
+  const released = await releaseStaleLocks(pool);
+  if (released > 0) log('warn', 'released job locks left by a stopped worker', { released });
   runner = await startRunner({
     pool,
     logDir: config.LOG_DIR,
