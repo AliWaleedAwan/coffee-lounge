@@ -19,13 +19,14 @@
  *   restore-prepare     --key <owner key file> --to <new data folder> [--time latest|<ISO time>]
  *                       (step 7.3: the newest base backup before the time, set to replay the WAL;
  *                       restore.ps1 runs it with the services stopped)
+ *   import-old-pos      --file <old-pos-menu.json> [--dry-run]       (the old POS's products; safe to repeat)
  *   integrity-check                                                (BACKUP_RECOVERY.md §4 on DATABASE_URL)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
  * Usage (from apps/server): corepack pnpm admin <command> [options]
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -48,6 +49,12 @@ import {
   type IntegrityReport,
 } from '../modules/backup/index.ts';
 import { requestPrint } from '../modules/printing/index.ts';
+import {
+  applyMenuPlan,
+  planMenu,
+  type MenuImportResult,
+  type OldProduct,
+} from '../modules/oldpos/index.ts';
 import { DEV_FILES_DIR } from '../platform/paths.ts';
 import {
   createOwner,
@@ -75,6 +82,8 @@ const { positionals, values } = parseArgs({
     to: { type: 'string' },
     time: { type: 'string' },
     replace: { type: 'boolean' },
+    file: { type: 'string' },
+    'dry-run': { type: 'boolean' },
   },
 });
 
@@ -261,13 +270,49 @@ try {
     console.log(
       `Unpacked ${prepared.baseBackup} (${String(prepared.files)} files); PostgreSQL will replay the WAL to ${time} when it starts.`,
     );
+  } else if (command === 'import-old-pos') {
+    // Made on a PC with Microsoft Access by scripts/old-pos/export-old-pos.ps1.
+    const file = required(values.file, 'file');
+    const data = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as {
+      products?: OldProduct[];
+    };
+    if (!Array.isArray(data.products)) throw new Error(`${file} has no products list`);
+    const plan = planMenu(data.products);
+    const { rows: owners } = await pool.query<{ id: string }>(
+      'SELECT id::text FROM cl.users WHERE is_owner ORDER BY id LIMIT 1',
+    );
+    const ownerId = owners[0]?.id;
+    if (!ownerId) throw new Error('Create the owner account first.');
+    const dryRun = values['dry-run'] === true;
+    const ROLLBACK = new Error('dry run');
+    let result: MenuImportResult | undefined;
+    try {
+      await withTransaction(pool, async (tx) => {
+        result = await applyMenuPlan(
+          tx,
+          { actor: { kind: 'user', userId: ownerId }, correlationId: facts.correlationId },
+          plan,
+        );
+        if (dryRun) throw ROLLBACK;
+      });
+    } catch (error) {
+      if (error !== ROLLBACK) throw error;
+    }
+    console.log(dryRun ? 'DRY RUN: nothing was saved. It would make:' : 'Imported:');
+    console.log(`  ${String(result?.categoriesCreated)} categories`);
+    console.log(`  ${String(result?.itemsCreated)} menu items`);
+    console.log(`  ${String(result?.productsCreated)} barcoded products (scan to sell)`);
+    console.log(`  ${String(result?.offSale)} of them off sale (out of stock in the old POS)`);
+    console.log(`  ${String(result?.alreadyThere)} already there, left as they are`);
+    console.log(`Left out (${String(plan.skipped.length)}):`);
+    for (const s of plan.skipped) console.log(`  ${s.category} / ${s.name}: ${s.reason}`);
   } else if (command === 'integrity-check') {
     const report = await integrityChecks(pool);
     printReport(report);
     if (!report.ok) process.exitCode = 1;
   } else {
     console.log(
-      'Commands: create-owner, registration-code, recover-owner, printer-add, test-print, backup-keygen, backup-now, backup-base, restore-dump, restore-prepare, integrity-check (see the header of src/cli/admin.ts)',
+      'Commands: create-owner, registration-code, recover-owner, import-old-pos, printer-add, test-print, backup-keygen, backup-now, backup-base, restore-dump, restore-prepare, integrity-check (see the header of src/cli/admin.ts)',
     );
     process.exitCode = 2;
   }
