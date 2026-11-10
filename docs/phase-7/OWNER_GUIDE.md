@@ -77,6 +77,20 @@ A wrong discount, refund or stock entry is **never** fixed with a restore: corre
 
 When a new version is ready, **System health** shows **Update now** to the owner; the PC needs internet. Or run `CoffeeLounge-Setup-<version>.exe` from a USB stick, as Administrator. Either way, do it outside trading hours. It refuses while bills or the cash shift are open (close them first). It keeps a copy of the current version and of the database first, and if anything fails it puts both back by itself and says **ROLLED BACK** in its log. Nothing ever updates until the owner says so.
 
+## 8b. Bringing in the old POS
+
+Once, when moving over (or again later: only what is new is added).
+
+1. On a PC with Microsoft Access, from the project folder:
+   `powershell -ExecutionPolicy Bypass -File scripts\old-pos\export-old-pos.ps1 -Database <path to database.accdb>`.
+   It reads the database without changing it, never its logins or passwords, and writes `.local\old-pos\old-pos.json.gz`.
+2. Copy that file to the counter PC. It holds customers' names and mobile numbers: use your own USB stick and delete it afterwards.
+3. On the counter PC, as the owner: **Inventory → Import → Old POS**, choose the file, **Preview**, then **Import**.
+
+What comes in:
+- **Menu:** every named, priced product. Real barcodes (8 digits or more) become products sold by scanning; the old till's key numbers (1, 2, 3...) are dropped. One name at several prices becomes one item with a size per price. Products without a name or price are listed and left out. Out-of-stock products come in off sale.
+- **Customers** (**Customers** in the menu): one per mobile number, with the newest name and location. Typing a known mobile on a new delivery fills in the name and address.
+- **Old sales** (**Old POS sales**): every paid bill, as history by day and best seller. They are kept apart from Coffee Lounge's own reports, cash and stock, and cannot be changed.
 ## 9. Audit log
 
 **Audit log**: who did what, on which device, before and after, with the reason and who approved. Filter by person, record or date. It cannot be changed or deleted by anyone.

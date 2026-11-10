@@ -28,7 +28,7 @@ test('import a template: problems by row, then all or nothing, then a re-import 
       mimeType: 'text/csv',
       buffer: Buffer.from(`${HEADER}\n${rows.join('\n')}\n`),
     });
-    await page.getByRole('button', { name: 'Preview' }).click();
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
   };
 
   await upload([
@@ -40,7 +40,7 @@ test('import a template: problems by row, then all or nothing, then a re-import 
   await expect(page.getByRole('alert').filter({ hasText: '2 problems' })).toBeVisible();
   await expect(problems.getByRole('row', { name: /3 sku EX- is an example SKU/ })).toBeVisible();
   await expect(problems.getByRole('row', { name: /4 base_uom g, ml or pcs/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Import' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
   await expectAccessible(page, 'import problems');
 
   await upload([
@@ -51,13 +51,13 @@ test('import a template: problems by row, then all or nothing, then a re-import 
   await expect(page.getByRole('table', { name: 'What the import does' })).toContainText(
     'Item IMP-MILK Imported milk',
   );
-  await page.getByRole('button', { name: 'Import' }).click();
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
   await expect(
     page.getByText('Imported 01_inventory_items.csv: 2 new, 0 changed, 0 unchanged.'),
   ).toBeVisible();
 
   // The same file again: nothing new, nothing changed.
-  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.getByText('2 rows, no problems: 0 new, 0 changed, 2 unchanged.')).toBeVisible();
   await page.getByRole('tab', { name: 'Items' }).click();
   await page.getByLabel('Scan or type barcode / name').fill('IMP-');

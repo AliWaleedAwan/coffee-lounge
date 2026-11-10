@@ -19,7 +19,7 @@
  *   restore-prepare     --key <owner key file> --to <new data folder> [--time latest|<ISO time>]
  *                       (step 7.3: the newest base backup before the time, set to replay the WAL;
  *                       restore.ps1 runs it with the services stopped)
- *   import-old-pos      --file <old-pos-menu.json> [--dry-run]       (the old POS's products; safe to repeat)
+ *   import-old-pos      --file <old-pos.json.gz> [--dry-run]         (the old POS's products, customers, sales; safe to repeat)
  *   integrity-check                                                (BACKUP_RECOVERY.md §4 on DATABASE_URL)
  *
  * Secrets are typed without echo, or piped one per line by the installer.
@@ -49,12 +49,8 @@ import {
   type IntegrityReport,
 } from '../modules/backup/index.ts';
 import { requestPrint } from '../modules/printing/index.ts';
-import {
-  applyMenuPlan,
-  planMenu,
-  type MenuImportResult,
-  type OldProduct,
-} from '../modules/oldpos/index.ts';
+import { importOldPos, readOldPosFile, type OldPosResult } from '../modules/oldpos/index.ts';
+import { shopTimeZone } from '../platform/settings.ts';
 import { DEV_FILES_DIR } from '../platform/paths.ts';
 import {
   createOwner,
@@ -271,13 +267,9 @@ try {
       `Unpacked ${prepared.baseBackup} (${String(prepared.files)} files); PostgreSQL will replay the WAL to ${time} when it starts.`,
     );
   } else if (command === 'import-old-pos') {
-    // Made on a PC with Microsoft Access by scripts/old-pos/export-old-pos.ps1.
-    const file = required(values.file, 'file');
-    const data = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as {
-      products?: OldProduct[];
-    };
-    if (!Array.isArray(data.products)) throw new Error(`${file} has no products list`);
-    const plan = planMenu(data.products);
+    // Made on a PC with Microsoft Access by scripts/old-pos/export-old-pos.ps1; the owner can
+    // also bring it in on screen (Inventory, Import).
+    const file = readOldPosFile(readFileSync(required(values.file, 'file')));
     const { rows: owners } = await pool.query<{ id: string }>(
       'SELECT id::text FROM cl.users WHERE is_owner ORDER BY users.id LIMIT 1',
     );
@@ -285,27 +277,36 @@ try {
     if (!ownerId) throw new Error('Create the owner account first.');
     const dryRun = values['dry-run'] === true;
     const ROLLBACK = new Error('dry run');
-    let result: MenuImportResult | undefined;
+    let result: OldPosResult | undefined;
     try {
       await withTransaction(pool, async (tx) => {
-        result = await applyMenuPlan(
+        result = await importOldPos(
           tx,
           { actor: { kind: 'user', userId: ownerId }, correlationId: facts.correlationId },
-          plan,
+          file,
+          await shopTimeZone(tx),
         );
         if (dryRun) throw ROLLBACK;
       });
     } catch (error) {
       if (error !== ROLLBACK) throw error;
     }
-    console.log(dryRun ? 'DRY RUN: nothing was saved. It would make:' : 'Imported:');
-    console.log(`  ${String(result?.categoriesCreated)} categories`);
-    console.log(`  ${String(result?.itemsCreated)} menu items`);
-    console.log(`  ${String(result?.productsCreated)} barcoded products (scan to sell)`);
-    console.log(`  ${String(result?.offSale)} of them off sale (out of stock in the old POS)`);
-    console.log(`  ${String(result?.alreadyThere)} already there, left as they are`);
-    console.log(`Left out (${String(plan.skipped.length)}):`);
-    for (const s of plan.skipped) console.log(`  ${s.category} / ${s.name}: ${s.reason}`);
+    if (!result) throw new Error('The import gave no result.');
+    const m = result.menu;
+    console.log(dryRun ? 'DRY RUN: nothing was saved. It would add:' : 'Imported:');
+    console.log(`  ${String(m.categoriesCreated)} categories`);
+    console.log(`  ${String(m.itemsCreated)} menu items`);
+    console.log(`  ${String(m.productsCreated)} barcoded products (scan to sell)`);
+    console.log(`  ${String(m.offSale)} of them off sale (out of stock in the old POS)`);
+    console.log(`  ${String(m.alreadyThere)} menu entries already there, left as they are`);
+    console.log(
+      `  ${String(result.customers.created)} customers (${String(result.customers.updated)} known ones updated)`,
+    );
+    console.log(
+      `  ${String(result.history.bills)} old bills and ${String(result.history.lines)} bill lines of history`,
+    );
+    console.log(`Left out of the menu (${String(result.skipped.length)}):`);
+    for (const k of result.skipped) console.log(`  ${k.category} / ${k.name}: ${k.reason}`);
   } else if (command === 'integrity-check') {
     const report = await integrityChecks(pool);
     printReport(report);

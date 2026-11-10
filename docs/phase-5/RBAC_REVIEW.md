@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (272)
+### A. Every staff route (277)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -75,6 +75,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/cash-shifts/:id/movements` | `cash_shifts.operate` |
 | POST | `/cash-shifts/:id/report/reprint` | `cash_shifts.operate` |
 | GET | `/cash-shifts/current` | `cash_shifts.operate` |
+| GET | `/customers` | `delivery.create` |
+| GET | `/customers/lookup` | `delivery.create` |
 | GET | `/deliveries` | `delivery.create` |
 | GET | `/deliveries/:id` | `delivery.create` |
 | POST | `/deliveries/:id/dispatch` | `delivery.dispatch` |
@@ -103,6 +105,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/floor` | `tables.read` |
 | POST | `/imports/:template/apply` | `inventory.read` |
 | POST | `/imports/:template/preview` | `inventory.read` |
+| POST | `/imports/old-pos/apply` | `settings.manage` |
+| POST | `/imports/old-pos/preview` | `settings.manage` |
 | GET | `/imports/templates` | `inventory.read` |
 | GET | `/inventory/alerts` | `inventory.read` |
 | POST | `/inventory/alerts/:id/acknowledge` | `inventory.read` |
@@ -226,6 +230,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/reports/ledger/export` | `ledger.read` + `reports.export` |
 | GET | `/reports/menu-engineering` | `reports.profit` |
 | GET | `/reports/menu-engineering/export` | `reports.profit` + `reports.export` |
+| GET | `/reports/old-pos` | `reports.sales` |
 | GET | `/reports/operating-result` | `reports.profit` |
 | GET | `/reports/operating-result/export` | `reports.profit` + `reports.export` |
 | GET | `/reports/overview` | `reports.sales` |

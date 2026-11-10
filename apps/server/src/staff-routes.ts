@@ -13,6 +13,7 @@ import { orderRoutes } from './modules/orders/index.ts';
 import { printingRoutes } from './modules/printing/index.ts';
 import { purchasingRoutes } from './modules/purchasing/index.ts';
 import { importRoutes } from './modules/imports/index.ts';
+import { oldPosRoutes } from './modules/oldpos/index.ts';
 import { assetRoutes } from './modules/assets/index.ts';
 import { auditRoutes } from './modules/audit/index.ts';
 import { expenseRoutes } from './modules/expenses/index.ts';
@@ -81,6 +82,7 @@ export async function registerStaffRoutes(
   await stockRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await purchasingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await importRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await oldPosRoutes(app, { pool: deps.pool });
   await ledgerRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await auditRoutes(app, { pool: deps.pool });
   await reportRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
