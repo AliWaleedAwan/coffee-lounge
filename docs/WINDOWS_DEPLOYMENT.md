@@ -82,7 +82,7 @@ A 15-year-old iMac may lose its clock setting after power cuts if its internal c
 ## 6. Installation flow (first install)
 
 1. Technician completes H-6, H-7, H-9, H-17, H-18; plugs in printer, scanner, backup drive.
-2. Run installer as `Owner` → prerequisites check (Windows version, free disk ≥ 20 GB, drive `B:` present, port 8080/8443 free).
+2. Run installer as `Owner` → prerequisites check (Windows version, free disk ≥ 10 GB (owner, Nov 2026), drive `B:` present, port 8080/8443 free).
 3. Installs PostgreSQL silently with a generated password (stored encrypted with Windows DPAPI, machine scope), creates `cl_migrator`/`cl_app`/`cl_readonly` roles, applies migrations and seeds.
 4. Generates the shop root CA + server certificate; exports the **root private key** and the **backup decryption key** to the owner's separate USB key, then deletes the CA private key from the PC.
 5. Creates the owner app account and prints a **one-time recovery code** for the owner's safe.

@@ -109,7 +109,8 @@ $firstInstall = -not (Test-Path (Join-Path $Config 'server.env'))
 $needCertificates = -not (Test-Path (Join-Path $Tls 'server.pem'))
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'A 64-bit Windows is required.' }
 $freeGb = [math]::Floor((Get-PSDrive -Name ($env:SystemDrive.TrimEnd(':'))).Free / 1GB)
-if ($freeGb -lt 20) { throw "At least 20 GB free disk space is needed (found $freeGb GB)." }
+# Owner's decision (Nov 2026): 10 GB. The program takes about 1 GB; the shop's data grows slowly.
+if ($freeGb -lt 10) { throw "Not enough free disk space: 10 GB is needed, $freeGb GB is free. Free up space on drive $env:SystemDrive and try again." }
 if ($needCertificates -and -not $CaExportDir) {
   throw 'First install: pass -CaExportDir with the owner''s USB key folder for the shop CA key.'
 }

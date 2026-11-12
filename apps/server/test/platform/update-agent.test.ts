@@ -139,5 +139,14 @@ describe('the updater', () => {
     await go(manifest('1.3.0'), { code: 1 });
     expect(String(status()['message'])).toMatch(/bills or a cash shift are open/);
     expect(failureMessage('ROLLED BACK: x')).toMatch(/put back/);
+    // Seen on a real laptop: the setup's own reason reaches the owner, not "did not finish".
+    expect(
+      failureMessage(
+        '[2026-11-12 23:57:13] INSTALL FAILED: Not enough free disk space: 10 GB is needed, 8 GB is free. Free up space on drive C: and try again.\nAt C:\\x.ps1:112',
+      ),
+    ).toBe(
+      'Not updated: Not enough free disk space: 10 GB is needed, 8 GB is free. Free up space on drive C: and try again. Nothing was changed.',
+    );
+    expect(failureMessage('something else')).toMatch(/did not finish/);
   });
 });

@@ -69,6 +69,9 @@ export function failureMessage(log) {
   if (log.includes('ROLLED BACK')) {
     return 'The update failed, so the previous version and data were put back. Call the technician.';
   }
+  // A check that stopped the setup before it changed anything says what to do in its own words.
+  const reason = /INSTALL FAILED: ([^\r\n]{1,300})/.exec(log)?.[1]?.trim();
+  if (reason) return `Not updated: ${reason} Nothing was changed.`;
   return 'The update did not finish. Check that the app works, then call the technician.';
 }
 
