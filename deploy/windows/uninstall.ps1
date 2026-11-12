@@ -2,12 +2,15 @@
 # rules and program files. Keeps the database, logs, files and settings in the data
 # folder unless -RemoveData is given together with -ConfirmShopName (typed by the owner).
 param(
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
+  [string]$InstallDir = '',
+  [string]$DataDir = '',
   [switch]$RemoveData,
   [string]$ConfirmShopName = ''
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
+$location = Get-InstallLocation
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
 
 if (-not (Test-Admin)) { throw 'Run the uninstaller as an Administrator.' }
 if ($RemoveData -and $ConfirmShopName -ne 'Coffee Lounge') {
@@ -46,11 +49,15 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue 'HKLM:\SOFTWARE\Micros
 Write-Step 'Removed the counter app start-up task, shortcut and Add/Remove Programs entry'
 $remove = @($InstallDir)
 if ($db.Mode -eq 'own') { $remove += $PgDir }
+# A PostgreSQL in the owner's folder leaves its empty version folder behind otherwise.
+$ownParent = Split-Path -Parent $PgDir
 foreach ($dir in $remove) {
   if (Test-Path $dir) { Remove-Item -Recurse -Force $dir; Write-Step "Removed $dir" }
 }
+if ($db.Mode -eq 'own' -and (Test-Path $ownParent) -and -not (Get-ChildItem $ownParent -Force)) { Remove-Item -Force $ownParent }
 if ($RemoveData) {
   Remove-Item -Recurse -Force $DataDir
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $script:LocationKey
   Write-Step "Removed $DataDir (database, logs, files and settings)"
 } else {
   Write-Step "Kept ${DataDir}: running the installer again picks up the same database."

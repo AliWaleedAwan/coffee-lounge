@@ -4,7 +4,8 @@
  *   { "serverUrl": "https://127.0.0.1:8443",
  *     "caCertFile": "coffee-lounge-root.pem",   // relative to this file
  *     "fullscreen": true,
- *     "databaseService": "postgresql-x64-17" }   // the PostgreSQL service the installer chose
+ *     "databaseService": "postgresql-x64-17",    // the PostgreSQL service the installer chose
+ *     "maintenanceFlag": "D:\\Coffee Lounge\\Data\\maintenance.flag" }   // in the owner's folder
  *
  * HTTPS requires the shop root certificate: the app trusts that root and nothing else
  * for the server (LOCAL_LAN_HOSTING.md §5). Plain HTTP is accepted only for a loopback
@@ -24,6 +25,8 @@ export interface DesktopConfig {
   fullscreen: boolean;
   /** The PostgreSQL service behind the server (step 8.5); the default for older installs. */
   databaseService: string;
+  /** Put down by upgrades and restores; null for older installs (the default place). */
+  maintenanceFlag: string | null;
 }
 
 export class ConfigError extends Error {
@@ -54,7 +57,7 @@ export async function parseDesktopConfig(
   raw: Record<string, unknown>,
   readCa: (name: string) => Promise<string>,
 ): Promise<DesktopConfig> {
-  const { serverUrl, caCertFile, fullscreen, databaseService } = raw;
+  const { serverUrl, caCertFile, fullscreen, databaseService, maintenanceFlag } = raw;
   if (typeof serverUrl !== 'string') throw new ConfigError('serverUrl is missing');
   let url: URL;
   try {
@@ -70,6 +73,12 @@ export async function parseDesktopConfig(
     (typeof databaseService !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(databaseService))
   ) {
     throw new ConfigError('databaseService must be a Windows service name');
+  }
+  if (
+    maintenanceFlag !== undefined &&
+    (typeof maintenanceFlag !== 'string' || !/^[A-Za-z]:\\[^<>"|?*]{1,240}$/.test(maintenanceFlag))
+  ) {
+    throw new ConfigError('maintenanceFlag must be a full Windows path');
   }
   if (fullscreen !== undefined && typeof fullscreen !== 'boolean') {
     throw new ConfigError('fullscreen must be true or false');
@@ -100,5 +109,6 @@ export async function parseDesktopConfig(
     root,
     fullscreen: fullscreen ?? false,
     databaseService: databaseService ?? 'postgresql-x64-17',
+    maintenanceFlag: maintenanceFlag ?? null,
   };
 }

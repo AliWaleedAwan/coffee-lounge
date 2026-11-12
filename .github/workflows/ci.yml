@@ -64,7 +64,8 @@ jobs:
         # clean: no PostgreSQL, so ours is installed (and every drill runs). beside: another version
         # already runs on 5432, so ours goes next to it. shared: PostgreSQL 17 is already there and
         # is used, with its password (owner's decision, Nov 2026).
-        postgres: [clean, beside, shared, shared-own]
+        # custom-dir: the owner chose D:\Coffee Lounge (a space, another drive) on the first install.
+        postgres: [clean, beside, shared, shared-own, custom-dir]
     env:
       CL_PG_SUPERPASSWORD: ci-existing-pg-${{ github.run_id }}-password
       # shared-own: PostgreSQL 17 is there, but the owner chose to run ours beside it.
@@ -136,6 +137,7 @@ jobs:
           CASE: ${{ matrix.postgres }}
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          if ($env:CASE -eq 'custom-dir') { $env:CL_INSTALL_BASE = 'D:\Coffee Lounge' }
           # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
           New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
           icacls 'C:\cl-test-drive' /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
@@ -143,16 +145,20 @@ jobs:
           # Only for the setup itself, after this step's own commands.
           if ($env:CASE -eq 'beside') { $env:Path = 'C:\cl-no-such-folder' }
           $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb", '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
-          Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
+          $data = 'C:\ProgramData\CoffeeLounge'
+          if (Test-Path 'HKLM:\SOFTWARE\CoffeeLounge') { $data = (Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge').DataDir }
+          Get-ChildItem (Join-Path $data 'logs') -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
       - name: Check the counter app's fuses
         working-directory: apps/desktop
         run: |
-          node scripts\fuses.mjs check 'C:\Program Files\CoffeeLounge\desktop\CoffeeLounge.exe'
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          node scripts\fuses.mjs check (Join-Path $loc.InstallDir 'desktop\CoffeeLounge.exe')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
-          & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          & (Join-Path $loc.InstallDir 'runtime\node.exe') "--env-file=$(Join-Path $loc.DataDir 'config\server.env')" (Join-Path $loc.InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
@@ -192,13 +198,20 @@ jobs:
         env:
           CASE: ${{ matrix.postgres }}
         run: |
-          $db = Get-Content -Raw 'C:\ProgramData\CoffeeLounge\config\database.json' | ConvertFrom-Json
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          $db = Get-Content -Raw (Join-Path $loc.DataDir 'config\database.json') | ConvertFrom-Json
           Write-Host "chosen: $($db.Mode) $($db.Service) port $($db.Port)"
           if ($env:CASE -eq 'shared' -and $db.Mode -ne 'shared') { throw 'the PostgreSQL 17 already here was not used' }
           if ($env:CASE -in @('beside', 'shared-own') -and ($db.Mode -ne 'own' -or $db.Port -eq 5432)) { throw 'ours was not put beside the other one' }
+          if ($env:CASE -eq 'custom-dir') {
+            if ($loc.InstallDir -ne 'D:\Coffee Lounge\Program' -or $loc.DataDir -ne 'D:\Coffee Lounge\Data') { throw "installed to $($loc.InstallDir) / $($loc.DataDir)" }
+            if ($db.PgDir -ne 'D:\Coffee Lounge\PostgreSQL\17' -or -not (Test-Path 'D:\Coffee Lounge\Data\pgdata\PG_VERSION')) { throw "database in $($db.PgDir) / $($db.DataDir)" }
+            foreach ($old in @('C:\Program Files\CoffeeLounge', 'C:\ProgramData\CoffeeLounge\pgdata', 'C:\ProgramData\CoffeeLounge\config')) { if (Test-Path $old) { throw "$old was made on C:" } }
+          }
           $keep = @(Get-Service -Name 'postgresql*' | Where-Object { $db.Mode -eq 'shared' -or $_.Name -ne $db.Service })
-          powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
+          powershell -ExecutionPolicy Bypass -File (Join-Path $loc.InstallDir 'setup\uninstall.ps1')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path $loc.InstallDir) { throw 'program files left behind' }
           foreach ($s in $keep) {
             if ((Get-Service -Name $s.Name).Status -ne 'Running') { throw "$($s.Name) was stopped by the uninstall" }
           }

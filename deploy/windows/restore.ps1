@@ -10,11 +10,14 @@
 param(
   [Parameter(Mandatory)] [string]$KeyFile,
   [string]$PointInTime = 'latest',
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
+  [string]$InstallDir = '',
+  [string]$DataDir = '',
   [switch]$Unattended
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
+$location = Get-InstallLocation
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
 
 if (-not (Test-Admin)) { throw 'Run the restore as an Administrator.' }
 $Node = Join-Path $InstallDir 'runtime\node.exe'

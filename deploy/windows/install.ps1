@@ -10,8 +10,9 @@
 # profile (H-1, H-2), test print and setup sheet (Phase 3/7).
 param(
   [string]$Source = (Split-Path -Parent $PSScriptRoot),
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
+  # Empty: where this PC has it already, else the owner's folder (CL_INSTALL_BASE), else the defaults.
+  [string]$InstallDir = '',
+  [string]$DataDir = '',
   [string]$ShopIp = '192.168.100.250',
   [string]$CaExportDir = '',
   # Unattended installs only (tests); otherwise typed without echo.
@@ -33,6 +34,10 @@ param(
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
 
+$location = Resolve-InstallLocation $env:CL_INSTALL_BASE
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
+
 $AppServices = @('coffeelounge-api', 'coffeelounge-worker')
 $Database = 'coffee_lounge'
 $Config = Join-Path $DataDir 'config'
@@ -44,7 +49,9 @@ if (-not [Environment]::Is64BitProcess) { throw 'Run the installer in 64-bit Pow
 # Unattended runs through CoffeeLounge-Setup.exe pass the CA passphrase in the environment.
 if (-not $CaPassphrase -and $env:CL_CA_PASSPHRASE) { $CaPassphrase = $env:CL_CA_PASSPHRASE }
 if (-not $CaExportDir -and $env:CL_CA_EXPORT_DIR) { $CaExportDir = $env:CL_CA_EXPORT_DIR }
-foreach ($d in @($DataDir, $Config, (Join-Path $DataDir 'logs'), (Join-Path $DataDir 'files'), (Join-Path $DataDir 'desktop'))) {
+# The counter app's settings stay where Windows apps look for them, whatever the owner's folder.
+$desktopDir = Join-Path $env:ProgramData 'CoffeeLounge\desktop'
+foreach ($d in @($DataDir, $Config, (Join-Path $DataDir 'logs'), (Join-Path $DataDir 'files'), $desktopDir)) {
   New-Item -ItemType Directory -Force -Path $d | Out-Null
 }
 $script:LogFile = Join-Path $DataDir ("logs\install-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -57,7 +64,9 @@ trap {
 $script:UpgradeArmed = $false
 
 # Which PostgreSQL: decided on the first install and kept (lib.ps1).
-$Db = Resolve-DbPlan $DataDir ($env:CL_PG_MODE -eq 'own')
+Set-InstallLocation $InstallDir $DataDir
+Write-Step "Program in $InstallDir, data in $DataDir"
+$Db = Resolve-DbPlan $DataDir ($env:CL_PG_MODE -eq 'own') $InstallDir
 $Shared = $Db.Mode -eq 'shared'
 $PgService = $Db.Service
 $PgPort = [int]$Db.Port
@@ -108,9 +117,11 @@ Write-Step (Get-Content -Raw (Join-Path $Source 'VERSION.txt'))
 $firstInstall = -not (Test-Path (Join-Path $Config 'server.env'))
 $needCertificates = -not (Test-Path (Join-Path $Tls 'server.pem'))
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'A 64-bit Windows is required.' }
-$freeGb = [math]::Floor((Get-PSDrive -Name ($env:SystemDrive.TrimEnd(':'))).Free / 1GB)
+# The drive that holds the data (the owner's folder), not necessarily C:.
+$dataDrive = (Split-Path -Qualifier $DataDir).TrimEnd(':')
+$freeGb = [math]::Floor((Get-PSDrive -Name $dataDrive).Free / 1GB)
 # Owner's decision (Nov 2026): 10 GB. The program takes about 1 GB; the shop's data grows slowly.
-if ($freeGb -lt 10) { throw "Not enough free disk space: 10 GB is needed, $freeGb GB is free. Free up space on drive $env:SystemDrive and try again." }
+if ($freeGb -lt 10) { throw "Not enough free disk space: 10 GB is needed, $freeGb GB is free. Free up space on drive $($dataDrive): and try again." }
 if ($needCertificates -and -not $CaExportDir) {
   throw 'First install: pass -CaExportDir with the owner''s USB key folder for the shop CA key.'
 }
@@ -491,7 +502,7 @@ foreach ($s in $AppServices) {
 }
 
 # ------------------------------------------------------------------ 7b. database watchdog (W-1, P7-5)
-$watchdogAction = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $InstallDir 'setup\watchdog.ps1'))
+$watchdogAction = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -DataDir "{1}"' -f (Join-Path $InstallDir 'setup\watchdog.ps1'), $DataDir.TrimEnd('\'))
 $watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $watchdogPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $watchdogSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
@@ -551,9 +562,8 @@ if (-not $SkipHostSettings) {
 }
 
 # ------------------------------------------------------------------ 10. counter app settings (WINDOWS_DEPLOYMENT.md §10)
-$desktopDir = Join-Path $DataDir 'desktop'
 Copy-Item $RootCa (Join-Path $desktopDir 'coffee-lounge-root.pem') -Force
-Write-Utf8NoBom (Join-Path $desktopDir 'desktop.json') ('{{ "serverUrl": "https://127.0.0.1:8443", "caCertFile": "coffee-lounge-root.pem", "fullscreen": true, "databaseService": "{0}" }}' -f $PgService)
+Write-Utf8NoBom (Join-Path $desktopDir 'desktop.json') (@{ serverUrl = 'https://127.0.0.1:8443'; caCertFile = 'coffee-lounge-root.pem'; fullscreen = $true; databaseService = $PgService; maintenanceFlag = $MaintenanceFlag } | ConvertTo-Json)
 Set-RestrictedAcl -Path $desktopDir -Read @('*S-1-5-32-545') # Users: read only
 
 $counterExe = Join-Path $InstallDir 'desktop\CoffeeLounge.exe'

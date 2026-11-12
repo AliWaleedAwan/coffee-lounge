@@ -209,7 +209,7 @@ function makeSupervisor(cfg: DesktopConfig): ServiceSupervisor | null {
   const programData = process.env['ProgramData'] ?? 'C:\\ProgramData';
   return new ServiceSupervisor(
     scStateOverride ? fakeSc(scStateOverride) : systemSc,
-    () => existsSync(join(programData, 'CoffeeLounge', 'maintenance.flag')),
+    () => existsSync(cfg.maintenanceFlag ?? join(programData, 'CoffeeLounge', 'maintenance.flag')),
     Date.now,
     cfg.databaseService,
   );

@@ -24,6 +24,8 @@ Unicode true
 !endif
 
 Name "Coffee Lounge ${VERSION}"
+; The default keeps the places used before; any other folder holds everything (owner, Nov 2026).
+InstallDir "$PROGRAMFILES64\CoffeeLounge"
 OutFile "${OUTFILE}"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -48,6 +50,7 @@ Var F3
 Var F4
 Var PgAsk
 Var PgPass
+Var DefaultDir
 Var PgOwn
 Var RUse
 Var ROwn
@@ -64,6 +67,11 @@ Var ROwn
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenApp
 
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_PRE LocationPre
+!define MUI_PAGE_HEADER_TEXT "Install to"
+!define MUI_PAGE_HEADER_SUBTEXT "The program and all the shop's data go in this folder."
+!define MUI_DIRECTORYPAGE_TEXT_TOP "Choose a drive with plenty of free space: at least 10 GB, and the shop's records grow every year. To use another drive, type a folder like D:\Coffee Lounge or click Browse. Updates keep this place."
+!insertmacro MUI_PAGE_DIRECTORY
 Page custom ShopPage ShopLeave
 Page custom SecretsPage SecretsLeave
 Page custom DatabasePage DatabaseLeave
@@ -75,11 +83,20 @@ Function .onInit
   ${GetParameters} $R0
   StrCmp $R0 "" +2
     SetSilent silent
-  ExpandEnvStrings $0 "%ProgramData%"
+  StrCpy $DefaultDir "$PROGRAMFILES64\CoffeeLounge"
+  ; Where an earlier install put its data (the registry), else the default place.
+  SetRegView 64
+  ReadRegStr $0 HKLM "SOFTWARE\CoffeeLounge" "DataDir"
+  ReadRegStr $1 HKLM "SOFTWARE\CoffeeLounge" "InstallDir"
+  SetRegView 32
+  ${If} $0 == ""
+    ExpandEnvStrings $0 "%ProgramData%"
+    StrCpy $0 "$0\CoffeeLounge"
+  ${EndIf}
   StrCpy $IsUpgrade 0
   ; Finished installs only: one that stopped half way still needs the USB folder and passwords.
-  ${If} ${FileExists} "$0\CoffeeLounge\config\server.env"
-  ${AndIf} ${FileExists} "$0\CoffeeLounge\config\tls\server.pem"
+  ${If} ${FileExists} "$0\config\server.env"
+  ${AndIf} ${FileExists} "$0\config\tls\server.pem"
     StrCpy $IsUpgrade 1
   ${EndIf}
   StrCpy $ShopIp "192.168.100.250"
@@ -105,6 +122,13 @@ Function .onInit
     ${If} $1 == 0
       StrCpy $PgAsk $2 3
     ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+; Asked on a first install only: an update keeps the place chosen then.
+Function LocationPre
+  ${If} $IsUpgrade == 1
+    Abort
   ${EndIf}
 FunctionEnd
 
@@ -263,7 +287,13 @@ FunctionEnd
 
 Function OpenApp
   ; Through Explorer, so the app does not inherit the installer's administrator rights.
-  Exec '"$WINDIR\explorer.exe" "$PROGRAMFILES64\CoffeeLounge\desktop\CoffeeLounge.exe"'
+  SetRegView 64
+  ReadRegStr $0 HKLM "SOFTWARE\CoffeeLounge" "InstallDir"
+  SetRegView 32
+  ${If} $0 == ""
+    StrCpy $0 "$DefaultDir"
+  ${EndIf}
+  Exec '"$WINDIR\explorer.exe" "$0\desktop\CoffeeLounge.exe"'
 FunctionEnd
 
 Section
@@ -297,6 +327,9 @@ Section
       ${EndIf}
       ; In the environment, not the command line: "E:\" would read as an escaped quote.
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_CA_EXPORT_DIR", t "$KeyDir")'
+      ${If} $INSTDIR != $DefaultDir
+        System::Call 'Kernel32::SetEnvironmentVariable(t "CL_INSTALL_BASE", t "$INSTDIR")'
+      ${EndIf}
       nsExec::ExecToLog '$R1 -Unattended -Wizard -ShopIp "$ShopIp"'
       ; The exit code first: nothing else may sit on the stack in between.
       Pop $0
@@ -305,11 +338,12 @@ Section
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_OWNER_PASSWORD", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_SUPERPASSWORD", n)'
       System::Call 'Kernel32::SetEnvironmentVariable(t "CL_PG_MODE", n)'
+      System::Call 'Kernel32::SetEnvironmentVariable(t "CL_INSTALL_BASE", n)'
     ${EndIf}
     ${If} $0 != 0
       SetOutPath "$TEMP"
       SetDetailsView show
-      MessageBox MB_ICONSTOP "The installation did not finish. The steps are listed here, and in the log under C:\ProgramData\CoffeeLounge\logs."
+      MessageBox MB_ICONSTOP "The installation did not finish. The steps are listed here, and in the log in the logs folder of the Coffee Lounge data."
       Abort "The installation did not finish."
     ${EndIf}
   ${EndIf}

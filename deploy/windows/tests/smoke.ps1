@@ -2,15 +2,21 @@
 # on a clean machine, plus recovery from a crashed API and a crashed database
 # (WINDOWS_DEPLOYMENT.md §2, AT-17). Run as Administrator after install.ps1.
 param(
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
+  [string]$InstallDir = '',
   [string]$PgDir = '',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
+  [string]$DataDir = '',
   [string]$CaExportDir = '',
   [int]$PgPort = 0,
   [string]$CounterUser = 'Counter',
   [string]$BackupDrive = 'B:\'
 )
 . (Join-Path $PSScriptRoot '..\lib.ps1')
+# Where this PC has Coffee Lounge (the owner's folder, or the default places).
+$location = Get-InstallLocation
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
+# The counter app's settings stay where Windows apps look for them.
+$DesktopDir = Join-Path $env:ProgramData 'CoffeeLounge\desktop'
 
 # The PostgreSQL the installer chose (own copy, or the one already on this PC).
 $Db = Get-DbConfig $DataDir
@@ -210,8 +216,8 @@ Check 'the shop CA key is not on this PC (exported for the owner)' {
   $true
 }
 Check 'the counter app settings point at the server through the loopback address' {
-  $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
-  ($settings.serverUrl -eq 'https://127.0.0.1:8443') -and (Test-Path (Join-Path $DataDir 'desktop\coffee-lounge-root.pem'))
+  $settings = Get-Content -Raw (Join-Path $DesktopDir 'desktop.json') | ConvertFrom-Json
+  ($settings.serverUrl -eq 'https://127.0.0.1:8443') -and (Test-Path (Join-Path $DesktopDir 'coffee-lounge-root.pem'))
 }
 
 # ------------------------------------------------------------------ counter app (step 2.9b)
@@ -223,7 +229,7 @@ Check "the counter app is installed and opens at the $CounterUser login in full 
   if ($trigger.UserId -notmatch "\\$CounterUser$") { throw "starts for $($trigger.UserId)" }
   if ($task.Principal.RunLevel -ne 'Limited') { throw "runs with $($task.Principal.RunLevel) rights" }
   if (@($task.Actions)[0].Execute -ne $CounterExe) { throw "starts $(@($task.Actions)[0].Execute)" }
-  $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
+  $settings = Get-Content -Raw (Join-Path $DesktopDir 'desktop.json') | ConvertFrom-Json
   if (-not $settings.fullscreen) { throw 'not full screen' }
   if (-not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk'))) { throw 'no Start menu shortcut' }
   if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Coffee Lounge.lnk'))) { throw 'no desktop icon' }

@@ -161,6 +161,44 @@ function Show-ServiceFailure([string]$Name, [string[]]$Providers = @()) {
   }
 }
 
+# ------------------------------------------------------------------ where Coffee Lounge lives
+# Owner's decision (Nov 2026): one folder, chosen on the first install, kept for every update.
+# The default keeps the places used before (program in Program Files, data in ProgramData); any
+# other folder holds Program\, Data\ and our own PostgreSQL\ side by side. The choice is in
+# HKLM\SOFTWARE\CoffeeLounge, which every script reads.
+$script:LegacyInstallDir = 'C:\Program Files\CoffeeLounge'
+$script:LegacyDataDir = 'C:\ProgramData\CoffeeLounge'
+$script:LocationKey = 'HKLM:\SOFTWARE\CoffeeLounge'
+
+function Get-InstallLocation {
+  if (Test-Path $script:LocationKey) {
+    $p = Get-ItemProperty -Path $script:LocationKey
+    $i = $p.PSObject.Properties['InstallDir']
+    $d = $p.PSObject.Properties['DataDir']
+    if ($i -and $d -and $i.Value -and $d.Value) { return [pscustomobject]@{ InstallDir = $i.Value; DataDir = $d.Value } }
+  }
+  return [pscustomobject]@{ InstallDir = $script:LegacyInstallDir; DataDir = $script:LegacyDataDir }
+}
+
+# For the installer: an install already on this PC stays where it is (owner's decision); a new
+# one goes where the owner chose (CL_INSTALL_BASE from the setup wizard), or to the defaults.
+function Resolve-InstallLocation([string]$Base) {
+  if (Test-Path $script:LocationKey) { return Get-InstallLocation }
+  if (Test-Path (Join-Path $script:LegacyDataDir 'config\server.env')) { return Get-InstallLocation }
+  if ($Base) {
+    $root = $Base.TrimEnd('\')
+    if ($root -notmatch '^[A-Za-z]:\\') { throw "Install to a folder on a drive of this PC, like D:\Coffee Lounge (not $Base)." }
+    return [pscustomobject]@{ InstallDir = (Join-Path $root 'Program'); DataDir = (Join-Path $root 'Data') }
+  }
+  return Get-InstallLocation
+}
+
+function Set-InstallLocation([string]$InstallDir, [string]$DataDir) {
+  New-Item -Path $script:LocationKey -Force | Out-Null
+  Set-ItemProperty -Path $script:LocationKey -Name InstallDir -Value $InstallDir
+  Set-ItemProperty -Path $script:LocationKey -Name DataDir -Value $DataDir
+}
+
 # ------------------------------------------------------------------ the database server
 # Which PostgreSQL the shop uses (owner's decision, Nov 2026): one already on this PC when it is
 # version 17 ('shared': its postgres password is asked once), otherwise our own copy ('own'),
@@ -201,7 +239,7 @@ function Get-DbConfig([string]$DataDir) {
 
 # The plan for this PC. $PreferOwn: the owner does not know the existing PostgreSQL 17's password,
 # so ours runs beside it instead.
-function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false) {
+function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false, [string]$InstallDir = '') {
   $saved = Get-DbConfig $DataDir
   if ($saved) { return $saved }
   $ours = Join-Path $DataDir 'pgdata'
@@ -223,7 +261,10 @@ function Resolve-DbPlan([string]$DataDir, [bool]$PreferOwn = $false) {
   $service = 'postgresql-x64-17'
   if (Get-Service -Name $service -ErrorAction SilentlyContinue) { $service = 'coffeelounge-db' }
   $pgDir = 'C:\Program Files\PostgreSQL\17'
-  if (Test-Path (Join-Path $pgDir 'bin')) { $pgDir = 'C:\Program Files\CoffeeLounge-PostgreSQL\17' }
+  if ($InstallDir -and $InstallDir -ne $script:LegacyInstallDir) {
+    # Our own copy goes in the owner's folder, beside Program and Data.
+    $pgDir = Join-Path (Split-Path -Parent $InstallDir) 'PostgreSQL\17'
+  } elseif (Test-Path (Join-Path $pgDir 'bin')) { $pgDir = 'C:\Program Files\CoffeeLounge-PostgreSQL\17' }
   $taken = @($all | ForEach-Object { $_.Port })
   $port = 5432
   while (($taken -contains $port) -or -not (Test-PortFree $port)) {

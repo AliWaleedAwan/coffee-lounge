@@ -78,6 +78,26 @@ describe('whatever the PC', () => {
   });
 });
 
+describe('the place the owner chose', () => {
+  it('no script but lib.ps1 decides where Coffee Lounge lives', () => {
+    for (const name of ['install.ps1', 'uninstall.ps1', 'restore.ps1', 'tests/smoke.ps1']) {
+      expect(read(name), name).not.toMatch(/\$(InstallDir|DataDir) = 'C:\\Program/);
+    }
+    expect(read('install.ps1')).toContain('Resolve-InstallLocation $env:CL_INSTALL_BASE');
+  });
+
+  it('the wizard asks on a first install only, and passes the folder in the environment', () => {
+    const nsi = read('installer.nsi');
+    expect(nsi).toContain('MUI_PAGE_DIRECTORY');
+    expect(nsi).toMatch(/Function LocationPre\n\s*\$\{If\} \$IsUpgrade == 1/);
+    expect(nsi).toContain('CL_INSTALL_BASE');
+  });
+
+  it('the free-space check looks at the data drive, not always C:', () => {
+    expect(read('install.ps1')).toContain('Split-Path -Qualifier $DataDir');
+  });
+});
+
 describe('the icon', () => {
   it('is a real Windows icon with the sizes the desktop uses', () => {
     const ico = readFileSync(new URL('../assets/icon.ico', import.meta.url));

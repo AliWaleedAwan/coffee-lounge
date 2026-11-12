@@ -316,6 +316,9 @@ describe('configuration', () => {
     });
     expect(await bad({ serverUrl: 'not a url' })).toBeInstanceOf(ConfigError);
     expect(
+      await bad({ serverUrl: 'http://127.0.0.1:8443', maintenanceFlag: '..\\flag' }),
+    ).toBeInstanceOf(ConfigError);
+    expect(
       await bad({ serverUrl: 'http://127.0.0.1:8443', databaseService: 'x & calc.exe' }),
     ).toBeInstanceOf(ConfigError);
     expect(await bad({ serverUrl: 'http://127.0.0.1:8443', fullscreen: 'yes' })).toBeInstanceOf(
@@ -331,6 +334,7 @@ describe('configuration', () => {
       root: null,
       fullscreen: false,
       databaseService: 'postgresql-x64-17',
+      maintenanceFlag: null,
     });
   });
 });
