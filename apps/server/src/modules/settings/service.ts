@@ -33,7 +33,7 @@ const nameList = z
 
 export interface SettingRule {
   label: string;
-  group: 'Orders' | 'Tables' | 'Billing' | 'Stock' | 'Assets' | 'Privacy' | 'Shop';
+  group: 'Orders' | 'Tables' | 'Billing' | 'Stock' | 'Assets' | 'Privacy' | 'Security' | 'Shop';
   hint: string;
   schema: z.ZodType;
   editable: boolean;
@@ -156,6 +156,31 @@ export const SETTINGS: Readonly<Record<string, SettingRule>> = {
     hint: 'Names, phones and addresses are removed after this (D-25)',
     schema: z.number().int().min(1).max(120),
     editable: true,
+  },
+  // Owner's request (Nov 2026): the owner sets these; 0 is never. Read at every request.
+  'security.logout_counter_minutes': {
+    label: 'Counter PC and stock devices log out after',
+    group: 'Security',
+    hint: 'Minutes without a touch. Never: only the 12-hour limit of a login applies',
+    schema: z.number().int().min(0).max(720),
+    editable: true,
+    financial: true,
+  },
+  'security.logout_manager_minutes': {
+    label: 'Manager devices log out after',
+    group: 'Security',
+    hint: 'Minutes without a touch. Never: only the 12-hour limit of a login applies',
+    schema: z.number().int().min(0).max(720),
+    editable: true,
+    financial: true,
+  },
+  'security.logout_waiter_minutes': {
+    label: 'Waiter phones and tablets log out after',
+    group: 'Security',
+    hint: 'Minutes without a touch. Never: only the 12-hour limit of a login applies',
+    schema: z.number().int().min(0).max(720),
+    editable: true,
+    financial: true,
   },
 };
 

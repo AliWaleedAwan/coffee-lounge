@@ -34,6 +34,29 @@ export const SESSION_IDLE_MS: Record<DeviceKind, number> = {
   manager: 5 * MINUTE,
   kitchen: 12 * 60 * MINUTE, // device-bound kitchen screen (inactive while D-33 holds)
 };
+/** The owner's setting for each kind, in minutes (0 = never); the kitchen keeps its own. */
+const LOGOUT_SETTING: Partial<Record<DeviceKind, string>> = {
+  reception: 'security.logout_counter_minutes',
+  inventory: 'security.logout_counter_minutes',
+  manager: 'security.logout_manager_minutes',
+  waiter: 'security.logout_waiter_minutes',
+};
+
+/** Seconds a session may sit idle on this kind of device, as the owner set it. */
+export async function idleSeconds(db: Queryable, kind: DeviceKind): Promise<number> {
+  const key = LOGOUT_SETTING[kind];
+  if (!key) return SESSION_IDLE_MS[kind] / 1000;
+  const { rows } = await db.query<{ value: unknown }>(
+    'SELECT value FROM cl.system_settings WHERE key = $1',
+    [key],
+  );
+  const minutes = rows[0]?.value;
+  // A missing or damaged value falls back to the built-in one rather than locking everyone out.
+  if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes < 0 || minutes > 720)
+    return SESSION_IDLE_MS[kind] / 1000;
+  return minutes === 0 ? SESSION_ABSOLUTE_MS / 1000 : minutes * 60;
+}
+
 export const REGISTRATION_CODE_TTL_MS = 10 * MINUTE;
 export const STEP_UP_TTL_MS = 2 * MINUTE;
 const MAX_FAILURES = 5;
@@ -456,7 +479,7 @@ async function startSession(
     `INSERT INTO cl.auth_sessions (token_hash, user_id, device_id, idle_expires_at, absolute_expires_at)
      VALUES ($1, $2, $3, now() + make_interval(secs => $4), now() + make_interval(secs => $5))
      RETURNING id::text`,
-    [hash, user.id, device.id, SESSION_IDLE_MS[device.kind] / 1000, SESSION_ABSOLUTE_MS / 1000],
+    [hash, user.id, device.id, await idleSeconds(tx, device.kind), SESSION_ABSOLUTE_MS / 1000],
   );
   await tx.query('UPDATE cl.users SET last_login_at = now() WHERE id = $1', [user.id]);
   await writeAudit(
@@ -569,7 +592,7 @@ export async function sessionForToken(
         AND u.id = s.user_id AND u.status = 'active'
       RETURNING s.id::text AS session_id, u.id::text AS user_id, u.username, u.display_name,
                 u.is_owner, u.must_change_password`,
-    [hashToken(token), device.id, SESSION_IDLE_MS[device.kind] / 1000, extend],
+    [hashToken(token), device.id, await idleSeconds(db, device.kind), extend],
   );
   const row = rows[0];
   if (!row) return null;

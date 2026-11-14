@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:https';
+import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -235,6 +236,38 @@ test('8.5: everything running goes straight to the app', async () => {
   } finally {
     await app.close();
     await server.stop();
+  }
+});
+
+test('a server that takes the connection but never answers does not leave a white window', async () => {
+  test.setTimeout(120_000);
+  // Seen on a real laptop after an update: the server was still starting.
+  const sockets = new Set<Socket>();
+  const silent = createServer((s) => {
+    sockets.add(s);
+  });
+  await new Promise<void>((resolve) => silent.listen(PORT, '127.0.0.1', resolve));
+  const { app, page } = await launch(shopConfig());
+  let server: Server | undefined;
+  try {
+    await expect(page.getByRole('heading', { name: 'Server unavailable' })).toBeVisible({
+      timeout: 30_000,
+    });
+    for (const s of sockets) s.destroy();
+    await new Promise<void>((resolve) =>
+      silent.close(() => {
+        resolve();
+      }),
+    );
+    server = await startServer(pki.leafFile, pki.leafKeyFile);
+    await expect(page.getByRole('heading', { name: 'Register this device' })).toBeVisible({
+      timeout: 30_000,
+    });
+  } finally {
+    for (const s of sockets) s.destroy();
+    silent.close();
+    await app.close();
+    await server?.stop();
   }
 });
 

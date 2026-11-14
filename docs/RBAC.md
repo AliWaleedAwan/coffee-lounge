@@ -125,6 +125,8 @@ Guests are not users. Their API is a separate route set on the customer listener
 
 ## 4. Sessions and device rules (PROVISIONAL D-24, confirmed D-39)
 
+Idle times below are the defaults. The owner changes them under Settings → Security (`security.logout_*_minutes`, owner-only), per kind of device, from 2 minutes to 12 hours or never; a login always ends after 12 hours (owner's request, Nov 2026).
+
 | Device | Login | Idle behaviour | Notes |
 |---|---|---|---|
 | Counter PC (Electron) | Password on first login per shift; PIN quick-switch between cashier, manager, clerk (D-38) | Auto-lock to PIN after 10 min idle | Owner functions always re-ask the owner password |

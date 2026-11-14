@@ -33,6 +33,9 @@ import {
 const STATIC_DIR = fileURLToPath(new URL('../static/', import.meta.url));
 const STATIC_URL = pathToFileURL(STATIC_DIR).href;
 const PROBE_MS = 3_000;
+const PROBE_TIMEOUT_MS = 5_000;
+/** How long the staff app may take to load before this app's own screen takes over. */
+const LOAD_TIMEOUT_MS = 15_000;
 /** A certificate refusal this recent explains a failed load. */
 const CERT_FAILURE_WINDOW_MS = 10_000;
 
@@ -171,10 +174,23 @@ async function showApp(): Promise<void> {
   if (!window || !config) return;
   showing = 'app';
   stopProbe();
+  // A server that takes the connection but never answers would leave a white window for good:
+  // after a while this app's own screen comes up and keeps checking.
+  let answered = false;
+  const timer = setTimeout(() => {
+    if (!answered && showing === 'app') {
+      log('the server did not answer; showing the start-up screen');
+      showing = null;
+      showUnavailable(unreachableReason());
+    }
+  }, LOAD_TIMEOUT_MS);
   try {
     await window.loadURL(`${config.serverOrigin}/`);
   } catch {
     // did-fail-load shows the unavailable screen
+  } finally {
+    answered = true;
+    clearTimeout(timer);
   }
 }
 
@@ -242,7 +258,12 @@ async function probe(): Promise<void> {
       showUnavailable(unreachableReason());
       return;
     }
-    const res = await net.fetch(`${config.serverOrigin}/health/live`, { cache: 'no-store' });
+    // A server still starting may take the request and never answer: without a limit this one
+    // check would wait for ever, and no later check would run (seen after an update).
+    const res = await net.fetch(`${config.serverOrigin}/health/live`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     if (res.ok) {
       log('server reachable; opening the app');
       await showApp();
@@ -303,7 +324,13 @@ function createWindow(cfg: DesktopConfig | null): BrowserWindow {
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     log('page crashed; reloading', { reason: details.reason });
-    if (showing === 'app') void showApp();
+    // Whatever was showing comes back: the app, or this app's own screen (never left white).
+    const was = showing;
+    if (was === 'app') void showApp();
+    else if (was) {
+      showing = null;
+      showUnavailable(was);
+    }
   });
   win.on('closed', () => {
     window = null;
