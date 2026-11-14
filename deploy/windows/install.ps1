@@ -195,6 +195,7 @@ Copy-Item (Join-Path $Source 'VERSION.txt') $InstallDir -Force
 
 # ------------------------------------------------------------------ 3. PostgreSQL
 $superSecret = Join-Path $Config 'postgres.secret'
+$initdbAccount = $null
 if ($Shared) {
   # Someone else's PostgreSQL: its files and service stay as they are.
   if ($pgServiceObj.Status -ne 'Running') { Start-Service -Name $PgService }
@@ -211,6 +212,10 @@ if ($Shared) {
     if (Test-Path $PgData) { Remove-Item -Recurse -Force $PgData }
     Write-Step "Creating the database cluster in $PgData"
     New-Item -ItemType Directory -Force -Path $PgData | Out-Null
+    # initdb drops administrator rights; a new folder on another drive may not let it write there
+    # (seen on D:). The account running setup gets it here; the lock-down below replaces this.
+    $initdbAccount = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', "*$($initdbAccount):(OI)(CI)F") | Out-Null
     $superPassword = New-Secret
     $pwFile = Join-Path $Config 'initdb.pw'
     Set-Content -Path $pwFile -Value $superPassword -NoNewline -Encoding ASCII
@@ -248,6 +253,8 @@ host all all ::1/128      scram-sha-256
   # initdb may leave explicit permissions on files inside: grant the service account
   # down the whole tree, as the EDB installer does.
   Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', "$($PgAccount):(OI)(CI)M", '/T', '/Q') | Out-Null
+  # The right given to the setup account for initdb goes again.
+  if ($initdbAccount) { Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/remove', "*$initdbAccount", '/T', '/Q') | Out-Null }
   if (-not $pgServiceObj) {
     Invoke-Native -FilePath (Join-Path $PgDir 'bin\pg_ctl.exe') -Arguments @(
       'register', '-N', $PgService, '-U', 'NT AUTHORITY\NetworkService', '-D', $PgData, '-S', 'auto', '-w'
