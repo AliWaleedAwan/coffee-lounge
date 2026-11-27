@@ -52,7 +52,10 @@ jobs:
           $version = $tag.Substring(1)
           $setup = "out\CoffeeLounge-Setup-$version.exe"
           $url = "https://github.com/$env:RELEASES_REPO/releases/download/$tag/CoffeeLounge-Setup-$version.exe"
-          node deploy\windows\sign-release.mjs $setup $version $url out\latest.json
+          node deploy\windows\parts.mjs pack out\CoffeeLounge out\parts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release create $tag $setup out\latest.json --repo $env:RELEASES_REPO --title "Coffee Lounge $version" --notes "Coffee Lounge $version"
+          node deploy\windows\sign-release.mjs $setup $version $url out\latest.json out\parts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $parts = (Get-ChildItem out\parts -Filter *.tar.gz).FullName
+          gh release create $tag $setup out\latest.json @parts --repo $env:RELEASES_REPO --title "Coffee Lounge $version" --notes "Coffee Lounge $version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

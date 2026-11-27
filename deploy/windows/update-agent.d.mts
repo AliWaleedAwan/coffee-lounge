@@ -9,3 +9,7 @@ export function tick(
     now?: number;
   },
 ): Promise<void>;
+export function verifiedParts(
+  m: Record<string, unknown>,
+  publicKeyPem: string,
+): Promise<{ name: string; hash: string; sha256: string; size: number; url: string }[] | null>;

@@ -89,6 +89,8 @@ function Invoke-Rollback {
       & robocopy.exe (Join-Path $Previous $part) (Join-Path $InstallDir $part) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
     }
     Copy-Item (Join-Path $Previous 'VERSION.txt') $InstallDir -Force
+    Remove-Item (Join-Path $InstallDir 'parts.json') -Force -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $Previous 'parts.json')) { Copy-Item (Join-Path $Previous 'parts.json') $InstallDir -Force }
     if (-not $Shared) { & robocopy.exe (Join-Path $Previous 'pgsql') $PgDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null }
     if ((Get-Service -Name $PgService).Status -ne 'Running') { Start-Service -Name $PgService }
     $dump = Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -Last 1
@@ -176,6 +178,8 @@ if ($upgrading) {
     if ($LASTEXITCODE -ge 8) { throw 'Could not keep a copy of the current version: nothing was changed.' }
   }
   Copy-Item (Join-Path $InstallDir 'VERSION.txt') $Previous -Force
+  Remove-Item (Join-Path $Previous 'parts.json') -Force -ErrorAction SilentlyContinue
+  if (Test-Path (Join-Path $InstallDir 'parts.json')) { Copy-Item (Join-Path $InstallDir 'parts.json') $Previous -Force }
   if (-not $Shared) { & robocopy.exe $PgDir (Join-Path $Previous 'pgsql') /MIR /NFL /NDL /NJH /NJS /NP | Out-Null }
   Write-Step "The current version is kept in $Previous"
   $script:UpgradeArmed = $true
@@ -195,6 +199,9 @@ Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -F
 Write-Step "Copying program files to $InstallDir"
 foreach ($part in @('app', 'web', 'runtime', 'winsw', 'setup', 'desktop')) { Copy-Tree (Join-Path $Source $part) (Join-Path $InstallDir $part) }
 Copy-Item (Join-Path $Source 'VERSION.txt') $InstallDir -Force
+# Which parts are installed, for small updates (parts.mjs).
+Remove-Item (Join-Path $InstallDir 'parts.json') -Force -ErrorAction SilentlyContinue
+if (Test-Path (Join-Path $Source 'parts.json')) { Copy-Item (Join-Path $Source 'parts.json') $InstallDir -Force }
 
 # ------------------------------------------------------------------ 3. PostgreSQL
 $superSecret = Join-Path $Config 'postgres.secret'
@@ -541,7 +548,8 @@ $gapDir = Join-Path $DataDir 'wal-gap'
 if (Test-Path $gapDir) { Set-RestrictedAcl -Path $gapDir -Modify @($PgAccount, 'NT SERVICE\coffeelounge-worker') -Read @('NT SERVICE\coffeelounge-api') }
 $updaterTask = 'Coffee Lounge updater'
 $updaterRunning = (Get-ScheduledTask -TaskName $updaterTask -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Running' })
-foreach ($f in @('setup\update-agent.mjs', 'setup\update-public.pem', 'runtime\node.exe')) {
+# parts.mjs first: the updater imports it.
+foreach ($f in @('setup\parts.mjs', 'setup\update-agent.mjs', 'setup\update-public.pem', 'runtime\node.exe')) {
   if ($updaterRunning -and $f -like '*node.exe') { continue }
   Copy-Item (Join-Path $InstallDir $f) $agentDir -Force
 }
@@ -555,6 +563,7 @@ Write-Utf8NoBom $existingConfig (@{
     updateDir = $updateDir
     agentDir = $agentDir
     logDir = (Join-Path $DataDir 'logs')
+    databaseFile = (Join-Path $Config 'database.json')
     backupDrive = $BackupDrive
   } | ConvertTo-Json)
 if (-not $updaterRunning) {

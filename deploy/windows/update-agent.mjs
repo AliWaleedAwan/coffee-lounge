@@ -9,7 +9,9 @@
 import { spawn } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import {
+  cpSync,
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -76,6 +78,124 @@ export function failureMessage(log) {
   const reason = /INSTALL FAILED: ([^\r\n]{1,300})/.exec(log)?.[1]?.trim();
   if (reason) return `Not updated: ${reason} Nothing was changed.`;
   return 'The update did not finish. Check that the app works, then call the technician.';
+}
+
+// ------------------------------------------------------------------ small updates (1.0.10)
+// A release also lists its parts (parts.mjs), signed on their own. Only the parts whose
+// fingerprint differs from what is installed are downloaded; the rest are taken from the
+// installed program. The parts are put together into a full bundle, checked against the signed
+// fingerprints, and installed with the same setup script, so every program file is replaced as
+// with the full installer. Anything unusual uses the full installer instead.
+
+async function partsModule() {
+  return import(new URL('./parts.mjs', import.meta.url).href);
+}
+
+/** The signed parts of a manifest, or null when it has none or their signature is not valid. */
+export async function verifiedParts(m, publicKeyPem) {
+  if (!Array.isArray(m.parts) || typeof m.partsSignature !== 'string') return null;
+  const { partsText, PART_NAMES } = await partsModule();
+  for (const p of m.parts) {
+    if (
+      typeof p.name !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(p.hash) ||
+      !/^[0-9a-f]{64}$/.test(p.sha256) ||
+      typeof p.url !== 'string' ||
+      !Number.isInteger(p.size)
+    )
+      return null;
+  }
+  const names = new Set(m.parts.map((p) => p.name));
+  if (![...PART_NAMES, 'meta'].every((n) => names.has(n)) || names.size !== m.parts.length)
+    return null;
+  const ok = verify(
+    null,
+    Buffer.from(partsText(m.version, m.parts)),
+    createPublicKey(publicKeyPem),
+    Buffer.from(m.partsSignature, 'base64'),
+  );
+  return ok ? m.parts : null;
+}
+
+/** Which parts to download; null when the installed program has no record of its parts. */
+export function planParts(parts, installDir) {
+  let installed;
+  try {
+    installed = JSON.parse(readFileSync(join(installDir, 'parts.json'), 'utf8')).parts;
+  } catch {
+    return null;
+  }
+  if (!installed || typeof installed !== 'object') return null;
+  return parts.map((p) => ({ ...p, download: p.name === 'meta' || installed[p.name] !== p.hash }));
+}
+
+const partsDir = (cfg) => join(cfg.agentDir, 'parts');
+const archiveOf = (cfg, p) => join(partsDir(cfg), `${p.name}-${p.hash.slice(0, 16)}.tar.gz`);
+
+/** Downloads the changed parts (verified); removes every other archive. */
+async function ensureParts(cfg, plan, fetchFn) {
+  mkdirSync(partsDir(cfg), { recursive: true });
+  const wanted = new Set(plan.filter((p) => p.download).map((p) => archiveOf(cfg, p)));
+  for (const name of readdirSync(partsDir(cfg))) {
+    if (!wanted.has(join(partsDir(cfg), name))) rmSync(join(partsDir(cfg), name), { force: true });
+  }
+  for (const p of plan.filter((x) => x.download)) {
+    const file = archiveOf(cfg, p);
+    if (existsSync(file)) {
+      if (createHash('sha256').update(readFileSync(file)).digest('hex') === p.sha256) continue;
+      rmSync(file, { force: true });
+    }
+    const res = await fetchFn(p.url, { signal: AbortSignal.timeout(60 * 60_000) });
+    if (!res.ok) throw new Error(`download of ${p.name} answered ${String(res.status)}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (createHash('sha256').update(bytes).digest('hex') !== p.sha256) {
+      throw new Error(`the ${p.name} part does not match its signed checksum`);
+    }
+    writeFileSync(`${file}.tmp`, bytes);
+    renameSync(`${file}.tmp`, file);
+  }
+  return plan.filter((p) => p.download).reduce((sum, p) => sum + p.size, 0);
+}
+
+function removeParts(cfg) {
+  rmSync(partsDir(cfg), { recursive: true, force: true });
+  rmSync(join(cfg.agentDir, 'stage'), { recursive: true, force: true });
+}
+
+/** Where this install's own PostgreSQL program is, or null when it shares another one. */
+function ownPgDir(cfg) {
+  try {
+    const db = JSON.parse(readFileSync(cfg.databaseFile, 'utf8'));
+    return db.Mode === 'own' && db.PgDir ? db.PgDir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A full bundle in agentDir/stage, every part proven against its signed fingerprint. */
+export async function assembleStage(cfg, plan) {
+  const { hashPart, unpack } = await partsModule();
+  const stage = join(cfg.agentDir, 'stage');
+  rmSync(stage, { recursive: true, force: true });
+  mkdirSync(stage, { recursive: true });
+  for (const p of plan) {
+    const into = p.name === 'meta' ? stage : join(stage, p.name);
+    if (p.download) {
+      unpack(archiveOf(cfg, p), into);
+    } else if (p.name === 'pgsql') {
+      // Shared PostgreSQL: setup never uses its own copy, so an empty folder stands in.
+      const pg = ownPgDir(cfg);
+      if (pg) cpSync(pg, into, { recursive: true });
+      else mkdirSync(into, { recursive: true });
+      continue; // its fingerprint cannot be proven for a shared server, and it is not copied
+    } else {
+      cpSync(join(cfg.installDir, p.name), into, { recursive: true });
+    }
+    if (p.name !== 'meta' && hashPart(into) !== p.hash) {
+      throw new Error(`the ${p.name} part is not as signed`);
+    }
+  }
+  return stage;
 }
 
 function run(file, args) {
@@ -160,16 +280,40 @@ export async function tick(cfg, deps = {}) {
   const newer = isNewer(manifest.version, current);
   save({ checkedAt: now, checkError: null, available: newer ? manifest.version : null });
 
-  // In the background, so that Update now installs at once.
+  // In the background, so that Update now installs at once: only the changed parts when the
+  // release lists them, otherwise (or if that fails) the full installer.
   let installer = null;
+  let plan = null;
   if (newer) {
     try {
-      installer = await ensureDownloaded(cfg, manifest, fetchFn);
-      save({ downloaded: manifest.version, downloadError: null });
-    } catch (error) {
-      save({ downloaded: null, downloadError: String(error.message) });
+      const parts = await verifiedParts(manifest, publicKey);
+      plan = parts ? planParts(parts, cfg.installDir) : null;
+      if (plan) {
+        const bytes = await ensureParts(cfg, plan, fetchFn);
+        for (const name of readdirSync(cfg.agentDir)) {
+          if (/^CoffeeLounge-Setup-.*\.exe(\.tmp)?$/.test(name))
+            rmSync(join(cfg.agentDir, name), { force: true });
+        }
+        save({
+          downloaded: manifest.version,
+          downloadError: null,
+          downloadMb: Math.ceil(bytes / 1048576),
+        });
+      }
+    } catch {
+      plan = null;
+    }
+    if (!plan) {
+      removeParts(cfg);
+      try {
+        installer = await ensureDownloaded(cfg, manifest, fetchFn);
+        save({ downloaded: manifest.version, downloadError: null, downloadMb: null });
+      } catch (error) {
+        save({ downloaded: null, downloadError: String(error.message) });
+      }
     }
   } else {
+    removeParts(cfg);
     // Up to date: nothing downloaded is needed.
     for (const name of readdirSync(cfg.agentDir)) {
       if (/^CoffeeLounge-Setup-.*\.exe(\.tmp)?$/.test(name))
@@ -183,7 +327,26 @@ export async function tick(cfg, deps = {}) {
     save({ state: 'idle', message: null });
     return;
   }
-  if (!installer) {
+  const common = [
+    '-Unattended',
+    '-SkipHostSettings',
+    ...(cfg.backupDrive ? ['-BackupDrive', cfg.backupDrive] : []),
+  ];
+  let stage = null;
+  if (plan) {
+    try {
+      stage = await assembleStage(cfg, plan);
+    } catch {
+      // Something local is not as expected: the full installer is always right.
+      removeParts(cfg);
+      try {
+        installer = await ensureDownloaded(cfg, manifest, fetchFn);
+      } catch (error) {
+        save({ downloadError: String(error.message) });
+      }
+    }
+  }
+  if (!stage && !installer) {
     save({
       state: 'failed',
       message: `The update did not start: ${String(status.downloadError ?? 'the download failed')}`,
@@ -193,11 +356,24 @@ export async function tick(cfg, deps = {}) {
 
   save({ state: 'updating', message: null });
   try {
-    const code = await install(installer, [
-      '-Unattended',
-      '-SkipHostSettings',
-      ...(cfg.backupDrive ? ['-BackupDrive', cfg.backupDrive] : []),
-    ]);
+    const code = stage
+      ? await install(
+          join(
+            process.env.SystemRoot ?? 'C:\\Windows',
+            'System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+          ),
+          [
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            join(stage, 'setup', 'install.ps1'),
+            '-Source',
+            stage,
+            ...common,
+          ],
+        )
+      : await install(installer, common);
     if (code === 0) {
       save({
         state: 'done',
@@ -212,7 +388,8 @@ export async function tick(cfg, deps = {}) {
   } catch (error) {
     save({ state: 'failed', message: `The update did not start: ${String(error.message)}` });
   } finally {
-    rmSync(installer, { force: true });
+    if (installer) rmSync(installer, { force: true });
+    removeParts(cfg);
   }
 }
 

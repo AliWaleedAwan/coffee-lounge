@@ -74,11 +74,14 @@ Copy-Item $winsw (Join-Path $Out 'winsw\WinSW-x64.exe')
 Write-Step 'Adding the setup scripts'
 $setup = Join-Path $Out 'setup'
 New-Item -ItemType Directory -Force -Path $setup | Out-Null
-foreach ($f in @('install.ps1', 'uninstall.ps1', 'restore.ps1', 'watchdog.ps1', 'lib.ps1', 'wait-ready.mjs', 'update-agent.mjs', 'update-public.pem', 'detect-postgres.ps1', 'check-postgres-password.ps1', 'reset-postgres-password.html')) { Copy-Item (Join-Path $PSScriptRoot $f) $setup }
+foreach ($f in @('install.ps1', 'uninstall.ps1', 'restore.ps1', 'watchdog.ps1', 'lib.ps1', 'wait-ready.mjs', 'update-agent.mjs', 'parts.mjs', 'update-public.pem', 'detect-postgres.ps1', 'check-postgres-password.ps1', 'reset-postgres-password.html')) { Copy-Item (Join-Path $PSScriptRoot $f) $setup }
 Copy-Item -Recurse (Join-Path $PSScriptRoot 'services') (Join-Path $setup 'services')
 
 $version = (Get-Content -Raw (Join-Path $repo 'apps\server\package.json') | ConvertFrom-Json).version
 $commit = (git rev-parse --short HEAD)
 Set-Content -Path (Join-Path $Out 'VERSION.txt') -Value "Coffee Lounge $version ($commit)`nnode $($components.node.version), postgresql $($components.postgresql.version), winsw $($components.winsw.version)"
+# Small updates: the fingerprint of every part (parts.mjs).
+& node (Join-Path $PSScriptRoot 'parts.mjs') hash $Out
+if ($LASTEXITCODE -ne 0) { throw 'Could not fingerprint the parts' }
 $size = [math]::Round(((Get-ChildItem -Recurse $Out | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
 Write-Step "Bundle ready: $Out ($size MB)"
