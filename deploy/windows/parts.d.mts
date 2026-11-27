@@ -9,5 +9,5 @@ export function partsText(
 export function packBundle(
   bundle: string,
   outDir: string,
-): { name: string; hash: string; file: string; sha256: string; size: number }[];
-export function unpack(archive: string, dest: string): void;
+): Promise<{ name: string; hash: string; file: string; sha256: string; size: number }[]>;
+export function unpack(archive: string, dest: string): Promise<void>;

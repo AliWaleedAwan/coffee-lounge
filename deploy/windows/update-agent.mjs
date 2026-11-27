@@ -130,7 +130,7 @@ export function planParts(parts, installDir) {
 }
 
 const partsDir = (cfg) => join(cfg.agentDir, 'parts');
-const archiveOf = (cfg, p) => join(partsDir(cfg), `${p.name}-${p.hash.slice(0, 16)}.tar.gz`);
+const archiveOf = (cfg, p) => join(partsDir(cfg), `${p.name}-${p.hash.slice(0, 16)}.part.gz`);
 
 /** Downloads the changed parts (verified); removes every other archive. */
 async function ensureParts(cfg, plan, fetchFn) {
@@ -181,7 +181,7 @@ export async function assembleStage(cfg, plan) {
   for (const p of plan) {
     const into = p.name === 'meta' ? stage : join(stage, p.name);
     if (p.download) {
-      unpack(archiveOf(cfg, p), into);
+      await unpack(archiveOf(cfg, p), into);
     } else if (p.name === 'pgsql') {
       // Shared PostgreSQL: setup never uses its own copy, so an empty folder stands in.
       const pg = ownPgDir(cfg);

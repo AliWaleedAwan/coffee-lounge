@@ -63,6 +63,6 @@ jobs:
             node deploy\windows\sign-release.mjs $setup $version $url out\latest.json
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $parts = @((Get-ChildItem out\parts -Filter *.tar.gz).FullName)
+          $parts = @((Get-ChildItem out\parts -Filter *.part.gz).FullName)
           gh release create $tag $setup out\latest.json @parts --repo $env:RELEASES_REPO --title "Coffee Lounge $version" --notes "Coffee Lounge $version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

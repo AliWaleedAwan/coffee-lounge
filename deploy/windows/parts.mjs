@@ -4,11 +4,25 @@
 // what is installed. "meta" (VERSION.txt and parts.json) changes every release.
 //
 //   node parts.mjs hash <bundle>             writes <bundle>/parts.json
-//   node parts.mjs pack <bundle> <outDir>    one .tar.gz per part, and <outDir>/parts.json
-import { spawnSync } from 'node:child_process';
+//   node parts.mjs pack <bundle> <outDir>    one .part.gz per part, and <outDir>/parts.json
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import {
+  closeSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { createGunzip, createGzip } from 'node:zlib';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const PART_NAMES = ['app', 'web', 'desktop', 'runtime', 'pgsql', 'winsw', 'setup'];
@@ -57,34 +71,56 @@ export function partsText(version, parts) {
   return `coffee-lounge-parts\n${version}\n${lines.join('\n')}\n`;
 }
 
-// Windows' own tar (bsdtar): another tar on PATH, such as Git's, reads C: as a remote host.
-const TAR =
-  process.platform === 'win32'
-    ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
-    : 'tar';
+// The archive format is our own, written and read by this file only (Windows' tar.exe crashes
+// on GitHub's runners): gzip over records of [4-byte header length][JSON {path, size}][bytes].
 
-function tar(args) {
-  const run = spawnSync(TAR, args, { encoding: 'utf8' });
-  if (run.status !== 0) {
-    const said = [run.stderr, run.stdout, run.error?.message].filter(Boolean).join(' ').trim();
-    throw new Error(
-      `${TAR} ${args.join(' ')} failed (exit ${String(run.status)}, ${String(run.signal)}): ${said}`,
-    );
-  }
+function writeAll(out, chunk) {
+  return out.write(chunk) ? Promise.resolve() : new Promise((ok) => out.once('drain', ok));
 }
 
-/** One .tar.gz per part, named by its fingerprint; returns what the manifest lists. */
-export function packBundle(bundleDir, outPath) {
+/** Packs files (relative path -> absolute file) into one .part.gz. */
+async function packFiles(entries, target) {
+  const gz = createGzip({ level: 6 });
+  const out = createWriteStream(target);
+  const done = pipeline(gz, out);
+  for (const [path, file] of entries) {
+    const size = statSync(file).size;
+    const header = Buffer.from(JSON.stringify({ path, size }));
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(header.length);
+    await writeAll(gz, Buffer.concat([len, header]));
+    const fd = openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(1 << 20);
+      let n;
+      while ((n = readSync(fd, buf, 0, buf.length, null)) > 0)
+        await writeAll(gz, Buffer.from(buf.subarray(0, n)));
+    } finally {
+      closeSync(fd);
+    }
+  }
+  gz.end();
+  await done;
+}
+
+/** One .part.gz per part, named by its fingerprint; returns what the manifest lists. */
+export async function packBundle(bundleDir, outPath) {
   const bundle = resolve(bundleDir);
   const outDir = resolve(outPath);
   mkdirSync(outDir, { recursive: true });
   const parts = JSON.parse(readFileSync(join(bundle, 'parts.json'), 'utf8')).parts;
   const list = [];
   for (const [name, hash] of Object.entries(parts)) {
-    const file = `${name}-${hash.slice(0, 16)}.tar.gz`;
+    const file = `${name}-${hash.slice(0, 16)}.part.gz`;
     const target = join(outDir, file);
-    if (name === 'meta') tar(['-czf', target, '-C', bundle, ...META_FILES]);
-    else tar(['-czf', target, '-C', join(bundle, name), '.']);
+    const entries =
+      name === 'meta'
+        ? META_FILES.map((m) => [m, join(bundle, m)])
+        : filesUnder(join(bundle, name)).map((p) => [
+            relative(join(bundle, name), p).split(sep).join('/'),
+            p,
+          ]);
+    await packFiles(entries, target);
     const bytes = readFileSync(target);
     list.push({
       name,
@@ -98,12 +134,45 @@ export function packBundle(bundleDir, outPath) {
   return list;
 }
 
-/** Unpacks a part archive into a folder (the updater). */
-export function unpack(archivePath, destPath) {
-  const archive = resolve(archivePath);
+/** Unpacks a part archive into a folder (the updater); refuses any path outside it. */
+export async function unpack(archivePath, destPath) {
   const dest = resolve(destPath);
   mkdirSync(dest, { recursive: true });
-  tar(['-xzf', archive, '-C', dest]);
+  let pending = Buffer.alloc(0);
+  let current = null; // { fd, left }
+  const takeFile = (path, size) => {
+    const target = resolve(dest, path);
+    if (path.split('/').includes('..') || !target.startsWith(dest + sep))
+      throw new Error(`bad path in part: ${path}`);
+    mkdirSync(dirname(target), { recursive: true });
+    return { fd: openSync(target, 'w'), left: size };
+  };
+  for await (const chunk of createReadStream(resolve(archivePath)).pipe(createGunzip())) {
+    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+    for (;;) {
+      if (current) {
+        const n = Math.min(current.left, pending.length);
+        if (n > 0) writeSync(current.fd, pending, 0, n);
+        current.left -= n;
+        pending = pending.subarray(n);
+        if (current.left > 0) break;
+        closeSync(current.fd);
+        current = null;
+      }
+      if (pending.length < 4) break;
+      const len = pending.readUInt32BE(0);
+      if (pending.length < 4 + len) break;
+      const { path, size } = JSON.parse(pending.subarray(4, 4 + len).toString('utf8'));
+      pending = pending.subarray(4 + len);
+      current = takeFile(path, size);
+    }
+  }
+  if (current) {
+    const short = current.left;
+    closeSync(current.fd);
+    if (short > 0) throw new Error('the part archive is cut short');
+  }
+  if (pending.length) throw new Error('the part archive has trailing bytes');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -115,7 +184,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     );
     console.log(`parts.json written for ${bundle}`);
   } else if (command === 'pack' && bundle && outDir) {
-    const list = packBundle(bundle, outDir);
+    const list = await packBundle(bundle, outDir);
     for (const p of list) console.log(`${p.file} ${(p.size / 1048576).toFixed(1)} MB`);
   } else {
     console.error('usage: node parts.mjs hash <bundle> | pack <bundle> <outDir>');

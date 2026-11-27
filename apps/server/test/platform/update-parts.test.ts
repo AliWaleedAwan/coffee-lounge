@@ -83,7 +83,7 @@ function go(text: string) {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'cl-parts-'));
   installs = [];
   fetched = [];
@@ -91,7 +91,7 @@ beforeEach(() => {
   bundle(join(dir, 'install'), '1.2.3', 'old app');
   release = join(dir, 'release');
   bundle(join(release, 'bundle'), '1.3.0', 'new app');
-  packBundle(join(release, 'bundle'), join(release, 'out'));
+  await packBundle(join(release, 'bundle'), join(release, 'out'));
   const publicKeyFile = join(dir, 'agent', 'public.pem');
   writeFileSync(publicKeyFile, publicKey.export({ type: 'spki', format: 'pem' }));
   cfg = {
@@ -110,7 +110,7 @@ afterEach(() => {
 });
 
 describe('parts', () => {
-  it('fingerprints content only, and a packed part unpacks to the same fingerprint', () => {
+  it('fingerprints content only, and a packed part unpacks to the same fingerprint', async () => {
     const a = join(release, 'bundle', 'web');
     const copy = join(dir, 'web-copy');
     cpSync(a, copy, { recursive: true });
@@ -124,7 +124,7 @@ describe('parts', () => {
         file: string;
       }[]
     ).find((p) => p.name === 'web')?.file;
-    unpack(join(release, 'out', webFile ?? ''), back);
+    await unpack(join(release, 'out', webFile ?? ''), back);
     expect(hashPart(back)).toBe(hashPart(a));
   });
 });
