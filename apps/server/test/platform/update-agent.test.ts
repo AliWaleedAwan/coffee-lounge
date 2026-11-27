@@ -1,6 +1,14 @@
 /** The updater (deploy/windows/update-agent.mjs): only a signed, newer, intact file installs. */
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -148,5 +156,70 @@ describe('the updater', () => {
       'Not updated: Not enough free disk space: 10 GB is needed, 8 GB is free. Free up space on drive C: and try again. Nothing was changed.',
     );
     expect(failureMessage('something else')).toMatch(/did not finish/);
+  });
+});
+
+describe('downloads in the background, checks on demand (owner, Nov 2026)', () => {
+  const downloads = () => {
+    let n = 0;
+    const fetchFn = (url: string) => {
+      if (url !== cfg['manifestUrl']) n += 1;
+      return Promise.resolve(
+        url === cfg['manifestUrl']
+          ? new Response(manifest('1.3.0'))
+          : new Response(new Uint8Array(INSTALLER)),
+      );
+    };
+    return { fetchFn, count: () => n };
+  };
+  const ticks = (fetchFn: (url: string) => Promise<Response>, now: number) =>
+    tick(cfg, {
+      fetchFn,
+      now,
+      install: (file: string, args: string[]) => {
+        installs.push([file, ...args]);
+        return Promise.resolve(0);
+      },
+    });
+
+  it('downloads a new version as soon as it is found, without installing it', async () => {
+    const d = downloads();
+    await ticks(d.fetchFn, 1e12);
+    expect(d.count()).toBe(1);
+    expect(installs).toEqual([]);
+    expect(status()).toMatchObject({ available: '1.3.0', downloaded: '1.3.0' });
+    expect(existsSync(join(cfg['agentDir'] ?? '', 'CoffeeLounge-Setup-1.3.0.exe'))).toBe(true);
+  });
+
+  it('Update now installs the file already downloaded, without downloading again, then removes it', async () => {
+    const d = downloads();
+    await ticks(d.fetchFn, 1e12);
+    request();
+    await ticks(d.fetchFn, 1e12 + 60_000);
+    expect(d.count()).toBe(1);
+    expect(installs).toHaveLength(1);
+    expect(readdirSync(cfg['agentDir'] ?? '').filter((n) => n.endsWith('.exe'))).toEqual([]);
+  });
+
+  it('checks every hour, and at once when asked', async () => {
+    const d = downloads();
+    await ticks(d.fetchFn, 1e12);
+    const checked = status()['checkedAt'];
+    await ticks(d.fetchFn, 1e12 + 30 * 60_000);
+    expect(status()['checkedAt']).toBe(checked);
+    writeFileSync(join(cfg['updateDir'] ?? '', 'check'), '');
+    await ticks(d.fetchFn, 1e12 + 31 * 60_000);
+    expect(status()['checkedAt']).toBe(1e12 + 31 * 60_000);
+    expect(existsSync(join(cfg['updateDir'] ?? '', 'check'))).toBe(false);
+    await ticks(d.fetchFn, 1e12 + 92 * 60_000);
+    expect(status()['checkedAt']).toBe(1e12 + 92 * 60_000);
+  });
+
+  it('keeps no installer of another version', async () => {
+    writeFileSync(join(cfg['agentDir'] ?? '', 'CoffeeLounge-Setup-1.2.9.exe'), 'old');
+    await ticks(downloads().fetchFn, 1e12);
+    expect(readdirSync(cfg['agentDir'] ?? '').filter((n) => n.endsWith('.exe'))).toEqual([
+      'CoffeeLounge-Setup-1.3.0.exe',
+    ]);
   });
 });

@@ -96,6 +96,7 @@ if (!stop.signal.aborted) {
             connectionString: config.DATABASE_URL,
             filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
             replicationUrl: config.BACKUP_REPLICATION_URL,
+            walGapFile: config.BACKUP_WAL_GAP_FILE,
             restoreTestUrl: config.RESTORE_TEST_DATABASE_URL,
           },
         }

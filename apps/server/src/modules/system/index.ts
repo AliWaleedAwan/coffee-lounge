@@ -23,6 +23,9 @@ export interface SystemRouteOptions {
 interface AgentStatus {
   current?: string;
   available?: string | null;
+  downloaded?: string | null;
+  checkedAt?: number;
+  checkError?: string | null;
   state?: string;
   message?: string | null;
 }
@@ -41,9 +44,9 @@ export async function systemRoutes(
       return {}; // the updater has not run yet
     }
   };
-  const requested = async (dir: string): Promise<boolean> => {
+  const asked = async (dir: string, name: 'request' | 'check'): Promise<boolean> => {
     try {
-      await readFile(join(dir, 'request'));
+      await readFile(join(dir, name));
       return true;
     } catch {
       return false;
@@ -53,14 +56,28 @@ export async function systemRoutes(
   app.get('/system/update', { config: { permission: 'system.update' } }, async () => {
     const dir = options.updateDir;
     if (!dir) {
-      return { supported: false, current: null, available: null, state: 'idle', message: null };
+      return {
+        supported: false,
+        current: null,
+        available: null,
+        downloaded: null,
+        checkedAt: null,
+        checking: false,
+        checkError: null,
+        state: 'idle',
+        message: null,
+      };
     }
     const agent = await readAgent(dir);
     return {
       supported: true,
       current: agent.current ?? null,
       available: agent.available ?? null,
-      state: (await requested(dir)) ? 'requested' : (agent.state ?? 'idle'),
+      downloaded: agent.downloaded ?? null,
+      checkedAt: agent.checkedAt ? new Date(agent.checkedAt).toISOString() : null,
+      checking: await asked(dir, 'check'),
+      checkError: agent.checkError ?? null,
+      state: (await asked(dir, 'request')) ? 'requested' : (agent.state ?? 'idle'),
       message: agent.message ?? null,
     };
   });
@@ -89,6 +106,18 @@ export async function systemRoutes(
         ),
       );
       await writeFile(join(dir, 'request'), '');
+      return reply.code(202).send();
+    },
+  );
+
+  // Check now: the updater looks within a minute instead of within the hour.
+  app.post(
+    '/system/update/check',
+    { config: { permission: 'system.update' } },
+    async (_request, reply) => {
+      const dir = options.updateDir;
+      if (!dir) throw new AppError('VALIDATION_FAILED', 'Updates work only on an installed shop');
+      await writeFile(join(dir, 'check'), '');
       return reply.code(202).send();
     },
   );

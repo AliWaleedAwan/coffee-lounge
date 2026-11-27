@@ -75,7 +75,9 @@ A wrong discount, refund or stock entry is **never** fixed with a restore: corre
 
 ## 8. Upgrades
 
-When a new version is ready, **System health** shows **Update now** to the owner; the PC needs internet. Or run `CoffeeLounge-Setup-<version>.exe` from a USB stick, as Administrator. Either way, do it outside trading hours. It refuses while bills or the cash shift are open (close them first). It keeps a copy of the current version and of the database first, and if anything fails it puts both back by itself and says **ROLLED BACK** in its log. Nothing ever updates until the owner says so.
+The owner sees **Updates** on **System health**. Coffee Lounge looks for a new version every hour (or at once with **Check now**) and downloads it in the background; **Update now** then installs it. The PC needs internet for that; otherwise run `CoffeeLounge-Setup-<version>.exe` from a USB stick, as Administrator. Either way, update outside trading hours: it refuses while bills or the cash shift are open, and if anything fails it puts the previous version and data back by itself. Once an update has succeeded the old version is removed; only the newest copy of the database from just before it is kept. An update needs 4 GB free (a first install 10 GB). Nothing ever updates until the owner says so.
+
+Housekeeping is automatic: logs are kept 30 days and never more than 200 MB, and with the backup drive away the change log waiting for it is capped at 1 GB (a full backup is made as soon as the drive is back). Every screen warns when the disk is almost full.
 
 ## 8b. Bringing in the old POS
 

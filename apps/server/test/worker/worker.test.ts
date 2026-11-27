@@ -233,7 +233,7 @@ describe('job queue', () => {
     ).toEqual({
       'maintenance:prune_idempotency_keys': '5 * * * *',
       'print:sweep': '* * * * *',
-      'maintenance:prune_logs': '30 3 * * *',
+      'maintenance:prune_logs': '30 * * * *',
       'maintenance:prune_outbox': '35 * * * *',
       'orders:escalate': '* * * * *',
       'orders:expire_unpaid_takeaway': '* * * * *',

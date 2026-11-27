@@ -202,7 +202,7 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
 | `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
 | `GET /printers/detect` | `printers.manage` | The Windows print queues the counter PC finds, `{supported, queues: [{name, driver, port}], problem?}` (step 8.6) |
-| `GET /system/update`, `POST /system/update` | `system.update` | Version, any new version, and the updater's state; ask the updater to install it (it verifies the signature itself) |
+| `GET /system/update`, `POST /system/update`, `POST /system/update/check` | `system.update` | Version, any new version, and the updater's state; ask the updater to install it (it verifies the signature itself) |
 | `POST /imports/old-pos/preview`, `POST /imports/old-pos/apply` | `settings.manage` | The old POS's export (gzip or JSON, as sent): products, customers and sales history. Preview runs the import and undoes it; apply is safe to repeat |
 | `GET /customers?q=`, `GET /customers/lookup?mobile=` | `delivery.create` | Customers known from the old POS: search by name or number; the one behind a mobile, for the delivery form |
 | `GET /reports/old-pos?from=&to=` | `reports.sales` | The old POS's paid bills by shop day and its best sellers; history only |

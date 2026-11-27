@@ -58,6 +58,7 @@ const health = new HealthMonitor({
   ...(config.BACKUP_DRIVE_PATH ? { backupDrivePath: config.BACKUP_DRIVE_PATH } : {}),
   ...(config.LOG_DIR ? { watchdogLogFile: join(config.LOG_DIR, 'pg-watchdog.log') } : {}),
   backup: new BackupWatch({
+    walGapFile: config.BACKUP_WAL_GAP_FILE,
     db: pool,
     driveRoot: config.BACKUP_DRIVE_PATH,
     publicKeyFile: config.BACKUP_PUBLIC_KEY_FILE,

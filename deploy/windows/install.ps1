@@ -121,7 +121,10 @@ if (-not [Environment]::Is64BitOperatingSystem) { throw 'A 64-bit Windows is req
 $dataDrive = (Split-Path -Qualifier $DataDir).TrimEnd(':')
 $freeGb = [math]::Floor((Get-PSDrive -Name $dataDrive).Free / 1GB)
 # Owner's decision (Nov 2026): 10 GB. The program takes about 1 GB; the shop's data grows slowly.
-if ($freeGb -lt 10) { throw "Not enough free disk space: 10 GB is needed, $freeGb GB is free. Free up space on drive $($dataDrive): and try again." }
+# An update copies the program and keeps the database before it: 4 GB is plenty for that.
+$needGb = 10
+if (-not $firstInstall) { $needGb = 4 }
+if ($freeGb -lt $needGb) { throw "Not enough free disk space: $needGb GB is needed, $freeGb GB is free. Free up space on drive $($dataDrive): and try again." }
 if ($needCertificates -and -not $CaExportDir) {
   throw 'First install: pass -CaExportDir with the owner''s USB key folder for the shop CA key.'
 }
@@ -164,7 +167,7 @@ if ($upgrading) {
     & (Join-Path $PgDir 'bin\pg_restore.exe') --list $preDump | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The pre-upgrade dump does not read back: nothing was changed.' }
   } finally { Remove-Item Env:\PGPASSWORD }
-  Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -SkipLast 3 | Remove-Item -Force
+  Get-ChildItem $PreUpgradeDir -Filter '*.dump' | Sort-Object Name | Select-Object -SkipLast 1 | Remove-Item -Force
   Write-Step "Pre-upgrade dump: $preDump"
   # The program as it is now, to go back to.
   foreach ($s in $AppServices) { if (Get-Service -Name $s -ErrorAction SilentlyContinue) { Stop-Service -Name $s -Force } }
@@ -406,7 +409,7 @@ STAFF_PORT=8443
 STAFF_TLS_CERT=$Tls\server.pem
 STAFF_TLS_KEY=$Tls\server.key
 WEB_DIST_DIR=$InstallDir\web
-DISK_CHECK_PATH=$env:SystemDrive\
+DISK_CHECK_PATH=$((Split-Path -Qualifier $DataDir))\
 BACKUP_DRIVE_PATH=$BackupDrive
 BACKUP_PUBLIC_KEY_FILE=$backupPub
 PG_BIN_DIR=$PgDir\bin
@@ -447,7 +450,15 @@ if (Test-Path $backupPub) {
   $walDir = [IO.Path]::Combine($BackupDrive, "CoffeeLounge\wal\$sysId")
   $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_DIR=*' }
   Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_DIR=$walDir")
-  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + $walDir + '" --key "' + $backupPub + '" "%p" "%f"'
+  # With the drive away, at most 1 GB of change log waits (wal.ts); a gap is written down here,
+  # by PostgreSQL's account, and read and cleared by the worker after a fresh base backup.
+  $gapDir = Join-Path $DataDir 'wal-gap'
+  New-Item -ItemType Directory -Force -Path $gapDir | Out-Null
+  Set-RestrictedAcl -Path $gapDir -Modify @($PgAccount, 'NT SERVICE\coffeelounge-worker') -Read @('NT SERVICE\coffeelounge-api')
+  $gapFile = Join-Path $gapDir 'gap.log'
+  $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_GAP_FILE=*' }
+  Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_GAP_FILE=$gapFile")
+  $walCmd = '"' + $Node + '" "' + (Join-Path $InstallDir 'app\dist\wal-archive.js') + '" --drive "' + $driveArg + '" --dir "' + $walDir + '" --key "' + $backupPub + '" --gap-file "' + $gapFile + '" --keep-mb 1024 "%p" "%f"'
   $superForArchive = Unprotect-FromFile $superSecret
   Invoke-Sql 'postgres' $superForArchive 'postgres' @"
 ALTER SYSTEM SET archive_mode = 'on';
@@ -643,5 +654,11 @@ if ($firstInstall -and $Wizard -and $env:CL_OWNER_PASSWORD) {
 }
 $script:UpgradeArmed = $false
 Remove-Item -Force $MaintenanceFlag -ErrorAction SilentlyContinue
-if ($upgrading) { Write-Step 'Upgrade finished: health checks green.' }
+if ($upgrading) {
+  # Owner's request (Nov 2026): once the new version is up, the old one is not kept. A failed
+  # update has already been rolled back before this point. The database as it was just before
+  # stays (the newest copy only) as the last safety net.
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $Previous
+  Write-Step 'Upgrade finished: health checks green; the previous version was removed.'
+}
 Write-Step 'Install finished.'

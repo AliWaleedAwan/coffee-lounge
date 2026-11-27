@@ -233,4 +233,21 @@ describe('GET /api/staff/v1/system/health (AT-120, foundation parts)', () => {
     expect(health.internet).toBe('online');
     expect(health.backup.usbDrivePresent).toBe(false); // no BACKUP_DRIVE_PATH configured
   });
+
+  it('every screen is warned of a nearly full disk, but not of one only getting low', async () => {
+    const at = (free: number) =>
+      new HealthMonitor({
+        db: fx.pool,
+        readiness: fx.readiness,
+        probes: {
+          disk: () => Promise.resolve({ freePercent: free, status: diskLevel(free) }),
+          internet: () => Promise.resolve('online'),
+        },
+      }).backupBanner();
+    expect(await at(1.6)).toMatchObject({
+      problem: 'disk_critical',
+      message: expect.stringContaining('1.6 % free') as unknown,
+    });
+    expect(await at(15)).toEqual({ problem: null, message: null, since: null });
+  });
 });

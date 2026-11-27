@@ -144,6 +144,86 @@ describe('WAL archiving (BACKUP_RECOVERY.md §1)', () => {
   });
 });
 
+describe('with the drive away too long (seen on a laptop: its disk filled)', () => {
+  it('lets the oldest change-log file go once more than the limit waits, and writes the gap down', async () => {
+    const pgWal = join(work, 'pg_wal');
+    mkdirSync(pgWal, { recursive: true });
+    const names = [
+      '000000010000000000000051',
+      '000000010000000000000052',
+      '000000010000000000000053',
+    ];
+    for (const n of names) writeFileSync(join(pgWal, n), Buffer.alloc(1024 * 1024));
+    const gapFile = join(work, 'gap.log');
+    const away = {
+      driveRoot: join(work, 'no-drive'),
+      dir: join(work, 'never'),
+      publicKeyFile: pub,
+      gapFile,
+    };
+    const first = names[0] ?? '';
+    // Under the limit: it waits, as before.
+    await expect(
+      archiveWal({
+        ...away,
+        sourcePath: join(pgWal, first),
+        name: first,
+        keepBytes: 4 * 1024 * 1024,
+      }),
+    ).rejects.toThrow(/not plugged in/);
+    expect(existsSync(gapFile)).toBe(false);
+    // Over it: let go, and written down.
+    expect(
+      await archiveWal({
+        ...away,
+        sourcePath: join(pgWal, first),
+        name: first,
+        keepBytes: 2 * 1024 * 1024,
+      }),
+    ).toBe('let_go');
+    expect(readFileSync(gapFile, 'utf8')).toContain(first);
+    // Without the limit (older installs), nothing is ever let go.
+    await expect(
+      archiveWal({
+        driveRoot: away.driveRoot,
+        dir: away.dir,
+        publicKeyFile: pub,
+        sourcePath: join(pgWal, first),
+        name: first,
+      }),
+    ).rejects.toThrow(/not plugged in/);
+  });
+
+  it('the command line takes the limit in MB', () => {
+    const pgWal = join(work, 'pg_wal_cli');
+    mkdirSync(pgWal, { recursive: true });
+    const name = '000000010000000000000061';
+    writeFileSync(join(pgWal, name), Buffer.alloc(2 * 1024 * 1024));
+    const gapFile = join(work, 'gap-cli.log');
+    const run = spawnSync(
+      process.execPath,
+      [
+        WAL_CLI,
+        '--drive',
+        join(work, 'no-drive'),
+        '--dir',
+        join(work, 'never'),
+        '--key',
+        pub,
+        '--gap-file',
+        gapFile,
+        '--keep-mb',
+        '1',
+        join(pgWal, name),
+        name,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(readFileSync(gapFile, 'utf8')).toContain(name);
+  });
+});
+
 describe('the nightly dump (BACKUP_RECOVERY.md §1, §4)', () => {
   const config = (): BackupConfig => ({
     driveRoot: drive,
