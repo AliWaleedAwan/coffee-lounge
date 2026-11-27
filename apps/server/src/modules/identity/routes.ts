@@ -134,6 +134,19 @@ export async function identityRoutes(
     return reply.code(201).send(device);
   });
 
+  // The counter PC itself: no code needed (identity service, registerThisPc).
+  app.get('/devices/this-pc', { config: { auth: 'public' } }, async (request) => ({
+    available: await identity.thisPcCanRegister(pool, request.ip),
+  }));
+
+  app.post('/devices/register-this-pc', { config: { auth: 'public' } }, async (request, reply) => {
+    const { token, device } = await guarded(registerThrottle, request, reply, () =>
+      identity.registerThisPc(pool, factsOf(request)),
+    );
+    setDeviceCookie(reply, token, secureCookies);
+    return reply.code(201).send(device);
+  });
+
   app.get('/devices', { config: { permission: 'devices.manage' } }, async () => ({
     items: await identity.listDevices(pool),
   }));

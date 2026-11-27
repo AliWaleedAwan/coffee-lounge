@@ -99,7 +99,12 @@ describe('route × role matrix (SEC-ALL)', () => {
     const publicRoutes = fx.routes
       .filter((r) => r.config.auth === 'public')
       .map((r) => `${r.method} ${r.url}`);
-    expect(publicRoutes).toEqual(['POST /api/staff/v1/devices/register']);
+    expect(publicRoutes).toEqual([
+      'POST /api/staff/v1/devices/register',
+      // The counter PC registers itself; the service refuses any other address (owner, Nov 2026).
+      'GET /api/staff/v1/devices/this-pc',
+      'POST /api/staff/v1/devices/register-this-pc',
+    ]);
   });
 });
 

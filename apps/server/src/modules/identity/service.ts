@@ -273,6 +273,64 @@ export async function createRegistrationCode(
   throw new Error('could not create a unique registration code');
 }
 
+/**
+ * The counter PC registers itself (owner's request, Nov 2026: setup entirely in the app). Only
+ * a request from this PC's own address qualifies: the server runs on the counter PC, and
+ * trustProxy is off, so no other device can claim it. Every other device still needs a code.
+ */
+const THIS_PC = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+export function isThisPc(ip: string | undefined): boolean {
+  return ip !== undefined && THIS_PC.has(ip);
+}
+
+async function activeOwner(db: Queryable): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY users.id LIMIT 1`,
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Whether this request may register its device as the counter PC without a code. */
+export async function thisPcCanRegister(db: Queryable, ip: string | undefined): Promise<boolean> {
+  return isThisPc(ip) && (await activeOwner(db)) !== null;
+}
+
+export async function registerThisPc(
+  pool: pg.Pool,
+  facts: RequestFacts,
+): Promise<{ token: string; device: DeviceInfo }> {
+  if (!isThisPc(facts.ip)) {
+    throw new AppError('FORBIDDEN', 'Only the counter PC itself registers without a code');
+  }
+  const { token, hash } = newToken();
+  return withTransaction(pool, async (tx) => {
+    const owner = await activeOwner(tx);
+    if (!owner) throw new AppError('VALIDATION_FAILED', 'Create the owner account first');
+    const { rows } = await tx.query<{ id: string }>(
+      `INSERT INTO cl.devices (name, kind, ownership, token_hash, registered_by)
+       VALUES ('Counter PC', 'reception', 'shop', $1, $2) RETURNING id::text`,
+      [hash, owner],
+    );
+    const deviceId = rows[0]?.id ?? '';
+    await audit(tx, SYSTEM, facts, {
+      action: 'device.register_this_pc',
+      entityType: 'device',
+      entityId: deviceId,
+      after: { name: 'Counter PC', kind: 'reception', ownership: 'shop' },
+    });
+    return {
+      token,
+      device: {
+        id: deviceId,
+        name: 'Counter PC',
+        kind: 'reception',
+        ownership: 'shop',
+        status: 'active',
+      },
+    };
+  });
+}
+
 export async function registerDevice(
   pool: pg.Pool,
   code: string,
