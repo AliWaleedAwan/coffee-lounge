@@ -52,10 +52,17 @@ jobs:
           $version = $tag.Substring(1)
           $setup = "out\CoffeeLounge-Setup-$version.exe"
           $url = "https://github.com/$env:RELEASES_REPO/releases/download/$tag/CoffeeLounge-Setup-$version.exe"
+          # Small updates are optional: without parts, every updater uses the full installer.
           node deploy\windows\parts.mjs pack out\CoffeeLounge out\parts
+          if ($LASTEXITCODE -eq 0) {
+            node deploy\windows\sign-release.mjs $setup $version $url out\latest.json out\parts
+          } else {
+            Write-Warning 'Packing the parts failed: this release is full-installer only.'
+            Remove-Item -Recurse -Force out\parts -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force out\parts | Out-Null
+            node deploy\windows\sign-release.mjs $setup $version $url out\latest.json
+          }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node deploy\windows\sign-release.mjs $setup $version $url out\latest.json out\parts
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $parts = (Get-ChildItem out\parts -Filter *.tar.gz).FullName
+          $parts = @((Get-ChildItem out\parts -Filter *.tar.gz).FullName)
           gh release create $tag $setup out\latest.json @parts --repo $env:RELEASES_REPO --title "Coffee Lounge $version" --notes "Coffee Lounge $version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

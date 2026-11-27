@@ -8,7 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const PART_NAMES = ['app', 'web', 'desktop', 'runtime', 'pgsql', 'winsw', 'setup'];
@@ -65,12 +65,18 @@ const TAR =
 
 function tar(args) {
   const run = spawnSync(TAR, args, { encoding: 'utf8' });
-  if (run.status !== 0)
-    throw new Error(`tar ${args[0]} failed: ${run.stderr || run.error?.message}`);
+  if (run.status !== 0) {
+    const said = [run.stderr, run.stdout, run.error?.message].filter(Boolean).join(' ').trim();
+    throw new Error(
+      `${TAR} ${args.join(' ')} failed (exit ${String(run.status)}, ${String(run.signal)}): ${said}`,
+    );
+  }
 }
 
 /** One .tar.gz per part, named by its fingerprint; returns what the manifest lists. */
-export function packBundle(bundle, outDir) {
+export function packBundle(bundleDir, outPath) {
+  const bundle = resolve(bundleDir);
+  const outDir = resolve(outPath);
   mkdirSync(outDir, { recursive: true });
   const parts = JSON.parse(readFileSync(join(bundle, 'parts.json'), 'utf8')).parts;
   const list = [];
@@ -93,7 +99,9 @@ export function packBundle(bundle, outDir) {
 }
 
 /** Unpacks a part archive into a folder (the updater). */
-export function unpack(archive, dest) {
+export function unpack(archivePath, destPath) {
+  const archive = resolve(archivePath);
+  const dest = resolve(destPath);
   mkdirSync(dest, { recursive: true });
   tar(['-xzf', archive, '-C', dest]);
 }
