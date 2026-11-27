@@ -12,6 +12,7 @@ import { permissionSet } from '../../auth/session.ts';
 import { Field } from '../../components/Field.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { rupees } from '../../order/cart.ts';
+import { OpenDrawer } from '../printing/OpenDrawer.tsx';
 import { useSignedIn } from '../Shell.tsx';
 import { ApprovalFields, approvalReady, noApproval } from './Approval.tsx';
 import {
@@ -118,6 +119,7 @@ export function CounterScreen() {
   return (
     <>
       <h1>Bills &amp; payments</h1>
+      <OpenDrawer />
       <div className="section-head">
         <ShiftBar shift={shift.data?.shift ?? null} loaded={shift.isSuccess} />
         {permissions.has('orders.create') ? <NewTakeaway /> : null}

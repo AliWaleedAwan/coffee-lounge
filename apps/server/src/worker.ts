@@ -11,7 +11,8 @@ import { createPool } from './platform/db/pool.ts';
 import { DEV_FILES_DIR, DEV_MAIL_KEY_FILE, MIGRATIONS_DIR } from './platform/paths.ts';
 import { Readiness, runStartupChecks } from './platform/readiness.ts';
 import { SERVER_VERSION } from './platform/version.ts';
-import { Heartbeat } from './worker/maintenance.ts';
+import { Heartbeat, releaseStaleLocks } from './worker/maintenance.ts';
+import { LiveWal } from './modules/backup/index.ts';
 import { startRunner } from './worker/runner.ts';
 
 const log = (level: string, msg: string, extra: Record<string, unknown> = {}): void => {
@@ -33,12 +34,14 @@ const migrations = await loadMigrations(MIGRATIONS_DIR);
 const stop = new AbortController();
 let heartbeat: Heartbeat | undefined;
 let runner: Runner | undefined;
+let liveWal: LiveWal | undefined;
 
 async function shutdown(signal: string): Promise<void> {
   if (stop.signal.aborted) return;
   stop.abort();
   log('info', 'shutting down', { signal });
   await heartbeat?.stop();
+  liveWal?.stop();
   await runner?.stop();
   await pool.end();
 }
@@ -67,6 +70,19 @@ if (!stop.signal.aborted) {
       err: error instanceof Error ? error.message : String(error),
     });
   });
+  if (config.LIVE_WAL_DIR && config.BACKUP_REPLICATION_URL) {
+    liveWal = new LiveWal({
+      dir: config.LIVE_WAL_DIR,
+      replicationUrl: config.BACKUP_REPLICATION_URL,
+      pgBinDir: config.PG_BIN_DIR,
+      log: (message) => {
+        log('error', message);
+      },
+    });
+    liveWal.start();
+  }
+  const released = await releaseStaleLocks(pool);
+  if (released > 0) log('warn', 'released job locks left by a stopped worker', { released });
   runner = await startRunner({
     pool,
     logDir: config.LOG_DIR,
@@ -80,6 +96,7 @@ if (!stop.signal.aborted) {
             connectionString: config.DATABASE_URL,
             filesDir: config.FILES_DIR ?? DEV_FILES_DIR,
             replicationUrl: config.BACKUP_REPLICATION_URL,
+            walGapFile: config.BACKUP_WAL_GAP_FILE,
             restoreTestUrl: config.RESTORE_TEST_DATABASE_URL,
           },
         }

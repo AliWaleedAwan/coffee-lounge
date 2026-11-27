@@ -5,11 +5,15 @@
  * needs `inventory.items_manage`; the server checks every write.
  */
 import { useRef, useState, type SubmitEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router';
+import { api } from '../../api/client.ts';
 import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { writeMessage } from '../menu/menu-api.ts';
 import { InventoryItemEditor } from './InventoryItemEditor.tsx';
+import { ProductForm } from './ProductForm.tsx';
 import {
   formatQty,
   looksLikeBarcode,
@@ -33,6 +37,8 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
   const [unknownCode, setUnknownCode] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const client = useQueryClient();
+  const [newProduct, setNewProduct] = useState<string | null>(null);
   const items = useItems({ q: search, category, includeArchived });
 
   const close = (): void => {
@@ -40,6 +46,22 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
     setSearch('');
     searchRef.current?.focus();
   };
+
+  if (newProduct) {
+    return (
+      <ProductForm
+        barcode={newProduct}
+        onCreated={(id) => {
+          setNewProduct(null);
+          setOpen({ id, linkCode: null });
+        }}
+        onCancel={() => {
+          setNewProduct(null);
+          searchRef.current?.focus();
+        }}
+      />
+    );
+  }
 
   if (open) {
     return (
@@ -49,7 +71,16 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
         linkCode={open.linkCode}
         canManage={canManage}
         onCreated={(id) => {
-          setOpen({ id, linkCode: open.linkCode });
+          // A new item made from a scan takes that barcode without asking again.
+          const code = open.linkCode;
+          setOpen({ id, linkCode: null });
+          if (code) {
+            void api(`/inventory/items/${id}/barcodes`, { method: 'POST', body: { code } })
+              .then(() => client.invalidateQueries({ queryKey: ['inventory'] }))
+              .catch((error: unknown) => {
+                setScanError(writeMessage(error));
+              });
+          }
         }}
         onClose={close}
       />
@@ -85,6 +116,10 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
   const list = items.data?.items ?? [];
   return (
     <>
+      <p className="muted">
+        Things you keep in stock. Dishes you cook and sell, such as pizzas and karhai, are on the{' '}
+        <Link to="/menu">Menu</Link>.
+      </p>
       {canManage ? (
         <div className="row">
           <button
@@ -141,9 +176,22 @@ export function ItemsTab({ canManage }: { canManage: boolean }) {
         <div role="alert" className="banner banner-warning stack">
           <span>
             Barcode <strong>{unknownCode}</strong> isn’t linked to any item yet.
-            {canManage ? ' Choose the item it belongs to below, or add a new item.' : ''}
+            {canManage ? ' Add it as a new item, or choose the item it belongs to below.' : ''}
           </span>
           <div className="row">
+            {canManage ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!writes}
+                onClick={() => {
+                  setNewProduct(unknownCode);
+                  setUnknownCode(null);
+                }}
+              >
+                Add as a new item
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost"

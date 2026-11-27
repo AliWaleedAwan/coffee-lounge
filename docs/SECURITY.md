@@ -59,7 +59,7 @@ Out of scope: nation-state attackers, internet-facing exposure (the system is ne
 
 ### 2.7 Supply chain & updates
 - Dependencies pinned (lockfile); `pnpm audit` in CI; Node, Electron and PostgreSQL versions pinned per release.
-- Installer built reproducibly in CI. No runtime downloads, no auto-update.
+- Installer built reproducibly in CI. Updates (owner's decision, Nov 2026, replacing "no auto-update"): the SYSTEM updater checks a public release site, and installs only when the owner presses Update now, only a newer version, only from a manifest signed with the release key whose private half is never on a shop PC. The server can ask for an update but cannot choose what is installed. Small updates sign the list of parts with the same key, and each assembled part is checked against its signed fingerprint before setup runs.
 - Electron: context isolation, sandbox, no Node in the renderer, navigation locked to the server address, certificate pinned to the shop root.
 
 ## 3. Audit trail

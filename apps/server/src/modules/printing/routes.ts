@@ -12,6 +12,9 @@ import { withTransaction, type Tx } from '../../platform/db/tx.ts';
 import { AppError } from '../../platform/errors.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
+import { detectQueues } from './detect.ts';
+import { DRAWER_PULSE } from './escpos.ts';
+import { defaultTransports, type Transport } from './transports.ts';
 import { printJobChanged, requestPrint, stationPrinter, wakePrinter } from './jobs.ts';
 
 const id = z.string().regex(/^\d{1,18}$/, 'must be a numeric id');
@@ -62,6 +65,7 @@ async function lockJob(tx: Tx, jobId: string) {
 
 export interface PrintingRouteOptions {
   pool: pg.Pool;
+  transports?: Record<'spooler' | 'tcp', Transport>;
 }
 
 export async function printingRoutes(
@@ -69,6 +73,7 @@ export async function printingRoutes(
   options: PrintingRouteOptions,
 ): Promise<void> {
   const { pool } = options;
+  const transports = options.transports ?? defaultTransports();
 
   // ------------------------------------------------------------ status (banner)
   app.get('/printers/status', { config: { permission: 'kitchen.read' } }, async () => {
@@ -119,9 +124,11 @@ export async function printingRoutes(
       supports_status: boolean;
       can_cut: boolean;
       is_active: boolean;
+      drawer_enabled: boolean;
+      drawer_on_cash: boolean;
       version: number;
     }>(
-      `SELECT id::text, name, connection, address, paper_width_mm, chars_per_line, supports_status, can_cut, is_active, version
+      `SELECT id::text, name, connection, address, paper_width_mm, chars_per_line, supports_status, can_cut, is_active, drawer_enabled, drawer_on_cash, version
          FROM cl.printers ORDER BY name`,
     );
     const { rows: stations } = await pool.query<{
@@ -147,12 +154,16 @@ export async function printingRoutes(
         supportsStatus: r.supports_status,
         canCut: r.can_cut,
         isActive: r.is_active,
+        drawerEnabled: r.drawer_enabled,
+        drawerOnCash: r.drawer_on_cash,
         version: r.version,
       })),
       stations: stations.map((s) => ({ id: s.id, name: s.name, printerId: s.printer_id })),
       tills: tills.map((t) => ({ id: t.id, name: t.name, printerId: t.printer_id })),
     };
   });
+
+  app.get('/printers/detect', { config: { permission: 'printers.manage' } }, () => detectQueues());
 
   app.post('/printers', { config: { permission: 'printers.manage' } }, async (request, reply) => {
     const body = parseInput(z.object(printerFields).strict(), request.body);
@@ -201,6 +212,8 @@ export async function printingRoutes(
           connection: printerFields.connection.optional(),
           address: printerFields.address.optional(),
           isActive: z.boolean().optional(),
+          drawerEnabled: z.boolean().optional(),
+          drawerOnCash: z.boolean().optional(),
         })
         .strict(),
       request.body,
@@ -226,7 +239,8 @@ export async function printingRoutes(
       const { rows: updated } = await tx.query<{ version: number }>(
         `UPDATE cl.printers SET name = COALESCE($2, name), connection = COALESCE($3, connection), address = COALESCE($4, address),
                 paper_width_mm = COALESCE($5, paper_width_mm), chars_per_line = COALESCE($6, chars_per_line),
-                supports_status = COALESCE($7, supports_status), can_cut = COALESCE($8, can_cut), is_active = COALESCE($9, is_active)
+                supports_status = COALESCE($7, supports_status), can_cut = COALESCE($8, can_cut), is_active = COALESCE($9, is_active),
+                drawer_enabled = COALESCE($10, drawer_enabled), drawer_on_cash = COALESCE($11, drawer_on_cash)
           WHERE id = $1 RETURNING version`,
         [
           printerId,
@@ -238,6 +252,8 @@ export async function printingRoutes(
           body.supportsStatus ?? null,
           body.canCut ?? null,
           body.isActive ?? null,
+          body.drawerEnabled ?? null,
+          body.drawerOnCash ?? null,
         ],
       );
       await writeAudit(tx, who(request), {
@@ -313,6 +329,52 @@ export async function printingRoutes(
         }),
       );
       return reply.code(202).send({ jobId });
+    },
+  );
+
+  // ------------------------------------------------------------ cash drawer (step 8.7)
+  app.get('/drawer', { config: { permission: 'drawer.open' } }, async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `SELECT p.id::text FROM cl.tills t JOIN cl.printers p ON p.id = t.receipt_printer_id
+        WHERE p.is_active AND p.drawer_enabled ORDER BY t.id LIMIT 1`,
+    );
+    return { printerId: rows[0]?.id ?? null };
+  });
+
+  // Sent straight away, never queued: a queued pulse could retry later and open an unattended
+  // drawer. The audit row is written first, so a pulse never goes out unrecorded.
+  app.post(
+    '/printers/:id/drawer/open',
+    { config: { permission: 'drawer.open' } },
+    async (request, reply) => {
+      const printerId = idParam(request);
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const { rows } = await pool.query<{
+        name: string;
+        connection: 'spooler' | 'tcp';
+        address: string;
+        supports_status: boolean;
+        is_active: boolean;
+        drawer_enabled: boolean;
+      }>(
+        'SELECT name, connection, address, supports_status, is_active, drawer_enabled FROM cl.printers WHERE id = $1',
+        [printerId],
+      );
+      const printer = rows[0];
+      if (!printer) throw new AppError('NOT_FOUND', 'Printer not found');
+      if (!printer.is_active || !printer.drawer_enabled) {
+        throw new AppError('VALIDATION_FAILED', 'No drawer is switched on for this printer');
+      }
+      await withTransaction(pool, (tx) =>
+        writeAudit(tx, who(request), {
+          action: 'drawer.open',
+          entityType: 'printer',
+          entityId: printerId,
+        }),
+      );
+      const sent = await transports[printer.connection].send(printer, DRAWER_PULSE);
+      if (sent.outcome !== 'sent') throw new AppError('VALIDATION_FAILED', sent.error);
+      return reply.code(204).send();
     },
   );
 
@@ -466,7 +528,7 @@ export async function printingRoutes(
         if (printerId === null)
           throw new AppError(
             'VALIDATION_FAILED',
-            'No printer is set for the kitchen. The owner sets one under Settings.',
+            'No printer is set for the kitchen. The owner sets one on the Hardware page.',
           );
         const { rows: copies } = await tx.query<{ copy: number }>(
           `SELECT COALESCE(max(copy_no), 0) + 1 AS copy FROM cl.print_jobs WHERE document_type = 'kitchen_ticket' AND document_id = $1`,

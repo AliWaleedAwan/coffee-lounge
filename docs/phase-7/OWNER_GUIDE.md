@@ -44,7 +44,7 @@ Passwords and keys you type there are stored encrypted and are never shown again
 - **Reports** opens on the overview (today against the same day last week). Every tile and chart opens the report behind it; reports open down to the bills and lines.
 - **Download CSV** / **Download PDF** on any report (needs `reports.export`). On the counter iMac the file goes to Downloads.
 - **Reports** → **Day-end**: the report of a finished business day (a business day runs 04:00 to 03:59). It is made once at 04:25 and never changes; print it on the receipt printer or download the PDF.
-- **Reports** → **E-mails**: which report goes to whom and when. The suggested start (I-18): the day-end daily at 08:00 to you; sales by day weekly on Monday. Without internet the e-mails wait and go when it is back; the list shows each e-mail's status and **Try again now**.
+- **Reports** → **E-mail reports** (top right): which report goes to whom and when. The suggested start (I-18): the day-end daily at 08:00 to you; sales by day weekly on Monday. Without internet the e-mails wait and go when it is back; the list shows each e-mail's status and **Try again now**.
 
 ## 6. Backups (BACKUP_RECOVERY.md)
 
@@ -75,8 +75,24 @@ A wrong discount, refund or stock entry is **never** fixed with a restore: corre
 
 ## 8. Upgrades
 
-A new version comes as `CoffeeLounge-Setup-<version>.exe`. Run it outside trading hours, as Administrator. It refuses while bills or the cash shift are open (close them first). It keeps a copy of the current version and of the database first, and if anything fails it puts both back by itself and says **ROLLED BACK** in its log. Nothing ever updates by itself.
+The owner sees **Updates** on **System health**. Coffee Lounge looks for a new version every hour (or at once with **Check now**) and downloads it in the background; **Update now** then installs it. The PC needs internet for that; otherwise run `CoffeeLounge-Setup-<version>.exe` from a USB stick, as Administrator. Either way, update outside trading hours: it refuses while bills or the cash shift are open, and if anything fails it puts the previous version and data back by itself. Once an update has succeeded the old version is removed; only the newest copy of the database from just before it is kept. An update needs 4 GB free (a first install 10 GB). Nothing ever updates until the owner says so.
 
+Housekeeping is automatic: logs are kept 30 days and never more than 200 MB, and with the backup drive away the change log waiting for it is capped at 1 GB (a full backup is made as soon as the drive is back). Every screen warns when the disk is almost full.
+
+## 8b. Bringing in the old POS
+
+Once, when moving over (or again later: only what is new is added).
+
+1. On a PC with Microsoft Access, from the project folder:
+   `powershell -ExecutionPolicy Bypass -File scripts\old-pos\export-old-pos.ps1 -Database <path to database.accdb>`.
+   It reads the database without changing it, never its logins or passwords, and writes `.local\old-pos\old-pos.json.gz`.
+2. Copy that file to the counter PC. It holds customers' names and mobile numbers: use your own USB stick and delete it afterwards.
+3. On the counter PC, as the owner: **Inventory → Import → Old POS**, choose the file, **Preview**, then **Import**.
+
+What comes in:
+- **Menu:** every named, priced product. Real barcodes (8 digits or more) become products sold by scanning; the old till's key numbers (1, 2, 3...) are dropped. One name at several prices becomes one item with a size per price. Products without a name or price are listed and left out. Out-of-stock products come in off sale.
+- **Customers** (**Customers** in the menu): one per mobile number, with the newest name and location. Typing a known mobile on a new delivery fills in the name and address.
+- **Old sales** (**Old POS sales**): every paid bill, as history by day and best seller. They are kept apart from Coffee Lounge's own reports, cash and stock, and cannot be changed.
 ## 9. Audit log
 
 **Audit log**: who did what, on which device, before and after, with the reason and who approved. Filter by person, record or date. It cannot be changed or deleted by anyone.

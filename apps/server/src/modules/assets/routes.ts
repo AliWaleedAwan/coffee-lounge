@@ -6,6 +6,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
+import { writeAudit } from '../../platform/audit.ts';
 import { handleCommand } from '../../platform/idempotency.ts';
 import { parseInput } from '../../platform/validation.ts';
 import { authOf, factsOf } from '../identity/index.ts';
@@ -88,6 +89,35 @@ export async function assetRoutes(
       `SELECT id::text, name FROM cl.suppliers WHERE is_active ORDER BY lower(name), suppliers.id`,
     );
     return { people, suppliers };
+  });
+
+  /** The categories offered when registering; used ones stay on their assets either way. */
+  app.post('/assets/categories', manage, async (request) => {
+    const body = parseInput(
+      z.object({ add: fields.category.optional(), remove: fields.category.optional() }).strict(),
+      request.body,
+    );
+    const { rows } = await pool.query<{ value: string[] }>(
+      `SELECT value FROM cl.system_settings WHERE key = 'assets.categories'`,
+    );
+    const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    let list = rows[0]?.value ?? [];
+    if (body.remove !== undefined) {
+      const remove = body.remove;
+      list = list.filter((c) => !same(c, remove));
+    }
+    if (body.add !== undefined && !list.some((c) => same(c, body.add ?? '')))
+      list = [...list, body.add];
+    await pool.query(
+      `UPDATE cl.system_settings SET value = $1::jsonb WHERE key = 'assets.categories'`,
+      [JSON.stringify(list)],
+    );
+    await writeAudit(pool, byOf(request).who, {
+      action: 'asset.categories',
+      entityType: 'setting',
+      after: { categories: list },
+    });
+    return { categories: list };
   });
 
   app.get('/assets/:id', read, async (request) => readAsset(pool, idParam(request)));

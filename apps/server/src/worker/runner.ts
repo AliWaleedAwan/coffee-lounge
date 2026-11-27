@@ -2,6 +2,7 @@
  * The background worker (Windows service `coffeelounge-worker`): graphile-worker with
  * this project's task list and schedule. Later phases add print, report and e-mail tasks.
  */
+import { existsSync, rmSync } from 'node:fs';
 import { Logger, parseCrontab, run, type Runner, type TaskList } from 'graphile-worker';
 import type pg from 'pg';
 import { redactDeliveryDetails } from '../modules/delivery/index.ts';
@@ -45,7 +46,13 @@ export interface TaskOptions {
   /** The mailbox key (MAIL_KEY_FILE); without it, scheduled e-mails wait in the queue. */
   mail?: MailDeps | undefined;
   /** Where and how to back up (steps 7.1, 7.2); without it, no backups. */
-  backup?: (BackupConfig & { replicationUrl?: string | undefined }) | undefined;
+  backup?:
+    | (BackupConfig & {
+        replicationUrl?: string | undefined;
+        /** Written by wal-archive when it let change-log files go (BACKUP_WAL_GAP_FILE). */
+        walGapFile?: string | undefined;
+      })
+    | undefined;
 }
 
 export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
@@ -169,9 +176,15 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
     'backup:watch': async (_payload, helpers) => {
       const b = options.backup;
       if (!b) return;
-      if (b.replicationUrl && (await baseBackupDue(pool, b.driveRoot))) {
+      // Change-log files were let go while the drive was away: the archive is whole again only
+      // from a new base backup.
+      const gap = b.walGapFile !== undefined && existsSync(b.walGapFile);
+      if (b.replicationUrl && (gap || (await baseBackupDue(pool, b.driveRoot)))) {
         const r = await runBaseBackup(pool, { ...b, replicationUrl: b.replicationUrl }, new Date());
-        helpers.logger.info(`new drive: base backup ${r.status}${r.error ? `: ${r.error}` : ''}`);
+        helpers.logger.info(
+          `${gap ? 'after a gap in the change log' : 'new drive'}: base backup ${r.status}${r.error ? `: ${r.error}` : ''}`,
+        );
+        if (gap && r.status === 'succeeded' && b.walGapFile) rmSync(b.walGapFile, { force: true });
       }
       const pruned = await pruneBackups(pool, b.driveRoot);
       if (pruned.dumps + pruned.baseBackups + pruned.walFiles > 0) {
@@ -215,7 +228,7 @@ export function makeTasks(pool: pg.Pool, options: TaskOptions = {}): TaskList {
 export const CRONTAB = [
   '5 * * * * maintenance:prune_idempotency_keys',
   '* * * * * print:sweep',
-  '30 3 * * * maintenance:prune_logs',
+  '30 * * * * maintenance:prune_logs',
   '35 * * * * maintenance:prune_outbox',
   '* * * * * orders:escalate',
   '* * * * * orders:expire_unpaid_takeaway',

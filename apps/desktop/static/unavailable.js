@@ -11,6 +11,13 @@ const TEXT = {
     ],
     retry: true,
   },
+  starting: {
+    title: 'Starting Coffee Lounge',
+    tone: 'banner-warning',
+    message: 'The app opens by itself as soon as everything below is running.',
+    steps: [],
+    retry: true,
+  },
   certificate: {
     title: 'Server not trusted',
     tone: 'banner-danger',
@@ -59,6 +66,29 @@ if (detail) {
   byId('detail').hidden = false;
 }
 byId('version').textContent = window.coffeeLounge ? window.coffeeLounge.version : '';
+
+const MARK = { ok: '✓', working: '…', problem: '!' };
+window.coffeeLounge?.onServices?.((rows) => {
+  const list = byId('services');
+  list.replaceChildren(
+    ...rows.map((row) => {
+      const li = document.createElement('li');
+      li.className = `service service-${row.state}`;
+      li.dataset.service = row.id;
+      const mark = document.createElement('span');
+      mark.className = 'service-mark';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = MARK[row.state];
+      const label = document.createElement('strong');
+      label.textContent = row.label;
+      const message = document.createElement('span');
+      message.textContent = row.message;
+      li.append(mark, label, message);
+      return li;
+    }),
+  );
+  list.hidden = false;
+});
 
 const retry = byId('retry');
 if (text.retry && window.coffeeLounge) {

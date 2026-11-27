@@ -46,6 +46,13 @@ export const AREAS: readonly Area[] = [
     ready: true,
   },
   {
+    id: 'customers',
+    label: 'Customers',
+    path: '/customers',
+    anyOf: ['delivery.create'],
+    ready: true,
+  },
+  {
     id: 'inventory',
     label: 'Inventory',
     path: '/inventory',
@@ -88,13 +95,27 @@ export const AREAS: readonly Area[] = [
     anyOf: ['reports.sales', 'reports.profit', 'reports.inventory', 'reports.staff'],
     ready: true,
   },
+  {
+    id: 'old-sales',
+    label: 'Old POS sales',
+    path: '/old-sales',
+    anyOf: ['reports.sales'],
+    ready: true,
+  },
   { id: 'users', label: 'Users & roles', path: '/users', anyOf: ['users.manage'], ready: true },
   { id: 'devices', label: 'Devices', path: '/devices', anyOf: ['devices.manage'], ready: true },
   {
     id: 'settings',
     label: 'Settings',
     path: '/settings',
-    anyOf: ['settings.manage', 'printers.manage'],
+    anyOf: ['settings.manage'],
+    ready: true,
+  },
+  {
+    id: 'hardware',
+    label: 'Hardware',
+    path: '/hardware',
+    anyOf: ['printers.manage'],
     ready: true,
   },
   {

@@ -3,13 +3,14 @@
  * a forgotten password or PIN, and what each person may actually do: the effective
  * permissions with where each one comes from (a role, or an override), so the owner can
  * see the result of a change before anyone is surprised by it (AT-38). Role grants follow
- * RBAC.md: ○ may be given to a role, ✕ never, 🔒 stays the owner's (enforced by the server).
+ * The owner may give any permission (0032); RBAC.md's ✕ and 🔒 show as "Sensitive".
  */
+import { GROUPS, inWords } from './permission-words.ts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, messageOf } from '../../api/client.ts';
 import { permissionSet, ROLE_LABELS } from '../../auth/session.ts';
-import { Field, SelectField } from '../../components/Field.tsx';
+import { CheckField, Field, SelectField } from '../../components/Field.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 import { useSignedIn } from '../Shell.tsx';
@@ -673,16 +674,26 @@ function Roles() {
   });
   const [role, setRole] = useState('manager');
   const [reason, setReason] = useState('');
+  const [showKeys, setShowKeys] = useState(false);
   const change = useAccess();
   const r = catalog.data?.roles.find((x) => x.key === role);
   const granted = new Set(r?.grants.map((g) => g.key));
-  const reasonOk = reason.trim().length >= 3;
+  const why = reason.trim().length >= 3 ? reason.trim() : 'Changed by the owner';
+  const permissions = catalog.data?.permissions ?? [];
+  const known = new Set(GROUPS.flatMap((g) => g.modules));
+  const groups = [
+    ...GROUPS,
+    {
+      title: 'Other',
+      modules: [...new Set(permissions.map((p) => p.module))].filter((m) => !known.has(m)),
+    },
+  ];
   return (
     <section className="card stack" aria-labelledby="roles-head">
       <h2 id="roles-head">What each role may do</h2>
       <p className="muted">
-        A change applies to everyone with the role. ○ may be given to this role; ✕ never; 🔒 stays
-        the owner’s. Give one person something extra with an override on the People tab instead.
+        Tick what this role may do. It applies to everyone with the role. To give one person
+        something extra, use the People tab.
       </p>
       <div className="row">
         <SelectField
@@ -694,15 +705,15 @@ function Roles() {
           onChange={setRole}
         />
         <Field
-          label="Why the role changes"
+          label="Why (optional)"
           maxLength={200}
-          hint="Needed before ticking or unticking"
           value={reason}
           onChange={(e) => {
             setReason(e.target.value);
           }}
         />
       </div>
+      <CheckField label="Show technical names" checked={showKeys} onChange={setShowKeys} />
       {change.isError ? (
         <div role="alert" className="banner banner-danger">
           {messageOf(change.error)}
@@ -710,53 +721,44 @@ function Roles() {
       ) : null}
       {catalog.isPending ? <Loading label="Loading roles" /> : null}
       {r && catalog.data ? (
-        <table className="data" aria-label={`Permissions of ${r.name}`}>
-          <thead>
-            <tr>
-              <th scope="col">Permission</th>
-              <th scope="col">Key</th>
-              <th scope="col">Given</th>
-            </tr>
-          </thead>
-          <tbody>
-            {catalog.data.permissions.map((p) => {
-              const has = granted.has(p.key);
-              const forbidden = p.isProtected || r.policies[p.key] === 'forbidden';
-              return (
-                <tr key={p.key}>
-                  <td>{p.description}</td>
-                  <td>
-                    <code>{p.key}</code>
-                  </td>
-                  <td>
-                    {forbidden && !has ? (
-                      <span>{p.isProtected ? '🔒 owner only' : '✕ never'}</span>
-                    ) : (
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={has}
-                          disabled={!writes || !reasonOk || change.isPending}
-                          onChange={(e) => {
-                            change.mutate({
-                              path: `/roles/${role}/permissions/${p.key}${e.target.checked ? '' : `?reason=${encodeURIComponent(reason.trim())}`}`,
-                              method: e.target.checked ? 'PUT' : 'DELETE',
-                              ...(e.target.checked ? { body: { reason: reason.trim() } } : {}),
-                            });
-                          }}
-                        />
-                        <span className="visually-hidden">
-                          {has ? 'Given' : 'Not given'}: {p.key}
-                        </span>
-                        {has ? '' : r.policies[p.key] === 'grantable' ? ' ○' : ''}
-                      </label>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="stack" aria-label={`Permissions of ${r.name}`}>
+          {groups.map((g) => {
+            const inGroup = permissions.filter((p) => g.modules.includes(p.module));
+            if (inGroup.length === 0) return null;
+            const on = inGroup.filter((p) => granted.has(p.key)).length;
+            return (
+              <details key={g.title} className="perm-group">
+                <summary>
+                  <span>{g.title}</span>
+                  <span className="muted">
+                    {on} of {inGroup.length} allowed
+                  </span>
+                </summary>
+                {inGroup.map((p) => (
+                  <label key={p.key} className="perm-row">
+                    <input
+                      type="checkbox"
+                      checked={granted.has(p.key)}
+                      disabled={!writes || change.isPending}
+                      onChange={(e) => {
+                        change.mutate({
+                          path: `/roles/${role}/permissions/${p.key}${e.target.checked ? '' : `?reason=${encodeURIComponent(why)}`}`,
+                          method: e.target.checked ? 'PUT' : 'DELETE',
+                          ...(e.target.checked ? { body: { reason: why } } : {}),
+                        });
+                      }}
+                    />
+                    <span>{inWords(p.key, p.description)}</span>
+                    {p.isProtected || r.policies[p.key] === 'forbidden' ? (
+                      <span className="chip chip-warning">Sensitive</span>
+                    ) : null}
+                    {showKeys ? <code>{p.key}</code> : null}
+                  </label>
+                ))}
+              </details>
+            );
+          })}
+        </div>
       ) : null}
     </section>
   );

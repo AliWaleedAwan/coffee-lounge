@@ -10,13 +10,15 @@
  * elsewhere): CL_DESKTOP_CONFIG (config file; default on Windows
  * %ProgramData%\CoffeeLounge\desktop\desktop.json, elsewhere <userData>/desktop.json),
  * CL_USER_DATA_DIR (separate profile, used by tests), CL_DOWNLOAD_DIR (saves there without
- * the dialog, used by tests).
+ * the dialog, used by tests), CL_SC_STATE_FILE (pretend Windows services, used by tests).
  */
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, ipcMain, Menu, net, session, type Session } from 'electron';
+import { execFile } from 'node:child_process';
 import { ConfigError, loadDesktopConfig, type DesktopConfig } from './config.ts';
+import { coreRunning, fakeSc, ServiceSupervisor, type Sc, type ServiceRow } from './services.ts';
 import { chainOf, chromiumAcceptable, pinnedVerdict } from './pinning.ts';
 import {
   classifyLoadFailure,
@@ -31,15 +33,19 @@ import {
 const STATIC_DIR = fileURLToPath(new URL('../static/', import.meta.url));
 const STATIC_URL = pathToFileURL(STATIC_DIR).href;
 const PROBE_MS = 3_000;
+const PROBE_TIMEOUT_MS = 5_000;
+/** How long the staff app may take to load before this app's own screen takes over. */
+const LOAD_TIMEOUT_MS = 15_000;
 /** A certificate refusal this recent explains a failed load. */
 const CERT_FAILURE_WINDOW_MS = 10_000;
 
-type Reason = FailureKind | 'config';
+type Reason = FailureKind | 'config' | 'starting';
 
 const devOverride = (name: string): string | undefined =>
   app.isPackaged ? undefined : process.env[name] || undefined;
 const userDataOverride = devOverride('CL_USER_DATA_DIR');
 const downloadDirOverride = devOverride('CL_DOWNLOAD_DIR');
+const scStateOverride = devOverride('CL_SC_STATE_FILE');
 if (userDataOverride) app.setPath('userData', userDataOverride);
 if (!app.requestSingleInstanceLock()) app.quit();
 app.enableSandbox();
@@ -49,6 +55,10 @@ let config: DesktopConfig | null = null;
 let showing: 'app' | Reason | null = null;
 let probeTimer: NodeJS.Timeout | undefined;
 let lastCertFailure: { at: number; reason: string } | null = null;
+/** Set when the server runs on this PC under Windows (step 8.5); null anywhere else. */
+let supervisor: ServiceSupervisor | null = null;
+let rows: ServiceRow[] = [];
+let probing = false;
 
 const LOG_LIMIT = 1_000_000;
 /** JSON lines to stdout and to desktop.log in the profile folder (support, Windows CI). */
@@ -164,10 +174,23 @@ async function showApp(): Promise<void> {
   if (!window || !config) return;
   showing = 'app';
   stopProbe();
+  // A server that takes the connection but never answers would leave a white window for good:
+  // after a while this app's own screen comes up and keeps checking.
+  let answered = false;
+  const timer = setTimeout(() => {
+    if (!answered && showing === 'app') {
+      log('the server did not answer; showing the start-up screen');
+      showing = null;
+      showUnavailable(unreachableReason());
+    }
+  }, LOAD_TIMEOUT_MS);
   try {
     await window.loadURL(`${config.serverOrigin}/`);
   } catch {
     // did-fail-load shows the unavailable screen
+  } finally {
+    answered = true;
+    clearTimeout(timer);
   }
 }
 
@@ -184,17 +207,71 @@ function showUnavailable(reason: Reason, detail?: string): void {
   }
 }
 
+const systemSc: Sc = (args) =>
+  new Promise((resolve) => {
+    const sc = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'sc.exe');
+    execFile(sc, [...args], { windowsHide: true, timeout: 30_000 }, (error, stdout) => {
+      const code = error ? (typeof error.code === 'number' ? error.code : null) : 0;
+      resolve({ code, stdout });
+    });
+  });
+
+/** On the server PC: the services behind the app, started if they have stopped. */
+function makeSupervisor(cfg: DesktopConfig): ServiceSupervisor | null {
+  const local = ['127.0.0.1', 'localhost', '::1'].includes(cfg.serverHost);
+  // Real services only in the installed app: a development run has none of its own.
+  if (!local || (!scStateOverride && !(app.isPackaged && process.platform === 'win32')))
+    return null;
+  const programData = process.env['ProgramData'] ?? 'C:\\ProgramData';
+  return new ServiceSupervisor(
+    scStateOverride ? fakeSc(scStateOverride) : systemSc,
+    () => existsSync(cfg.maintenanceFlag ?? join(programData, 'CoffeeLounge', 'maintenance.flag')),
+    Date.now,
+    cfg.databaseService,
+  );
+}
+
+/** Updates the rows and the screen showing them. */
+async function checkServices(): Promise<void> {
+  if (!supervisor) return;
+  rows = await supervisor.check((service, result) => {
+    log('service start requested', { service, code: result.code });
+  });
+  sendRows();
+}
+
+function sendRows(): void {
+  const url = window?.webContents.getURL() ?? '';
+  if (rows.length > 0 && url.startsWith(STATIC_URL)) window?.webContents.send('cl:services', rows);
+}
+
+const unreachableReason = (): Reason =>
+  recentCertFailure() ? 'certificate' : supervisor ? 'starting' : 'unreachable';
+
 /** Asks the server whether it is up; opens the app as soon as it answers. */
 async function probe(): Promise<void> {
-  if (!config || showing === 'app') return;
+  if (!config || showing === 'app' || probing) return;
+  probing = true;
   try {
-    const res = await net.fetch(`${config.serverOrigin}/health/live`, { cache: 'no-store' });
+    await checkServices();
+    if (supervisor && !coreRunning(rows)) {
+      showUnavailable(unreachableReason());
+      return;
+    }
+    // A server still starting may take the request and never answer: without a limit this one
+    // check would wait for ever, and no later check would run (seen after an update).
+    const res = await net.fetch(`${config.serverOrigin}/health/live`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     if (res.ok) {
       log('server reachable; opening the app');
       await showApp();
     }
   } catch {
-    showUnavailable(recentCertFailure() ? 'certificate' : 'unreachable');
+    showUnavailable(unreachableReason());
+  } finally {
+    probing = false;
   }
 }
 
@@ -233,9 +310,10 @@ function createWindow(cfg: DesktopConfig | null): BrowserWindow {
     const kind = recentCertFailure() ? 'certificate' : classifyLoadFailure(code);
     if (!kind) return;
     log('app failed to load', { code, description, kind });
-    showUnavailable(kind);
+    showUnavailable(kind === 'unreachable' ? unreachableReason() : kind);
   });
   win.webContents.on('did-finish-load', () => {
+    sendRows();
     const url = new URL(win.webContents.getURL());
     log('page loaded', {
       page:
@@ -246,7 +324,13 @@ function createWindow(cfg: DesktopConfig | null): BrowserWindow {
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     log('page crashed; reloading', { reason: details.reason });
-    if (showing === 'app') void showApp();
+    // Whatever was showing comes back: the app, or this app's own screen (never left white).
+    const was = showing;
+    if (was === 'app') void showApp();
+    else if (was) {
+      showing = null;
+      showUnavailable(was);
+    }
   });
   win.on('closed', () => {
     window = null;
@@ -270,6 +354,7 @@ function defaultConfigFile(): string {
 ipcMain.on('cl:retry', (event) => {
   // Only the app's own unavailable screen may ask.
   if (!event.senderFrame?.url.startsWith(STATIC_URL)) return;
+  supervisor?.resetAttempts();
   void probe();
 });
 
@@ -296,6 +381,13 @@ void app.whenReady().then(async () => {
   }
   hardenSession(session.defaultSession, config);
   window = createWindow(config);
-  if (configProblem !== null) showUnavailable('config', configProblem);
+  if (configProblem !== null) {
+    showUnavailable('config', configProblem);
+    return;
+  }
+  supervisor = config && makeSupervisor(config);
+  await checkServices();
+  // All well: straight to the login, with no screen flashing past.
+  if (supervisor && !coreRunning(rows)) showUnavailable('starting');
   else await showApp();
 });

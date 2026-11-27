@@ -1,6 +1,6 @@
 /**
  * Effective permissions (RBAC.md §1): union of role grants and override grants, minus
- * override denies (deny always wins). Protected permissions apply to owners only.
+ * override denies (deny always wins). The owner may give anyone any permission (0032).
  * A permission granted without a scope is unrestricted; scoped grants accumulate.
  */
 import type { Queryable } from '../../platform/db/pool.ts';
@@ -37,7 +37,6 @@ export function resolveEffective(input: PermissionInputs): Map<string, Grant> {
   for (const g of input.roleGrants) add(g.key, g.scope, `role:${g.role}`);
   for (const o of input.overrides) if (o.effect === 'grant') add(o.key, null, 'override:grant');
   for (const o of input.overrides) if (o.effect === 'deny') result.delete(o.key);
-  if (!input.isOwner) for (const key of input.protectedKeys) result.delete(key);
   return result;
 }
 

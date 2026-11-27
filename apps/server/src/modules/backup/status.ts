@@ -24,6 +24,8 @@ export interface BackupHealth {
   /** The off-site copy (D-23): waiting is not a problem, only shown. */
   lastOffsite: { at: string; status: string; error: string | null } | null;
   archiver: { enabled: boolean; lastArchivedAt: string | null; lastFailedAt: string | null };
+  /** Change-log files were let go while the drive was away; a full backup follows its return. */
+  walGap: boolean;
   problem: BackupProblem | null;
   message: string | null;
 }
@@ -48,6 +50,7 @@ export class BackupWatch {
   private readonly publicKeyFile: string | undefined;
   private readonly now: () => Date;
   private readonly present: () => boolean;
+  private readonly walGapFile: string | undefined;
 
   constructor(options: {
     db: Queryable;
@@ -56,7 +59,9 @@ export class BackupWatch {
     now?: () => Date;
     /** Tests replace the drive probe. */
     drivePresent?: () => boolean;
+    walGapFile?: string | undefined;
   }) {
+    this.walGapFile = options.walGapFile;
     this.db = options.db;
     this.driveRoot = options.driveRoot;
     this.publicKeyFile = options.publicKeyFile;
@@ -135,7 +140,9 @@ export class BackupWatch {
       else if (last && (!lastSuccess || now.getTime() - lastSuccess.getTime() > DUMP_OVERDUE_MS))
         problem = 'dump_overdue';
     }
+    const walGap = this.walGapFile !== undefined && existsSync(this.walGapFile);
     return {
+      walGap,
       configured: this.configured,
       usbDrivePresent: present,
       driveMissingSince: this.missingSince?.toISOString() ?? null,
@@ -160,7 +167,11 @@ export class BackupWatch {
         lastFailedAt: a?.last_failed_time?.toISOString() ?? null,
       },
       problem,
-      message: problem ? MESSAGES[problem] : null,
+      message: problem
+        ? walGap && problem === 'drive_missing'
+          ? `${MESSAGES[problem]} It has been away long enough that the oldest changes are no longer kept to save space: a full backup is made as soon as it is back.`
+          : MESSAGES[problem]
+        : null,
     };
   }
 }

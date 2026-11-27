@@ -65,9 +65,10 @@ $good = Build-Variant 'upgrade-good' @{ '9998_upgrade_drill.sql' = 'CREATE TABLE
 if ((Install-From $good) -ne 0) { Write-Step (Last-Log); throw 'the upgrade failed' }
 Wait-Api
 if ((Invoke-SuperSql "SELECT to_regclass('cl.upgrade_drill') IS NOT NULL") -ne 't') { throw 'the new migration did not run' }
-if (-not (Test-Path (Join-Path $DataDir 'previous-version\app'))) { throw 'the previous version was not kept' }
+# Owner's request (Nov 2026): a successful update removes the old version.
+if (Test-Path (Join-Path $DataDir 'previous-version')) { throw 'the previous version was left behind after a successful update' }
 if (-not (Get-ChildItem (Join-Path $DataDir 'pre-upgrade') -Filter '*.dump')) { throw 'no pre-upgrade dump' }
-Write-Step 'Upgrade: new migration applied, previous version and pre-upgrade dump kept, API ready.'
+Write-Step 'Upgrade: new migration applied, old version removed, pre-upgrade dump kept, API ready.'
 
 # ---- 3. refused while a cash shift is open
 Invoke-SuperSql "INSERT INTO cl.cash_shifts (till_id, cashier_user_id, opening_float) SELECT t.id, u.id, 0 FROM cl.tills t, cl.users u WHERE u.is_owner LIMIT 1" | Out-Null

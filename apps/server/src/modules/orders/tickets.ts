@@ -259,6 +259,7 @@ export async function pickupQueue(db: Queryable, now: Date, uncollectedMinutes: 
     kind: string;
     accepted_at: Date;
     order_type: string;
+    started: boolean;
     table_name: string | null;
     session_no: string;
     session_id: string;
@@ -267,7 +268,7 @@ export async function pickupQueue(db: Queryable, now: Date, uncollectedMinutes: 
     open: number;
     display: { item: string; variant: string; modifiers: string[]; notes: string | null };
   }>(
-    `SELECT k.id::text AS ticket_id, k.ticket_no, k.kind, r.decided_at AS accepted_at, s.order_type,
+    `SELECT k.id::text AS ticket_id, k.ticket_no, k.kind, k.started_at IS NOT NULL AS started, r.decided_at AS accepted_at, s.order_type,
             t.name AS table_name, s.session_no, s.id::text AS session_id,
             l.id::text AS line_id, l.qty, (l.qty - l.qty_picked_up - l.qty_cancelled_unprepared) AS open, kl.display
        FROM cl.kitchen_tickets k
@@ -288,6 +289,7 @@ export async function pickupQueue(db: Queryable, now: Date, uncollectedMinutes: 
       where: string;
       sessionId: string;
       acceptedAt: string;
+      started: boolean;
       uncollected: boolean;
       lines: {
         orderLineId: string;
@@ -308,6 +310,7 @@ export async function pickupQueue(db: Queryable, now: Date, uncollectedMinutes: 
       where: whereOf(r),
       sessionId: r.session_id,
       acceptedAt: r.accepted_at.toISOString(),
+      started: r.started,
       uncollected: now.getTime() - r.accepted_at.getTime() >= uncollectedMinutes * 60_000,
       lines: [],
     };

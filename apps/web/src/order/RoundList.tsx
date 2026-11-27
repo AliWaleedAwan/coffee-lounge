@@ -21,13 +21,16 @@ export interface RoundLine {
 /** Where an accepted line is (ORDER_STATE_MACHINE.md §3, derived display status). */
 export function lineStatus(
   l: Pick<RoundLine, 'qty' | 'pickedUp' | 'served' | 'cancelled' | 'open'>,
+  preparing = false,
 ): string {
   if (l.cancelled >= l.qty) return 'Cancelled';
   const cancelled = l.cancelled > 0 ? ` · ${String(l.cancelled)} cancelled` : '';
   if (l.open > 0) {
     return (
       (l.pickedUp === 0
-        ? 'Being prepared'
+        ? preparing
+          ? 'Preparing'
+          : 'Sent to kitchen'
         : `Picked up ${String(l.pickedUp)}, ${String(l.open)} to come`) + cancelled
     );
   }
@@ -42,6 +45,8 @@ export interface Round {
   submittedAt: string;
   quotedTotal: string;
   afterBillRequest: boolean;
+  /** The kitchen has accepted it. */
+  preparing?: boolean;
   reason: string | null;
   mine?: boolean;
   lines: RoundLine[];
@@ -108,7 +113,7 @@ export function RoundList({
                     {l.priceLocked ? <span className="visually-hidden"> (price held)</span> : null}
                   </span>
                   {r.status === 'accepted' ? (
-                    <span className="muted line-status">{lineStatus(l)}</span>
+                    <span className="muted line-status">{lineStatus(l, r.preparing)}</span>
                   ) : null}
                   {r.status === 'accepted' && lineActions ? lineActions(l) : null}
                 </li>

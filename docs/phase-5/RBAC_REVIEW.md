@@ -35,7 +35,7 @@ Permissions in table 3.E that no route names are checked inside services (`inven
 
 <!-- generated:start (rbac-review.test.ts) -->
 
-### A. Every staff route (257)
+### A. Every staff route (280)
 
 Access: a permission key (checked before the handler, SEC-ALL), `session` (any logged-in user: their own data only), `device` (a registered device, before login), `public` (no device yet).
 
@@ -50,6 +50,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/assets/:id/changes` | `assets.manage` |
 | POST | `/assets/:id/dispose` | `assets.manage` |
 | POST | `/assets/:id/maintenance` | `assets.manage` |
+| POST | `/assets/categories` | `assets.manage` |
 | GET | `/assets/choices` | `assets.manage` |
 | GET | `/assignable-staff` | `tables.assign` |
 | GET | `/audit` | `audit.read` |
@@ -74,16 +75,24 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/cash-shifts/:id/movements` | `cash_shifts.operate` |
 | POST | `/cash-shifts/:id/report/reprint` | `cash_shifts.operate` |
 | GET | `/cash-shifts/current` | `cash_shifts.operate` |
+| GET | `/customers` | `delivery.create` |
+| GET | `/customers/lookup` | `delivery.create` |
 | GET | `/deliveries` | `delivery.create` |
 | GET | `/deliveries/:id` | `delivery.create` |
 | POST | `/deliveries/:id/dispatch` | `delivery.dispatch` |
 | POST | `/deliveries/:id/resolve` | `delivery.resolve_failed` |
 | POST | `/deliveries/:id/return` | `delivery.record_return` |
+| GET | `/demo` | device |
+| POST | `/demo/switch` | device |
+| POST | `/demo/wipe` | session |
 | GET | `/devices` | `devices.manage` |
 | POST | `/devices/:deviceId/revoke` | `devices.manage` |
 | POST | `/devices/register` | public |
+| POST | `/devices/register-this-pc` | public |
 | POST | `/devices/registration-codes` | `devices.manage` |
+| GET | `/devices/this-pc` | public |
 | POST | `/discounts/:id/void` | `discounts.apply` |
+| GET | `/drawer` | `drawer.open` |
 | GET | `/events` | session |
 | GET | `/expense-categories` | `expenses.read` |
 | POST | `/expense-categories` | `expenses.manage` |
@@ -98,6 +107,8 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/floor` | `tables.read` |
 | POST | `/imports/:template/apply` | `inventory.read` |
 | POST | `/imports/:template/preview` | `inventory.read` |
+| POST | `/imports/old-pos/apply` | `settings.manage` |
+| POST | `/imports/old-pos/preview` | `settings.manage` |
 | GET | `/imports/templates` | `inventory.read` |
 | GET | `/inventory/alerts` | `inventory.read` |
 | POST | `/inventory/alerts/:id/acknowledge` | `inventory.read` |
@@ -111,6 +122,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | POST | `/inventory/items/:id/barcodes` | `inventory.items_manage` |
 | GET | `/inventory/items/:id/movements` | `inventory.read` |
 | POST | `/inventory/items/:id/pack-sizes` | `inventory.items_manage` |
+| POST | `/inventory/lots/:id/expiry` | `inventory.items_manage` |
 | GET | `/inventory/overview` | `inventory.read` |
 | PATCH | `/inventory/pack-sizes/:id` | `inventory.items_manage` |
 | GET | `/inventory/scan` | `inventory.read` |
@@ -163,9 +175,15 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/printers` | `printers.manage` |
 | POST | `/printers` | `printers.manage` |
 | PATCH | `/printers/:id` | `printers.manage` |
+| POST | `/printers/:id/drawer/open` | `drawer.open` |
 | POST | `/printers/:id/retry-all` | `kitchen.reprint` |
 | POST | `/printers/:id/test` | `printers.manage` |
+| GET | `/printers/detect` | `printers.manage` |
 | GET | `/printers/status` | `kitchen.read` |
+| POST | `/products` | `inventory.items_manage` |
+| GET | `/products/by-item/:id` | `inventory.read` |
+| POST | `/products/by-item/:id/price` | `menu.price_change` |
+| GET | `/products/sell-scan` | `orders.create` |
 | GET | `/promotions` | `promotions.manage` |
 | POST | `/promotions` | `promotions.manage` |
 | PATCH | `/promotions/:id` | `promotions.manage` |
@@ -214,6 +232,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/reports/ledger/export` | `ledger.read` + `reports.export` |
 | GET | `/reports/menu-engineering` | `reports.profit` |
 | GET | `/reports/menu-engineering/export` | `reports.profit` + `reports.export` |
+| GET | `/reports/old-pos` | `reports.sales` |
 | GET | `/reports/operating-result` | `reports.profit` |
 | GET | `/reports/operating-result/export` | `reports.profit` + `reports.export` |
 | GET | `/reports/overview` | `reports.sales` |
@@ -277,6 +296,9 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | PATCH | `/suppliers/:id` | `suppliers.manage` |
 | GET | `/system/backup-status` | session |
 | GET | `/system/health` | `system.health` |
+| GET | `/system/update` | `system.update` |
+| POST | `/system/update` | `system.update` |
+| POST | `/system/update/check` | `system.update` |
 | GET | `/tables` | `tables.manage` |
 | POST | `/tables` | `tables.manage` |
 | PATCH | `/tables/:id` | `tables.manage` |
@@ -288,6 +310,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 | GET | `/tickets/:id` | `kitchen.read` |
 | POST | `/tickets/:id/pickup` | `kitchen.pickup` |
 | POST | `/tickets/:id/reprint` | `kitchen.reprint` |
+| POST | `/tickets/:id/start` | `kitchen.pickup` |
 | PUT | `/tills/:id/printer` | `printers.manage` |
 | GET | `/users` | `users.manage` |
 | POST | `/users` | `users.manage` |
@@ -323,7 +346,7 @@ Access: a permission key (checked before the handler, SEC-ALL), `session` (any l
 
 ### D. Owner-only (🔒) permissions
 
-`backup.restore`, `roles.manage`, `settings.financial`, `settings.mailbox`
+`backup.restore`, `roles.manage`, `settings.financial`, `settings.mailbox`, `system.update`
 
 ### E. Permissions no route names (checked inside services, or for later phases)
 

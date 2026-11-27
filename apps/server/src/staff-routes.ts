@@ -13,6 +13,7 @@ import { orderRoutes } from './modules/orders/index.ts';
 import { printingRoutes } from './modules/printing/index.ts';
 import { purchasingRoutes } from './modules/purchasing/index.ts';
 import { importRoutes } from './modules/imports/index.ts';
+import { oldPosRoutes } from './modules/oldpos/index.ts';
 import { assetRoutes } from './modules/assets/index.ts';
 import { auditRoutes } from './modules/audit/index.ts';
 import { expenseRoutes } from './modules/expenses/index.ts';
@@ -20,6 +21,8 @@ import { backupRoutes } from './modules/backup/index.ts';
 import { ledgerRoutes } from './modules/ledger/index.ts';
 import { mailRoutes, type MailDeps } from './modules/mail/index.ts';
 import { reportRoutes } from './modules/reports/index.ts';
+import { demoRoutes } from './modules/demo/index.ts';
+import { productRoutes } from './modules/products/index.ts';
 import { settingsRoutes } from './modules/settings/index.ts';
 import { stockRoutes } from './modules/stock/index.ts';
 import { registerStaffIdentity } from './modules/identity/index.ts';
@@ -52,7 +55,11 @@ export async function registerStaffRoutes(
 ): Promise<void> {
   await registerStaffIdentity(app, { pool: deps.pool, secureCookies: deps.secureCookies });
   await liveRoutes(app, { pool: deps.pool, hub: deps.hub, ...deps.live });
-  await systemRoutes(app, { health: deps.health });
+  await systemRoutes(app, {
+    health: deps.health,
+    pool: deps.pool,
+    updateDir: process.env['UPDATE_DIR'],
+  });
   await catalogRoutes(app, {
     pool: deps.pool,
     filesDir: deps.filesDir,
@@ -67,12 +74,15 @@ export async function registerStaffRoutes(
   await orderRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await printingRoutes(app, { pool: deps.pool });
   await settingsRoutes(app, { pool: deps.pool });
+  await productRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await demoRoutes(app, { pool: deps.pool, secureCookies: deps.secureCookies });
   await operationsRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await billingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await deliveryRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await stockRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await purchasingRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await importRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
+  await oldPosRoutes(app, { pool: deps.pool });
   await ledgerRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });
   await auditRoutes(app, { pool: deps.pool });
   await reportRoutes(app, { pool: deps.pool, ...(deps.now ? { now: deps.now } : {}) });

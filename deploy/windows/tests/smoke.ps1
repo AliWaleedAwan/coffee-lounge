@@ -2,15 +2,29 @@
 # on a clean machine, plus recovery from a crashed API and a crashed database
 # (WINDOWS_DEPLOYMENT.md §2, AT-17). Run as Administrator after install.ps1.
 param(
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
+  [string]$InstallDir = '',
+  [string]$PgDir = '',
+  [string]$DataDir = '',
   [string]$CaExportDir = '',
-  [int]$PgPort = 5432,
+  [int]$PgPort = 0,
   [string]$CounterUser = 'Counter',
   [string]$BackupDrive = 'B:\'
 )
 . (Join-Path $PSScriptRoot '..\lib.ps1')
+# Where this PC has Coffee Lounge (the owner's folder, or the default places).
+$location = Get-InstallLocation
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
+# The counter app's settings stay where Windows apps look for them.
+$DesktopDir = Join-Path $env:ProgramData 'CoffeeLounge\desktop'
+
+# The PostgreSQL the installer chose (own copy, or the one already on this PC).
+$Db = Get-DbConfig $DataDir
+if (-not $Db) { throw 'config\database.json is missing' }
+if (-not $PgDir) { $PgDir = $Db.PgDir }
+if (-not $PgPort) { $PgPort = [int]$Db.Port }
+$PgService = $Db.Service
+Write-Step "Database: $($Db.Mode), service $PgService, port $PgPort"
 
 $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Tls = Join-Path $DataDir 'config\tls'
@@ -78,7 +92,7 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
   }
   Check "$s depends on PostgreSQL and restarts after 5 s, 10 s, 30 s" {
     $deps = (Get-Service $s).ServicesDependedOn.Name
-    if ($deps -notcontains 'postgresql-x64-17') { throw "depends on: $deps" }
+    if ($deps -notcontains $PgService) { throw "depends on: $deps" }
     $failure = (& sc.exe qfailure $s) -join "`n"
     foreach ($ms in @('5000', '10000', '30000')) {
       if ($failure -notmatch "RESTART -- Delay = $ms") { throw "recovery actions: $failure" }
@@ -86,14 +100,17 @@ foreach ($s in @('coffeelounge-api', 'coffeelounge-worker')) {
     $true
   }
 }
-Check 'PostgreSQL runs automatically as NetworkService and listens on this PC only' {
-  $svc = Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'"
-  if ($svc.State -ne 'Running' -or $svc.StartMode -ne 'Auto') { throw "$($svc.State) $($svc.StartMode)" }
-  if ($svc.StartName -notmatch 'NetworkService') { throw "account $($svc.StartName)" }
-  $listen = Get-NetTCPConnection -State Listen -LocalPort $PgPort
-  $outside = $listen | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }
-  if ($outside) { throw "listening on $($outside.LocalAddress -join ', ')" }
-  $true
+# Only our own copy: one that was already on this PC keeps its owner's settings.
+if ($Db.Mode -eq 'own') {
+  Check 'PostgreSQL runs automatically as NetworkService and listens on this PC only' {
+    $svc = Get-CimInstance Win32_Service -Filter "Name='$PgService'"
+    if ($svc.State -ne 'Running' -or $svc.StartMode -ne 'Auto') { throw "$($svc.State) $($svc.StartMode)" }
+    if ($svc.StartName -notmatch 'NetworkService') { throw "account $($svc.StartName)" }
+    $listen = Get-NetTCPConnection -State Listen -LocalPort $PgPort
+    $outside = $listen | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }
+    if ($outside) { throw "listening on $($outside.LocalAddress -join ', ')" }
+    $true
+  }
 }
 
 # ------------------------------------------------------------------ listeners and TLS
@@ -137,18 +154,43 @@ Check 'the worker service prints RAW through a Windows print queue (spooler path
   if ($LASTEXITCODE -ne 0) { throw 'admin printer-add failed' }
   & $Node "--env-file=$envFile" $admin test-print --name $queue | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'admin test-print failed' }
+  # The file may first hold another job or a part of this one (seen after a reinstall), so
+  # wait for this job to be sent and its text to arrive, not just for any bytes.
   $deadline = (Get-Date).AddSeconds(120)
-  while ((Get-Date) -lt $deadline) {
-    if ((Test-Path $out) -and ((Get-Item $out).Length -gt 0)) { break }
+  $text = ''
+  do {
     Start-Sleep -Seconds 2
-  }
-  $last = Invoke-ServiceSql "SELECT status || ' ' || coalesce(last_error, '') FROM cl.print_jobs ORDER BY print_jobs.id DESC LIMIT 1"
+    $last = Invoke-ServiceSql "SELECT status || ' ' || coalesce(last_error, '') FROM cl.print_jobs ORDER BY print_jobs.id DESC LIMIT 1"
+    if (Test-Path $out) {
+      try { $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($out)) } catch { $text = '' } # the spooler still has it open
+    }
+  } while ((Get-Date) -lt $deadline -and -not ($last.Output.Trim() -eq 'sent' -and $text -match 'TEST PRINT'))
   if (-not (Test-Path $out)) { throw "nothing reached the queue; last job: $($last.Output)" }
-  Start-Sleep -Seconds 2 # let the spooler finish writing the file
-  $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($out))
   if ($text -notmatch 'TEST PRINT') { throw "the queue received other bytes; last job: $($last.Output)" }
   if ($last.Output.Trim() -ne 'sent') { throw "job status: $($last.Output)" }
   Write-Step ('  print: {0} bytes through "{1}"' -f (Get-Item $out).Length, $queue)
+  $true
+}
+Check 'the print queue is found by the same command the Hardware page runs (step 8.6)' {
+  $found = Get-Printer | Select-Object Name,DriverName,PortName | ConvertTo-Json -Compress
+  if ($found -notmatch 'CL Test Printer') { throw "found: $found" }
+  $true
+}
+Check 'the updater runs as SYSTEM, from a folder ordinary users and the server cannot change' {
+  $task = Get-ScheduledTask -TaskName 'Coffee Lounge updater' -ErrorAction Stop
+  if ($task.Principal.UserId -ne 'SYSTEM') { throw "runs as $($task.Principal.UserId)" }
+  $agent = Join-Path $DataDir 'update-agent'
+  $open = (Get-Acl $agent).Access | Where-Object { $_.IdentityReference.Value -match 'Users|Everyone|Authenticated|coffeelounge' }
+  if ($open) { throw "$agent open to $($open.IdentityReference -join ', ')" }
+  $status = Join-Path $DataDir 'update\status.json'
+  Remove-Item $status -ErrorAction SilentlyContinue
+  Start-ScheduledTask -TaskName 'Coffee Lounge updater'
+  $deadline = (Get-Date).AddSeconds(120)
+  while (-not (Test-Path $status) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+  if (-not (Test-Path $status)) { throw 'the updater wrote no status' }
+  $version = (Get-Content (Join-Path $InstallDir 'VERSION.txt') -TotalCount 1) -replace '^Coffee Lounge (\S+).*$', '$1'
+  $seen = (Get-Content -Raw $status | ConvertFrom-Json).current
+  if ($seen -ne $version) { throw "updater reads $seen, installed $version" }
   $true
 }
 Check 'the services log in without owner or superuser powers' {
@@ -174,8 +216,8 @@ Check 'the shop CA key is not on this PC (exported for the owner)' {
   $true
 }
 Check 'the counter app settings point at the server through the loopback address' {
-  $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
-  ($settings.serverUrl -eq 'https://127.0.0.1:8443') -and (Test-Path (Join-Path $DataDir 'desktop\coffee-lounge-root.pem'))
+  $settings = Get-Content -Raw (Join-Path $DesktopDir 'desktop.json') | ConvertFrom-Json
+  ($settings.serverUrl -eq 'https://127.0.0.1:8443') -and (Test-Path (Join-Path $DesktopDir 'coffee-lounge-root.pem'))
 }
 
 # ------------------------------------------------------------------ counter app (step 2.9b)
@@ -187,9 +229,10 @@ Check "the counter app is installed and opens at the $CounterUser login in full 
   if ($trigger.UserId -notmatch "\\$CounterUser$") { throw "starts for $($trigger.UserId)" }
   if ($task.Principal.RunLevel -ne 'Limited') { throw "runs with $($task.Principal.RunLevel) rights" }
   if (@($task.Actions)[0].Execute -ne $CounterExe) { throw "starts $(@($task.Actions)[0].Execute)" }
-  $settings = Get-Content -Raw (Join-Path $DataDir 'desktop\desktop.json') | ConvertFrom-Json
+  $settings = Get-Content -Raw (Join-Path $DesktopDir 'desktop.json') | ConvertFrom-Json
   if (-not $settings.fullscreen) { throw 'not full screen' }
   if (-not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Coffee Lounge.lnk'))) { throw 'no Start menu shortcut' }
+  if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Coffee Lounge.lnk'))) { throw 'no desktop icon' }
   $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CoffeeLounge' -ErrorAction Stop
   ($entry.DisplayName -eq 'Coffee Lounge') -and ($entry.UninstallString -match 'uninstall\.ps1')
 }
@@ -225,6 +268,64 @@ Check 'the installed counter app opens the staff app over the pinned HTTPS conne
   }
 }
 
+# ------------------------------------------------------------------ start-up screen (step 8.5)
+# The Counter user's rights and the app run as that user, not as this administrator.
+$counterPassword = 'Ci1!' + [guid]::NewGuid().ToString('N')
+Set-LocalUser -Name $CounterUser -Password (ConvertTo-SecureString $counterPassword -AsPlainText -Force)
+$counterCredential = New-Object Management.Automation.PSCredential("$env:COMPUTERNAME\$CounterUser", (ConvertTo-SecureString $counterPassword -AsPlainText -Force))
+function Invoke-AsCounter([string[]]$ScArguments) {
+  $p = Start-Process -FilePath 'sc.exe' -ArgumentList $ScArguments -Credential $counterCredential -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -Wait -PassThru
+  return $p.ExitCode
+}
+$startupServices = @($PgService, 'coffeelounge-api', 'coffeelounge-worker')
+Check "$CounterUser may start these services, but not stop or reconfigure them, nor start another" {
+  foreach ($s in $startupServices) {
+    $code = Invoke-AsCounter @('stop', $s)
+    if ($code -ne 5) { throw "stop $s answered $code" }
+    $code = Invoke-AsCounter @('config', $s, 'start=', 'disabled')
+    if ($code -ne 5) { throw "config $s answered $code" }
+    $code = Invoke-AsCounter @('start', $s)
+    if ($code -ne 1056) { throw "start $s answered $code" } # already running: the right was checked
+  }
+  $code = Invoke-AsCounter @('start', 'Spooler')
+  if ($code -ne 5 -and $code -ne 1056) { throw "start Spooler answered $code" }
+  $sddl = (& sc.exe sdshow 'Spooler') -join ''
+  $sid = (New-Object Security.Principal.NTAccount("$env:COMPUTERNAME\$CounterUser")).Translate([Security.Principal.SecurityIdentifier]).Value
+  if ($sddl -match [regex]::Escape($sid)) { throw 'the right reached the print service' }
+  $true
+}
+$counterLog = "C:\Users\$CounterUser\AppData\Roaming\Coffee Lounge\desktop.log"
+foreach ($stopped in @('coffeelounge-worker', 'coffeelounge-api', $PgService)) {
+  Check "$stopped stopped: the app, run as $CounterUser, starts it and opens" {
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'exit' -Credential $counterCredential -LoadUserProfile -WindowStyle Hidden -Wait | Out-Null
+    if (Test-Path $counterLog) { Remove-Item $counterLog -Force }
+    # The watchdog would start the database itself within a minute: this has to be the app.
+    $watchdog = 'Coffee Lounge database watchdog'
+    Disable-ScheduledTask -TaskName $watchdog | Out-Null
+    $app = $null
+    try {
+      Stop-Service -Name $stopped -Force
+      $app = Start-Process -FilePath $CounterExe -Credential $counterCredential -LoadUserProfile -WorkingDirectory (Split-Path $CounterExe) -PassThru
+      $deadline = (Get-Date).AddSeconds(180)
+      $text = ''
+      do {
+        Start-Sleep -Seconds 3
+        if (Test-Path $counterLog) { $text = Get-Content -Raw $counterLog }
+      } while (-not ($text -match "service start requested.*$stopped" -and $text -match '"page loaded","page":"https://127\.0\.0\.1:8443/') -and (Get-Date) -lt $deadline)
+      ($text -split "`n") | Select-Object -Last 8 | ForEach-Object { if ($_) { Write-Step "  app log: $_" } }
+      if ($text -notmatch "service start requested.*$stopped") { throw 'the app did not start the service' }
+      if ($text -notmatch '"page loaded","page":"https://127\.0\.0\.1:8443/') { throw 'the app did not open' }
+      if ((Get-Service $stopped).Status -ne 'Running') { throw 'the service is not running' }
+    } finally {
+      Get-Process -Name 'CoffeeLounge' -ErrorAction SilentlyContinue | Stop-Process -Force
+      Enable-ScheduledTask -TaskName $watchdog | Out-Null
+      # Stopping the database also stopped what depends on it.
+      foreach ($s in $startupServices) { if ((Get-Service $s).Status -ne 'Running') { Start-Service -Name $s } }
+    }
+    Wait-Ready 120
+  }
+}
+
 # ------------------------------------------------------------------ recovery
 Check 'a crashed API is restarted by Windows and serves again' {
   $before = Get-ServiceNodePid 'coffeelounge-api'
@@ -241,7 +342,7 @@ Check 'a crashed API is restarted by Windows and serves again' {
 Check 'a crashed database process is recovered by PostgreSQL and the API carries on (AT-17)' {
   # The postmaster is the child of the pg_ctl service process; kill one of its backends,
   # as a crash would. PostgreSQL then resets every connection and recovers on its own.
-  $wrapper = (Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'").ProcessId
+  $wrapper = (Get-CimInstance Win32_Service -Filter "Name='$PgService'").ProcessId
   $postmaster = Get-CimInstance Win32_Process -Filter "ParentProcessId=$wrapper AND Name='postgres.exe'"
   # A client backend (not the logger or another helper process): its command line says so.
   $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($postmaster.ProcessId) AND Name='postgres.exe'")
@@ -249,11 +350,11 @@ Check 'a crashed database process is recovered by PostgreSQL and the API carries
   if (-not $backend) { throw ("no client backend among: " + (($children | ForEach-Object { $_.CommandLine }) -join ' | ')) }
   Stop-Process -Id $backend.ProcessId -Force
   Start-Sleep -Seconds 5
-  if ((Get-Service 'postgresql-x64-17').Status -ne 'Running') { throw 'PostgreSQL service stopped' }
+  if ((Get-Service $PgService).Status -ne 'Running') { throw 'PostgreSQL service stopped' }
   if (-not (Wait-Ready 120)) { throw 'API not ready again' }
-  $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
+  $log = Get-ChildItem (Join-Path $Db.DataDir 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
   # Evidence only: how PostgreSQL logs a killed child depends on its exit code.
-  Get-Content $log.FullName -Tail 8 | ForEach-Object { Write-Step "  pg log: $_" }
+  if ($log) { Get-Content $log.FullName -Tail 8 | ForEach-Object { Write-Step "  pg log: $_" } }
   ((Get-Service 'coffeelounge-api').Status -eq 'Running') -and ((Get-Service 'coffeelounge-worker').Status -eq 'Running')
 }
 
@@ -276,8 +377,8 @@ Check 'backups: WAL segments are archived to the drive, encrypted, by PostgreSQL
   if ($ok -ne 't') { throw 'the archiver did not archive the switched segment (or keeps failing)' }
   $files = @(Get-ChildItem $wal -Filter '*.gz.age' -ErrorAction SilentlyContinue)
   if ($files.Count -eq 0) {
-    $log = Get-ChildItem (Join-Path $DataDir 'pgdata\log') | Sort-Object LastWriteTime | Select-Object -Last 1
-    Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" }
+    $log = Get-ChildItem (Join-Path $Db.DataDir 'log') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($log) { Get-Content $log.FullName -Tail 12 | ForEach-Object { Write-Step "  pg log: $_" } }
     throw "no archived segment in $wal"
   }
   $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($files[0].FullName), 0, 21)

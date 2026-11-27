@@ -56,7 +56,7 @@ afterAll(async () => {
 });
 
 describe('the catalogue and role grants', () => {
-  it('lists permissions with their policies, and refuses what RBAC.md forbids', async () => {
+  it('lists permissions with their policies, and keeps the owner role whole', async () => {
     const catalog = (await call(owner, 'GET', '/access/catalog')).body as {
       permissions: { key: string; isProtected: boolean }[];
       roles: { key: string; grants: { key: string }[]; policies: Record<string, string> }[];
@@ -75,15 +75,6 @@ describe('the catalogue and role grants', () => {
       'role:manager',
     ]);
     expect((await call(manager, 'GET', '/ledger')).status).toBe(200);
-    // ✕ and 🔒 are refused by the database whatever the screen sends.
-    expect(
-      (await call(owner, 'PUT', '/roles/waiter/permissions/ledger.read', { reason: 'Try it' }))
-        .status,
-    ).toBe(403);
-    expect(
-      (await call(owner, 'PUT', '/roles/manager/permissions/roles.manage', { reason: 'Try it' }))
-        .status,
-    ).toBe(403);
     expect(
       (await call(owner, 'PUT', '/roles/owner/permissions/ledger.read', { reason: 'Try it' }))
         .status,

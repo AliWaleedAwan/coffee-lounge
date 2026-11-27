@@ -10,20 +10,29 @@
 param(
   [Parameter(Mandatory)] [string]$KeyFile,
   [string]$PointInTime = 'latest',
-  [string]$InstallDir = 'C:\Program Files\CoffeeLounge',
-  [string]$PgDir = 'C:\Program Files\PostgreSQL\17',
-  [string]$DataDir = 'C:\ProgramData\CoffeeLounge',
-  [int]$PgPort = 5432,
+  [string]$InstallDir = '',
+  [string]$DataDir = '',
   [switch]$Unattended
 )
 . (Join-Path $PSScriptRoot 'lib.ps1')
+$location = Get-InstallLocation
+if (-not $InstallDir) { $InstallDir = $location.InstallDir }
+if (-not $DataDir) { $DataDir = $location.DataDir }
 
 if (-not (Test-Admin)) { throw 'Run the restore as an Administrator.' }
 $Node = Join-Path $InstallDir 'runtime\node.exe'
 $Admin = Join-Path $InstallDir 'app\dist\admin.js'
 $EnvFile = Join-Path $DataDir 'config\server.env'
-$PgData = Join-Path $DataDir 'pgdata'
-$PgService = 'postgresql-x64-17'
+$db = Get-DbConfig $DataDir
+if (-not $db) { $db = [pscustomobject]@{ Mode = 'own'; Service = 'postgresql-x64-17'; Port = 5432; PgDir = 'C:\Program Files\PostgreSQL\17'; DataDir = (Join-Path $DataDir 'pgdata') } }
+# A point-in-time restore replaces the whole PostgreSQL, and with it the other programs' data.
+if ($db.Mode -eq 'shared') {
+  throw 'This shop uses the PostgreSQL that was already on this PC, which other programs share, so it cannot be rewound as a whole. Restore the nightly copy instead: run the setup with -RestoreFrom latest (BACKUP_RECOVERY.md).'
+}
+$PgData = $db.DataDir
+$PgService = $db.Service
+$PgPort = [int]$db.Port
+$PgDir = $db.PgDir
 $AppServices = @('coffeelounge-api', 'coffeelounge-worker')
 if (-not (Test-Path $KeyFile)) { throw "The backup key $KeyFile is not there: plug in the owner's USB key." }
 $target = 'latest'
@@ -50,11 +59,11 @@ New-Item -ItemType Directory -Force -Path $PgData | Out-Null
 # PostgreSQL's own account reads the key while it replays the WAL; the copy is removed after.
 $replayKey = Join-Path $DataDir 'restore-key.txt'
 Copy-Item $KeyFile $replayKey -Force
-Set-RestrictedAcl -Path $replayKey -Read @('NT AUTHORITY\NETWORK SERVICE')
+Set-RestrictedAcl -Path $replayKey -Read @('*S-1-5-20')
 try {
   Invoke-Native -FilePath $Node -Arguments @("--env-file=$EnvFile", $Admin, 'restore-prepare', '--key', $replayKey, '--to', $PgData, '--time', $target) | Out-Null
-  Set-RestrictedAcl -Path $PgData -Modify @('NT AUTHORITY\NETWORK SERVICE')
-  Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M', '/T', '/Q') | Out-Null
+  Set-RestrictedAcl -Path $PgData -Modify @('*S-1-5-20')
+  Invoke-Native -FilePath 'icacls.exe' -Arguments @($PgData, '/grant', '*S-1-5-20:(OI)(CI)M', '/T', '/Q') | Out-Null
   Write-Step 'Starting PostgreSQL to replay the archived changes'
   try {
     Start-Service -Name $PgService

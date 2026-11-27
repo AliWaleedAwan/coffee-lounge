@@ -230,6 +230,19 @@ export async function orderRoutes(app: FastifyInstance, options: OrderRouteOptio
     },
   );
 
+  /** The kitchen accepts a ticket: the order now reads "Preparing". Nothing else changes. */
+  app.post('/tickets/:id/start', { config: { permission: 'kitchen.pickup' } }, async (request) => {
+    const ticketId = idParam(request);
+    parseInput(z.object({}).strict(), request.body ?? {});
+    const { rowCount } = await pool.query(
+      `UPDATE cl.kitchen_tickets SET started_at = COALESCE(started_at, now())
+        WHERE id = $1 AND status = 'open' AND kind IN ('new','supplement')`,
+      [ticketId],
+    );
+    if (rowCount === 0) throw new AppError('NOT_FOUND', 'No such open ticket');
+    return { started: true };
+  });
+
   app.post(
     '/tickets/:id/pickup',
     { config: { permission: 'kitchen.pickup' } },

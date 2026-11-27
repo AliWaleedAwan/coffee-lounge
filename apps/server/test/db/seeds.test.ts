@@ -45,6 +45,7 @@ describe('access seed matches docs/RBAC.md', () => {
       'roles.manage',
       'settings.financial',
       'settings.mailbox',
+      'system.update',
     ]);
   });
 
@@ -119,11 +120,15 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
     expect(new Set(rows.map((r) => r.key))).toEqual(documented);
     expect(Object.fromEntries(rows.map((r) => [r.key, r.value]))).toEqual({
       'assets.categories': [
+        'Furniture',
+        'Cutlery & crockery',
+        'Kitchen equipment',
         'Coffee equipment',
         'Refrigeration',
-        'Kitchen equipment',
-        'Furniture',
+        'Devices & electronics',
         'POS hardware',
+        'Decoration',
+        'Cleaning',
         'Other',
       ],
       'assets.locations': ['Bar', 'Kitchen', 'Dining area', 'Store room', 'Office'],
@@ -137,6 +142,9 @@ describe('settings seed matches docs/DECISIONS.md §4', () => {
       'orders.takeaway_unpaid_expiry_minutes': 30,
       'orders.uncollected_alert_minutes': 30,
       'privacy.delivery_pii_retention_months': 12,
+      'security.logout_counter_minutes': 10,
+      'security.logout_manager_minutes': 5,
+      'security.logout_waiter_minutes': 5,
       'refunds.reasons': [
         'Wrong order',
         'Quality',

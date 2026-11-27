@@ -34,6 +34,29 @@ export const SESSION_IDLE_MS: Record<DeviceKind, number> = {
   manager: 5 * MINUTE,
   kitchen: 12 * 60 * MINUTE, // device-bound kitchen screen (inactive while D-33 holds)
 };
+/** The owner's setting for each kind, in minutes (0 = never); the kitchen keeps its own. */
+const LOGOUT_SETTING: Partial<Record<DeviceKind, string>> = {
+  reception: 'security.logout_counter_minutes',
+  inventory: 'security.logout_counter_minutes',
+  manager: 'security.logout_manager_minutes',
+  waiter: 'security.logout_waiter_minutes',
+};
+
+/** Seconds a session may sit idle on this kind of device, as the owner set it. */
+export async function idleSeconds(db: Queryable, kind: DeviceKind): Promise<number> {
+  const key = LOGOUT_SETTING[kind];
+  if (!key) return SESSION_IDLE_MS[kind] / 1000;
+  const { rows } = await db.query<{ value: unknown }>(
+    'SELECT value FROM cl.system_settings WHERE key = $1',
+    [key],
+  );
+  const minutes = rows[0]?.value;
+  // A missing or damaged value falls back to the built-in one rather than locking everyone out.
+  if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes < 0 || minutes > 720)
+    return SESSION_IDLE_MS[kind] / 1000;
+  return minutes === 0 ? SESSION_ABSOLUTE_MS / 1000 : minutes * 60;
+}
+
 export const REGISTRATION_CODE_TTL_MS = 10 * MINUTE;
 export const STEP_UP_TTL_MS = 2 * MINUTE;
 const MAX_FAILURES = 5;
@@ -250,6 +273,64 @@ export async function createRegistrationCode(
   throw new Error('could not create a unique registration code');
 }
 
+/**
+ * The counter PC registers itself (owner's request, Nov 2026: setup entirely in the app). Only
+ * a request from this PC's own address qualifies: the server runs on the counter PC, and
+ * trustProxy is off, so no other device can claim it. Every other device still needs a code.
+ */
+const THIS_PC = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+export function isThisPc(ip: string | undefined): boolean {
+  return ip !== undefined && THIS_PC.has(ip);
+}
+
+async function activeOwner(db: Queryable): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    `SELECT id::text FROM cl.users WHERE is_owner AND status = 'active' ORDER BY users.id LIMIT 1`,
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Whether this request may register its device as the counter PC without a code. */
+export async function thisPcCanRegister(db: Queryable, ip: string | undefined): Promise<boolean> {
+  return isThisPc(ip) && (await activeOwner(db)) !== null;
+}
+
+export async function registerThisPc(
+  pool: pg.Pool,
+  facts: RequestFacts,
+): Promise<{ token: string; device: DeviceInfo }> {
+  if (!isThisPc(facts.ip)) {
+    throw new AppError('FORBIDDEN', 'Only the counter PC itself registers without a code');
+  }
+  const { token, hash } = newToken();
+  return withTransaction(pool, async (tx) => {
+    const owner = await activeOwner(tx);
+    if (!owner) throw new AppError('VALIDATION_FAILED', 'Create the owner account first');
+    const { rows } = await tx.query<{ id: string }>(
+      `INSERT INTO cl.devices (name, kind, ownership, token_hash, registered_by)
+       VALUES ('Counter PC', 'reception', 'shop', $1, $2) RETURNING id::text`,
+      [hash, owner],
+    );
+    const deviceId = rows[0]?.id ?? '';
+    await audit(tx, SYSTEM, facts, {
+      action: 'device.register_this_pc',
+      entityType: 'device',
+      entityId: deviceId,
+      after: { name: 'Counter PC', kind: 'reception', ownership: 'shop' },
+    });
+    return {
+      token,
+      device: {
+        id: deviceId,
+        name: 'Counter PC',
+        kind: 'reception',
+        ownership: 'shop',
+        status: 'active',
+      },
+    };
+  });
+}
+
 export async function registerDevice(
   pool: pg.Pool,
   code: string,
@@ -456,7 +537,7 @@ async function startSession(
     `INSERT INTO cl.auth_sessions (token_hash, user_id, device_id, idle_expires_at, absolute_expires_at)
      VALUES ($1, $2, $3, now() + make_interval(secs => $4), now() + make_interval(secs => $5))
      RETURNING id::text`,
-    [hash, user.id, device.id, SESSION_IDLE_MS[device.kind] / 1000, SESSION_ABSOLUTE_MS / 1000],
+    [hash, user.id, device.id, await idleSeconds(tx, device.kind), SESSION_ABSOLUTE_MS / 1000],
   );
   await tx.query('UPDATE cl.users SET last_login_at = now() WHERE id = $1', [user.id]);
   await writeAudit(
@@ -523,6 +604,22 @@ export async function pinSwitch(
   return { token: outcome.token, userId: outcome.userId };
 }
 
+/** Demo mode (modules/demo): become one of the made-up people, without a secret. */
+export async function startDemoSession(
+  pool: pg.Pool,
+  device: DeviceInfo,
+  username: string,
+  demoUserIds: readonly string[],
+  facts: RequestFacts,
+): Promise<string> {
+  return withTransaction(pool, async (tx) => {
+    const user = await lockUser(tx, { username });
+    if (!user || !demoUserIds.includes(user.id))
+      throw new AppError('NOT_FOUND', 'No such demo person');
+    return startSession(tx, user, device, facts, 'demo_switch');
+  });
+}
+
 /**
  * Resolves a session cookie on a device; null when missing, expired, revoked or mismatched.
  * `extend: false` (background reads the user did not trigger) leaves the idle timer
@@ -553,7 +650,7 @@ export async function sessionForToken(
         AND u.id = s.user_id AND u.status = 'active'
       RETURNING s.id::text AS session_id, u.id::text AS user_id, u.username, u.display_name,
                 u.is_owner, u.must_change_password`,
-    [hashToken(token), device.id, SESSION_IDLE_MS[device.kind] / 1000, extend],
+    [hashToken(token), device.id, await idleSeconds(db, device.kind), extend],
   );
   const row = rows[0];
   if (!row) return null;
@@ -885,6 +982,24 @@ export async function setUserStatus(
   }
 }
 
+/** Only an owner hands out what RBAC.md keeps from a role or from everyone but the owner. */
+async function requireOwnerForSensitive(
+  tx: Tx,
+  auth: AuthContext,
+  permissionKey: string,
+  roleKey: string | null,
+): Promise<void> {
+  if (auth.user.isOwner) return;
+  const { rows } = await tx.query(
+    `SELECT 1 FROM cl.permissions p
+      WHERE p.key = $1 AND (p.is_protected OR EXISTS (
+        SELECT 1 FROM cl.role_permission_policy x JOIN cl.roles r ON r.id = x.role_id
+         WHERE x.permission_key = p.key AND x.policy = 'forbidden' AND ($2::text IS NULL OR r.key = $2)))`,
+    [permissionKey, roleKey],
+  );
+  if (rows.length > 0) throw new AppError('FORBIDDEN', 'Only an owner can give this permission');
+}
+
 export async function setPermissionOverride(
   pool: pg.Pool,
   auth: AuthContext,
@@ -893,6 +1008,8 @@ export async function setPermissionOverride(
 ): Promise<void> {
   try {
     await withTransaction(pool, async (tx) => {
+      if (input.effect === 'grant')
+        await requireOwnerForSensitive(tx, auth, input.permissionKey, null);
       const { rows: before } = await tx.query<{ effect: string }>(
         'SELECT effect FROM cl.user_permission_overrides WHERE user_id = $1 AND permission_key = $2',
         [input.userId, input.permissionKey],
@@ -1098,6 +1215,8 @@ export async function setRoleGrant(
       );
       const role = rows[0];
       if (!role) throw new AppError('NOT_FOUND', 'No such role');
+      if (input.granted)
+        await requireOwnerForSensitive(tx, auth, input.permissionKey, input.roleKey);
       const changed = input.granted
         ? await tx.query(
             `INSERT INTO cl.role_permissions (role_id, permission_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

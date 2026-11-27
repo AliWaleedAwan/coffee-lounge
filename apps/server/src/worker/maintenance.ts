@@ -67,26 +67,62 @@ export class Heartbeat {
 }
 
 export const LOG_RETENTION_DAYS = 30;
+/** Owner's request (Nov 2026): logs never take more than this, whatever their age. */
+export const LOG_MAX_BYTES = 200 * 1024 * 1024;
 
 /**
  * W-3 (WINDOWS_DEPLOYMENT.md §8): the service wrapper rolls logs daily but never deletes
- * them. Deletes files in the log folder not written to for `days`. Only plain files at
- * the top of the folder; nothing outside it.
+ * them. Deletes files in the log folder not written to for `days`, then the oldest until
+ * the folder holds at most `maxBytes`. A file written in the last hour stays (it is being
+ * written). Only plain files at the top of the folder; nothing outside it.
  */
 export async function pruneLogs(
   dir: string,
   now: Date,
   days = LOG_RETENTION_DAYS,
+  maxBytes = LOG_MAX_BYTES,
 ): Promise<number> {
   const cutoff = now.getTime() - days * 86_400_000;
+  const recent = now.getTime() - 3_600_000;
   let removed = 0;
+  const kept: { file: string; size: number; at: number }[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const file = join(dir, entry.name);
-    if ((await stat(file)).mtimeMs < cutoff) {
+    const s = await stat(file);
+    if (s.mtimeMs < cutoff) {
       await rm(file, { force: true });
       removed += 1;
-    }
+    } else kept.push({ file, size: s.size, at: s.mtimeMs });
+  }
+  let total = kept.reduce((n, k) => n + k.size, 0);
+  for (const k of kept.sort((a, b) => a.at - b.at)) {
+    if (total <= maxBytes) break;
+    if (k.at >= recent) continue;
+    await rm(k.file, { force: true });
+    total -= k.size;
+    removed += 1;
   }
   return removed;
+}
+
+/**
+ * Releases job and queue locks left by a worker that was killed mid-job (a service stop
+ * during uninstall or upgrade). The shop runs one worker service, so at its start-up every
+ * lock is stale. Without this, graphile-worker keeps the queue (e.g. a printer's) locked
+ * for 4 hours and nothing on it runs.
+ */
+export async function releaseStaleLocks(db: Queryable): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(
+    `WITH j AS (
+       UPDATE graphile_worker._private_jobs
+          SET locked_at = NULL, locked_by = NULL
+        WHERE locked_at IS NOT NULL RETURNING 1),
+     q AS (
+       UPDATE graphile_worker._private_job_queues
+          SET locked_at = NULL, locked_by = NULL
+        WHERE locked_at IS NOT NULL RETURNING 1)
+     SELECT (SELECT count(*) FROM j)::int + (SELECT count(*) FROM q)::int AS n`,
+  );
+  return rows[0]?.n ?? 0;
 }

@@ -57,8 +57,19 @@ jobs:
         run: corepack pnpm verify
 
   windows:
-    name: Install on Windows (AT-47)
+    name: Install on Windows (AT-47, ${{ matrix.postgres }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # clean: no PostgreSQL, so ours is installed (and every drill runs). beside: another version
+        # already runs on 5432, so ours goes next to it. shared: PostgreSQL 17 is already there and
+        # is used, with its password (owner's decision, Nov 2026).
+        # custom-dir: the owner chose D:\Coffee Lounge (a space, another drive) on the first install.
+        postgres: [clean, beside, shared, shared-own, custom-dir]
     env:
+      CL_PG_SUPERPASSWORD: ci-existing-pg-${{ github.run_id }}-password
+      # shared-own: PostgreSQL 17 is there, but the owner chose to run ours beside it.
+      CL_PG_MODE: ${{ matrix.postgres == 'shared-own' && 'own' || '' }}
       # One shop CA passphrase for the whole job: the restore drill reuses the root (step 7.3).
       CL_CA_PASSPHRASE: ci-ca-${{ github.run_id }}-${{ github.run_attempt }}-passphrase
       # The test owner's password, for the load script too (step 7.5).
@@ -79,12 +90,31 @@ jobs:
           corepack pnpm install --frozen-lockfile --ignore-scripts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Remove the runner's own PostgreSQL services (a clean machine has none)
+        if: matrix.postgres != 'beside'
         run: |
           Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | ForEach-Object {
             Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue
             sc.exe delete $_.Name | Out-Null
             Write-Host "removed $($_.Name)"
           }
+      - name: Another PostgreSQL version already running on 5432
+        if: matrix.postgres == 'beside'
+        run: |
+          $other = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*-17' } | Select-Object -First 1
+          if (-not $other) {
+            choco install postgresql16 --params "/Password:$env:CL_PG_SUPERPASSWORD" -y --no-progress
+            $other = Get-Service -Name 'postgresql*16*' | Select-Object -First 1
+          }
+          Set-Service -Name $other.Name -StartupType Automatic
+          Start-Service -Name $other.Name
+          Get-NetTCPConnection -State Listen -LocalPort 5432 | Select-Object -First 1 | Format-List LocalAddress, LocalPort
+          Write-Host "running: $($other.Name)"
+      - name: PostgreSQL 17 already installed (the shop's own)
+        if: startsWith(matrix.postgres, 'shared')
+        run: |
+          choco install postgresql17 --params "/Password:$env:CL_PG_SUPERPASSWORD" -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Service -Name 'postgresql*' | Format-Table Name, Status
       - name: Create the Counter Windows account (H-9, done by the technician before installing)
         run: |
           $password = ConvertTo-SecureString ('Ci1!' + [guid]::NewGuid().ToString('N')) -AsPlainText -Force
@@ -94,36 +124,59 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-bundle.ps1
       - name: Build CoffeeLounge-Setup.exe (NSIS)
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\build-installer.ps1
+      - name: Keep the installer for download
+        if: matrix.postgres == 'clean'
+        # A copy for testing only (releases are kept elsewhere): a full storage quota is no failure.
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: CoffeeLounge-Setup
+          path: out/CoffeeLounge-Setup-*.exe
+          retention-days: 2
+          if-no-files-found: error
       - name: Install with CoffeeLounge-Setup.exe (unattended)
+        env:
+          CASE: ${{ matrix.postgres }}
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
+          if ($env:CASE -eq 'custom-dir') { $env:CL_INSTALL_BASE = 'D:\Coffee Lounge' }
           # A folder stands in for the CL-BACKUP drive; PostgreSQL's account must write to it, as on B:\.
           New-Item -ItemType Directory -Force -Path 'C:\cl-test-drive' | Out-Null
           icacls 'C:\cl-test-drive' /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+          # As on a PC whose PATH lost the Windows folders (seen on a real laptop): the setup must not care.
+          # Only for the setup itself, after this step's own commands.
+          if ($env:CASE -eq 'beside') { $env:Path = 'C:\cl-no-such-folder' }
           $p = Start-Process -FilePath $setup -ArgumentList @('-Unattended', '-SkipHostSettings', '-CaExportDir', "$env:RUNNER_TEMP\owner-usb", '-BackupDrive', 'C:\cl-test-drive') -Wait -PassThru
-          Get-ChildItem C:\ProgramData\CoffeeLounge\logs -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
+          $data = 'C:\ProgramData\CoffeeLounge'
+          if (Test-Path 'HKLM:\SOFTWARE\CoffeeLounge') { $data = (Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge').DataDir }
+          Get-ChildItem (Join-Path $data 'logs') -Filter 'install-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1 | Get-Content
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
       - name: Check the counter app's fuses
         working-directory: apps/desktop
         run: |
-          node scripts\fuses.mjs check 'C:\Program Files\CoffeeLounge\desktop\CoffeeLounge.exe'
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          node scripts\fuses.mjs check (Join-Path $loc.InstallDir 'desktop\CoffeeLounge.exe')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create the owner account
         run: |
-          & 'C:\Program Files\CoffeeLounge\runtime\node.exe' '--env-file=C:\ProgramData\CoffeeLounge\config\server.env' 'C:\Program Files\CoffeeLounge\app\dist\admin.js' create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          & (Join-Path $loc.InstallDir 'runtime\node.exe') "--env-file=$(Join-Path $loc.DataDir 'config\server.env')" (Join-Path $loc.InstallDir 'app\dist\admin.js') create-owner --username owner --name Owner | Select-String -NotMatch 'RECOVERY CODE'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: AT-47 checks
         run: powershell -ExecutionPolicy Bypass -File deploy\windows\tests\smoke.ps1 -CaExportDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive'
       - name: Load and power cut (AC-PERF-1/2, AT-56; step 7.5)
+        if: matrix.postgres == 'clean'
         run: |
           powershell -ExecutionPolicy Bypass -File deploy\windows\tests\power-cut-drill.ps1 -OwnerPassword $env:CL_OWNER_PASSWORD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Restore drills (DRILL-1 point in time, AT-22 replacement PC; step 7.3)
+        if: matrix.postgres == 'clean'
         run: |
           $setup = (Get-ChildItem out\CoffeeLounge-Setup-*.exe | Select-Object -First 1).FullName
           powershell -ExecutionPolicy Bypass -File deploy\windows\tests\restore-drill.ps1 -UsbDir "$env:RUNNER_TEMP\owner-usb" -BackupDrive 'C:\cl-test-drive' -Setup $setup
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Uninstall keeps the data; reinstalling picks it up
+        if: matrix.postgres == 'clean'
         run: |
           powershell -ExecutionPolicy Bypass -File 'C:\Program Files\CoffeeLounge\setup\uninstall.ps1'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -142,7 +195,31 @@ jobs:
           $owners = & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h 127.0.0.1 -U cl_service -d coffee_lounge -At -c 'SELECT count(*) FROM cl.users WHERE is_owner'
           if ($owners -ne '1') { throw "owner not kept across reinstall: $owners" }
           Write-Host 'Owner account kept across uninstall and reinstall.'
+      - name: Uninstall leaves the PostgreSQL that was there before alone
+        if: matrix.postgres != 'clean'
+        env:
+          CASE: ${{ matrix.postgres }}
+        run: |
+          $loc = Get-ItemProperty 'HKLM:\SOFTWARE\CoffeeLounge'
+          $db = Get-Content -Raw (Join-Path $loc.DataDir 'config\database.json') | ConvertFrom-Json
+          Write-Host "chosen: $($db.Mode) $($db.Service) port $($db.Port)"
+          if ($env:CASE -eq 'shared' -and $db.Mode -ne 'shared') { throw 'the PostgreSQL 17 already here was not used' }
+          if ($env:CASE -in @('beside', 'shared-own') -and ($db.Mode -ne 'own' -or $db.Port -eq 5432)) { throw 'ours was not put beside the other one' }
+          if ($env:CASE -eq 'custom-dir') {
+            if ($loc.InstallDir -ne 'D:\Coffee Lounge\Program' -or $loc.DataDir -ne 'D:\Coffee Lounge\Data') { throw "installed to $($loc.InstallDir) / $($loc.DataDir)" }
+            if ($db.PgDir -ne 'D:\Coffee Lounge\PostgreSQL\17' -or -not (Test-Path 'D:\Coffee Lounge\Data\pgdata\PG_VERSION')) { throw "database in $($db.PgDir) / $($db.DataDir)" }
+            foreach ($old in @('C:\Program Files\CoffeeLounge', 'C:\ProgramData\CoffeeLounge\pgdata', 'C:\ProgramData\CoffeeLounge\config')) { if (Test-Path $old) { throw "$old was made on C:" } }
+          }
+          $keep = @(Get-Service -Name 'postgresql*' | Where-Object { $db.Mode -eq 'shared' -or $_.Name -ne $db.Service })
+          powershell -ExecutionPolicy Bypass -File (Join-Path $loc.InstallDir 'setup\uninstall.ps1')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path $loc.InstallDir) { throw 'program files left behind' }
+          foreach ($s in $keep) {
+            if ((Get-Service -Name $s.Name).Status -ne 'Running') { throw "$($s.Name) was stopped by the uninstall" }
+          }
+          Write-Host 'The other PostgreSQL still runs.'
       - name: Upgrade drills (W-1 watchdog, AT-45 upgrade and rollback; step 7.4)
+        if: matrix.postgres == 'clean'
         run: |
           powershell -ExecutionPolicy Bypass -File deploy\windows\tests\upgrade-drill.ps1 -BackupDrive 'C:\cl-test-drive'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -150,7 +227,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-logs
+          name: windows-logs-${{ matrix.postgres }}
           path: |
             C:\ProgramData\CoffeeLounge\logs
             C:\Users\runneradmin\AppData\Roaming\Coffee Lounge\desktop.log

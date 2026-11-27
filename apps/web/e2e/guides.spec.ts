@@ -43,10 +43,12 @@ test('every screen, tab and button the guides name exists as written', async ({ 
   await visit('Settings');
   for (const heading of [
     'Shop and branding',
-    'Printers',
     'E-mail (scheduled reports)',
     'Off-site copy of the backups',
   ])
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  await visit('Hardware');
+  for (const heading of ['Printers', 'Scanner'])
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   await visit('Inventory');
   for (const tab of ['Receive stock', 'Waste', 'Counts', 'Import'])
@@ -60,9 +62,11 @@ test('every screen, tab and button the guides name exists as written', async ({ 
   await expect(page.getByRole('link', { name: 'Refunds & corrections' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New takeaway' })).toBeVisible();
   await visit('Reports');
-  for (const tab of ['Day-end', 'E-mails'])
-    await expect(page.getByRole('tab', { name: tab })).toBeVisible();
-  await page.getByRole('tab', { name: 'Sales by day' }).click();
+  await expect(
+    page.getByLabel('Report', { exact: true }).getByRole('option', { name: 'Day-end' }),
+  ).toBeAttached();
+  await expect(page.getByRole('button', { name: 'E-mail reports' })).toBeVisible();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Sales by day' });
   for (const link of ['Download CSV', 'Download PDF'])
     await expect(page.getByRole('link', { name: link })).toBeVisible();
   await visit('System health');

@@ -72,7 +72,8 @@ describe('receipt design', () => {
     });
     expect(lines.map((l) => l.text)).toContain('NTN 1234567-8');
     expect(lines.some((l) => l.text.includes('Cashier:'))).toBe(false);
-    expect(lines.at(-1)).toMatchObject({
+    expect(lines.at(-1)?.text).toBe('Powered by Eerel. www.eerel.com 03284147552');
+    expect(lines.at(-2)).toMatchObject({
       text: 'THANK YOU',
       align: 'center',
       bold: true,

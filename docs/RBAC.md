@@ -57,7 +57,7 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | `cash_shifts.operate` | Open/close own shift, paid-in/out | ✔ | ✔ | ✕ | ✔ S own_shift | ✕ | ✕ |
 | `cash_shifts.approve_variance` | Approve shift variance | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | **Menu & recipes** | | | | | | | |
-| `menu.read` | Staff menu with prices | ✔ | ✔ | ✔ | ✔ | ✔ | ✕ |
+| `menu.read` | Staff menu with prices | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `menu.manage` | Items, variants, modifiers | ✔ | ○ | ✕ | ✕ | ○ | ✕ |
 | `menu.price_change` | Change prices | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `menu.availability_toggle` | Mark item temporarily unavailable | ✔ | ✔ | ○ | ✔ | ✔ | ✔ |
@@ -99,6 +99,8 @@ Legend: ✔ default grant · ○ grantable by owner (off by default) · ✕ not 
 | `settings.financial` 🔒 | Business day, rounding, tax, costing parameters | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `settings.mailbox` 🔒 | The shop's mailbox for scheduled e-mails (address, app password) | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `printers.manage` | Printer setup, test print | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
+| `system.update` 🔒 | Install a new version of the app | 🔒 | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `drawer.open` | Open the cash drawer by hand (each open is in the audit log) | ✔ | ✔ | ✕ | ✔ | ✕ | ✕ |
 | `audit.read` | Audit log | ✔ | ○ | ✕ | ✕ | ✕ | ✕ |
 | `system.health` | Diagnostics page | ✔ | ✔ | ✕ | ✕ | ✕ | ✕ |
 | `backup.manage` | Run/download backups | ✔ | ✕ | ✕ | ✕ | ✕ | ✕ |
@@ -122,6 +124,8 @@ Guests are not users. Their API is a separate route set on the customer listener
 | Anything else | ✕ | ✕ |
 
 ## 4. Sessions and device rules (PROVISIONAL D-24, confirmed D-39)
+
+Idle times below are the defaults. The owner changes them under Settings → Security (`security.logout_*_minutes`, owner-only), per kind of device, from 2 minutes to 12 hours or never; a login always ends after 12 hours (owner's request, Nov 2026).
 
 | Device | Login | Idle behaviour | Notes |
 |---|---|---|---|

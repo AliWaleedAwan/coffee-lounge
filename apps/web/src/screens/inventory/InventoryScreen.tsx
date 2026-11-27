@@ -8,6 +8,7 @@ import { permissionSet } from '../../auth/session.ts';
 import { useSignedIn } from '../Shell.tsx';
 import { CountsTab } from './CountsTab.tsx';
 import { ImportTab } from './ImportTab.tsx';
+import { OldPosImport } from '../oldpos/OldPosImport.tsx';
 import { ItemsTab } from './ItemsTab.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { ReceiptsTab } from './ReceiptsTab.tsx';
@@ -81,7 +82,12 @@ export function InventoryScreen() {
         ) : null}
         {tab === 'waste' ? <WasteTab canRecord={can.waste} /> : null}
         {tab === 'counts' ? <CountsTab canCount={can.count} canApprove={can.approveCount} /> : null}
-        {tab === 'import' ? <ImportTab /> : null}
+        {tab === 'import' ? (
+          <>
+            <ImportTab />
+            <OldPosImport />
+          </>
+        ) : null}
         {tab === 'suppliers' ? <SuppliersTab canManage={can.manageSuppliers} /> : null}
       </div>
     </>

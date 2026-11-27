@@ -15,7 +15,7 @@ test('printer setup, test print, the printer banner and the jobs screen', async 
   const s = shop();
   await registerDevice(page, s.codes[10] ?? '');
   await logIn(page, s.owner.username, s.owner.password);
-  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Hardware' }).click();
   await expect(page.getByRole('heading', { name: 'Printers' })).toBeVisible();
 
   await page.getByLabel('Name', { exact: true }).fill('Bench printer');
@@ -24,7 +24,18 @@ test('printer setup, test print, the printer banner and the jobs screen', async 
   await page.getByRole('button', { name: 'Add printer' }).click();
   await expect(page.getByRole('cell', { name: 'Bench printer', exact: true })).toBeVisible();
   await page.getByLabel('Kitchen tickets print on').selectOption({ label: 'Bench printer' });
-  await expectAccessible(page, 'settings: printers');
+  await expectAccessible(page, 'hardware');
+
+  // The scanner test (step 8.6): types as a scanner does.
+  const box = page.getByLabel('Test scanner');
+  await box.click();
+  await page.keyboard.type('5901234123457');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('EAN-13')).toBeVisible();
+  await expect(page.getByText('Enter arrived.')).toBeVisible();
+  await page.keyboard.type('5901234123458');
+  await expect(page.getByText(/No Enter arrived/)).toBeVisible();
+  await expect(page.getByText(/fail the barcode/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Test print Bench printer' }).click();
   await expect(page.getByText('Test page sent to Bench printer.')).toBeVisible();
@@ -43,7 +54,7 @@ test('printer setup, test print, the printer banner and the jobs screen', async 
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/print-jobs.png`, fullPage: true });
 
   // Turn it off: no banner for the specs after this one.
-  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Hardware' }).click();
   await page.getByRole('button', { name: 'Turn off Bench printer' }).click();
   await page
     .getByLabel('Kitchen tickets print on')

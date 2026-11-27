@@ -2,7 +2,7 @@
  * Asset register (D-31 "Resources Management"; Phase 5 step 5.4): the shop's equipment and
  * furniture, where each thing is, its condition and who looks after it. Every change is
  * kept in the asset's history; maintenance is recorded (optionally with the expense that
- * paid for it); disposal is a status, never a delete. `?asset=<id>` opens one.
+ * paid for it); removal is a status, never a delete. `?asset=<id>` opens one.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState, type SubmitEvent } from 'react';
@@ -65,7 +65,7 @@ const STATUS: Record<Status, string> = {
   in_use: 'In use',
   in_repair: 'In repair',
   retired: 'Retired',
-  disposed: 'Disposed',
+  disposed: 'Removed',
 };
 const CONDITION: Record<Condition, string> = {
   new: 'New',
@@ -73,11 +73,12 @@ const CONDITION: Record<Condition, string> = {
   fair: 'Fair',
   poor: 'Poor',
 };
+const REMOVALS = { sold: 'Sold', broken: 'Broken', lost: 'Lost' };
+// Earlier removals keep their word in the history.
 const DISPOSALS = {
-  sold: 'Sold',
+  ...REMOVALS,
   scrapped: 'Scrapped',
   donated: 'Donated',
-  lost: 'Lost',
   returned: 'Returned to supplier',
 };
 const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
@@ -101,7 +102,7 @@ function describeEvent(e: HistoryEvent): string {
     case 'maintenance':
       return `Maintenance: ${text(d['description'])}${typeof d['cost'] === 'string' ? ` · ${rupees(d['cost'])}` : ''}${typeof d['expenseNo'] === 'string' ? ` · ${d['expenseNo']}` : ''}`;
     case 'disposed':
-      return `Disposed: ${DISPOSALS[d['how'] as keyof typeof DISPOSALS]}`;
+      return `Removed: ${DISPOSALS[d['how'] as keyof typeof DISPOSALS]}`;
     case 'details_changed': {
       const before = (d['before'] ?? {}) as Record<string, unknown>;
       const after = (d['after'] ?? {}) as Record<string, unknown>;
@@ -140,10 +141,12 @@ export function AssetsScreen() {
   const opened = params.get('asset');
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('active');
+  const [category, setCategory] = useState('');
   const [done, setDone] = useState<string | null>(null);
   const query = new URLSearchParams({
     ...(q.trim() ? { q: q.trim() } : {}),
     ...(status ? { status } : {}),
+    ...(category ? { category } : {}),
   }).toString();
   const list = useQuery({
     queryKey: ['assets', 'list', query],
@@ -164,8 +167,8 @@ export function AssetsScreen() {
     <>
       <h1>Assets</h1>
       <p className="muted">
-        Equipment and furniture the shop owns. Every change is kept in the asset’s history; an asset
-        is disposed of, never deleted. Bulk entry: Inventory → Import, file 09_assets.csv.
+        Everything the shop owns: furniture, cutlery, devices and more. Removing something keeps its
+        record, with the reason.
       </p>
       {done ? (
         <div role="status" className="banner banner-success">
@@ -194,7 +197,7 @@ export function AssetsScreen() {
         />
       ) : null}
       <section className="card stack" aria-labelledby="assets-head">
-        <h2 id="assets-head">Register</h2>
+        <h2 id="assets-head">All assets</h2>
         <div className="row">
           <Field
             label="Find by tag, name or place"
@@ -206,19 +209,29 @@ export function AssetsScreen() {
             }}
           />
           <SelectField
+            label="Category"
+            value={category}
+            options={[
+              { value: '', label: 'All categories' },
+              ...names.categories.map((c) => ({ value: c, label: c })),
+            ]}
+            onChange={setCategory}
+          />
+          <SelectField
             label="Status"
             value={status}
             options={[
-              { value: 'active', label: 'Not disposed' },
+              { value: 'active', label: 'In the shop' },
               { value: 'in_use', label: 'In use' },
               { value: 'in_repair', label: 'In repair' },
               { value: 'retired', label: 'Retired' },
-              { value: 'disposed', label: 'Disposed' },
+              { value: 'disposed', label: 'Removed' },
               { value: '', label: 'All' },
             ]}
             onChange={setStatus}
           />
         </div>
+        {canManage ? <Categories names={names.categories} /> : null}
         {list.isPending ? <Loading label="Loading assets" /> : null}
         {list.isError ? (
           <div role="alert" className="banner banner-danger">
@@ -375,20 +388,20 @@ function AssetFields({
             set('name')(e.target.value);
           }}
         />
-        <Field
+        <SelectField
           label="Category"
-          maxLength={40}
-          list={`${ids}-cat`}
           value={value.category}
-          onChange={(e) => {
-            set('category')(e.target.value);
-          }}
+          options={[
+            { value: '', label: 'Choose…' },
+            ...[
+              ...names.categories,
+              ...(value.category && !names.categories.includes(value.category)
+                ? [value.category]
+                : []),
+            ].map((c) => ({ value: c, label: c })),
+          ]}
+          onChange={set('category')}
         />
-        <datalist id={`${ids}-cat`}>
-          {names.categories.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
         <Field
           label="Quantity"
           inputMode="numeric"
@@ -639,7 +652,7 @@ function AssetDetail({
                 ? 'Change details'
                 : p === 'maintenance'
                   ? 'Record maintenance'
-                  : 'Dispose of it'}
+                  : 'Remove it'}
             </button>
           ))}
         </div>
@@ -892,45 +905,107 @@ function RecordMaintenance({ asset, onDone }: { asset: Asset; onDone: () => void
   );
 }
 
+function Categories({ names }: { names: string[] }) {
+  const writes = useWritesAllowed();
+  const client = useQueryClient();
+  const [name, setName] = useState('');
+  const [remove, setRemove] = useState('');
+  const save = useMutation({
+    mutationFn: (body: { add: string } | { remove: string }) =>
+      api('/assets/categories', { method: 'POST', body }),
+    onSuccess: () => {
+      setName('');
+      setRemove('');
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['assets'] }),
+  });
+  return (
+    <details>
+      <summary>Manage categories</summary>
+      <div className="row">
+        <Field
+          label="New category"
+          maxLength={40}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={!writes || name.trim() === '' || save.isPending}
+          onClick={() => {
+            save.mutate({ add: name.trim() });
+          }}
+        >
+          Add
+        </button>
+        <SelectField
+          label="Remove a category"
+          value={remove}
+          options={[{ value: '', label: 'Choose…' }, ...names.map((c) => ({ value: c, label: c }))]}
+          onChange={setRemove}
+        />
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!writes || remove === '' || save.isPending}
+          onClick={() => {
+            save.mutate({ remove });
+          }}
+        >
+          Remove
+        </button>
+      </div>
+      {save.isError ? (
+        <div role="alert" className="banner banner-danger">
+          {messageOf(save.error)}
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
 function Dispose({ asset, onDone }: { asset: Asset; onDone: () => void }) {
   const writes = useWritesAllowed();
-  const [how, setHow] = useState<keyof typeof DISPOSALS>('scrapped');
-  const [reason, setReason] = useState('');
+  const [how, setHow] = useState<keyof typeof REMOVALS>('broken');
+  const [note, setNote] = useState('');
   const dispose = useAssetCommand<{ id: string }>(onDone);
-  const ready = writes && !dispose.isPending && reason.trim().length >= 3;
+  const ready = writes && !dispose.isPending;
   return (
     <form
       className="stack"
       noValidate
-      aria-label={`Dispose of ${asset.assetTag}`}
+      aria-label={`Remove ${asset.assetTag}`}
       onSubmit={(e) => {
         e.preventDefault();
         if (!ready) return;
         dispose.mutate({
           path: `/assets/${asset.id}/dispose`,
-          body: { how, reason: reason.trim() },
+          body: { how, reason: note.trim().length >= 3 ? note.trim() : REMOVALS[how] },
         });
       }}
     >
       <p className="muted">
-        The asset stays in the register with its history, marked disposed; it cannot change after.
-        Money from a sale is recorded in the ledger as a manual entry.
+        It stays on record with its history, marked as removed. Money from a sale is recorded in the
+        ledger.
       </p>
       <div className="row">
         <SelectField
-          label="How"
+          label="Why is it going"
           value={how}
-          options={Object.entries(DISPOSALS).map(([value, label]) => ({ value, label }))}
+          options={Object.entries(REMOVALS).map(([value, label]) => ({ value, label }))}
           onChange={(v) => {
-            setHow(v as keyof typeof DISPOSALS);
+            setHow(v as keyof typeof REMOVALS);
           }}
         />
         <Field
-          label="Why"
+          label="Note (optional)"
           maxLength={300}
-          value={reason}
+          value={note}
           onChange={(e) => {
-            setReason(e.target.value);
+            setNote(e.target.value);
           }}
         />
       </div>
@@ -941,7 +1016,7 @@ function Dispose({ asset, onDone }: { asset: Asset; onDone: () => void }) {
       ) : null}
       <div>
         <button type="submit" className="btn btn-danger" disabled={!ready}>
-          Dispose of {asset.assetTag}
+          Remove {asset.assetTag}
         </button>
       </div>
     </form>

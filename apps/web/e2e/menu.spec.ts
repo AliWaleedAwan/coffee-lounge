@@ -98,7 +98,7 @@ test('a cashier marks a size unavailable and back, and cannot edit the menu', as
   await page.getByRole('link', { name: 'Menu & recipes' }).click();
   const latte = page.getByRole('row', { name: /Latte/ });
   await expect(latte).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Choices' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add item' })).toHaveCount(0);
 
   await latte.getByRole('button', { name: /Mark unavailable\s*\(Large\)/ }).click();

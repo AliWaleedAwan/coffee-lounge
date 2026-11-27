@@ -17,7 +17,8 @@
     "admin": "node --env-file=../../.env src/cli/admin.ts",
     "certs": "node src/cli/certs.ts",
     "worker": "node --env-file=../../.env src/worker.ts",
-    "sample-shop": "node --env-file=../../.env scripts/sample-shop.ts"
+    "sample-shop": "node --env-file=../../.env scripts/sample-shop.ts",
+    "demo-shop": "node --env-file=../../.env scripts/demo-shop.ts"
   },
   "dependencies": {
     "@cl/shared": "workspace:*",

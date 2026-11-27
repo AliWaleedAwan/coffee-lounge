@@ -60,15 +60,21 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expectAccessible(page, 'reports overview');
 
   await tiles.getByRole('button', { name: /Net sales/ }).click();
-  await expect(page.getByRole('tab', { name: 'Sales by day', selected: true })).toBeVisible();
+  await expect(page.getByLabel('Report', { exact: true })).toHaveValue(/./);
+  await expect(page.getByLabel('Report', { exact: true }).locator('option:checked')).toHaveText(
+    'Sales by day',
+  );
   const days = page.getByRole('table', { name: 'Sales by day' });
   await expect(days.getByRole('row').last()).toContainText('Total');
   await expectAccessible(page, 'sales by day');
 
-  await page.getByRole('button', { name: 'Today' }).click();
+  await page.getByLabel('Period').selectOption({ label: 'Today' });
   await days.getByRole('row').nth(1).getByRole('button').click();
   // A day opens its bills; a bill opens its lines.
-  await expect(page.getByRole('tab', { name: 'Bills', selected: true })).toBeVisible();
+  await expect(page.getByLabel('Report', { exact: true })).toHaveValue(/./);
+  await expect(page.getByLabel('Report', { exact: true }).locator('option:checked')).toHaveText(
+    'Bills',
+  );
   const bills = page.getByRole('table', { name: 'Bills' });
   const billRow = bills.getByRole('row', { name: /Report table/ });
   await expect(billRow).toContainText('Rs 900.00');
@@ -78,8 +84,8 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expect(lines.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
   await expectAccessible(page, 'bill lines');
   await page.getByRole('button', { name: 'Back to the bills' }).click();
-  await page.getByRole('tab', { name: 'Sales by item' }).click();
-  await page.getByRole('button', { name: 'Today' }).click();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Sales by item' });
+  await page.getByLabel('Period').selectOption({ label: 'Today' });
   const items = page.getByRole('table', { name: 'Sales by item' });
   await expect(items.getByRole('row', { name: /Report flat white/ })).toContainText('Rs 900.00');
   await page.getByText('How these figures are worked out').click();
@@ -97,14 +103,15 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await expect(page.getByRole('link', { name: 'Download PDF' })).toBeVisible();
 
   // The day-end of yesterday: figures, its PDF and the printed slip.
-  await page.getByRole('tab', { name: 'Day-end' }).click();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Day-end' });
   await expect(page.getByRole('heading', { name: /^Day-end · Business date/ })).toBeVisible();
   await expect(page.getByRole('table', { name: 'Sales' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download PDF' })).toBeVisible();
   await expectAccessible(page, 'day-end');
 
   // Step 6.6: a scheduled e-mail, and the mailbox it goes out from.
-  await page.getByRole('tab', { name: 'E-mails' }).click();
+  await page.getByRole('button', { name: 'E-mail reports' }).click();
+  await page.getByRole('tab', { name: 'Other schedules' }).click();
   await page.getByLabel('To (one or more addresses)').fill('owner@example.test');
   await page.getByRole('button', { name: 'Schedule it' }).click();
   await expect(
@@ -120,14 +127,14 @@ test('the owner overview, a tile to its report, and a day down to its items', as
   await page.goto('/reports');
 
   // Step 6.4: stock and people reports, each with its own filters.
-  await page.getByRole('tab', { name: 'Stock on hand' }).click();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Stock on hand' });
   await expect(page.getByLabel('Stock category')).toBeVisible();
   await expect(
     page.getByRole('table', { name: 'Stock on hand' }).getByRole('row').last(),
   ).toContainText('Total');
   await expectAccessible(page, 'stock on hand');
-  await page.getByRole('tab', { name: 'Audit log' }).click();
-  await page.getByRole('button', { name: 'Today' }).click();
+  await page.getByLabel('Report', { exact: true }).selectOption({ label: 'Audit log' });
+  await page.getByLabel('Period').selectOption({ label: 'Today' });
   await page.getByLabel('Record').selectOption('invoice');
   const audit = page.getByRole('table', { name: 'Audit log' });
   await expect(audit.getByRole('row', { name: /invoice\.settle/ }).first()).toBeVisible();

@@ -631,46 +631,52 @@ export async function addBarcode(
   itemId: string,
   input: { code: string; packSizeId?: string | undefined },
 ): Promise<{ id: string }> {
-  return withTransaction(pool, async (tx) => {
-    const item = await lockItem(tx, itemId);
-    if (input.packSizeId !== undefined) {
-      const { rows } = await tx.query<{ is_active: boolean }>(
-        'SELECT is_active FROM cl.item_pack_sizes WHERE id = $1 AND item_id = $2',
-        [input.packSizeId, itemId],
-      );
-      if (!rows[0])
-        throw new AppError('VALIDATION_FAILED', `That pack is not one of ${item.name}'s`);
-      if (!rows[0].is_active)
-        throw new AppError('VALIDATION_FAILED', 'That pack is no longer used');
-    }
-    const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO cl.barcodes (code, item_id, pack_size_id) VALUES ($1, $2, $3)
+  return withTransaction(pool, (tx) => addBarcodeIn(tx, who, itemId, input));
+}
+
+/** Inside a transaction the caller holds (modules/products). */
+export async function addBarcodeIn(
+  tx: Tx,
+  who: AuditContext,
+  itemId: string,
+  input: { code: string; packSizeId?: string | undefined },
+): Promise<{ id: string }> {
+  const item = await lockItem(tx, itemId);
+  if (input.packSizeId !== undefined) {
+    const { rows } = await tx.query<{ is_active: boolean }>(
+      'SELECT is_active FROM cl.item_pack_sizes WHERE id = $1 AND item_id = $2',
+      [input.packSizeId, itemId],
+    );
+    if (!rows[0]) throw new AppError('VALIDATION_FAILED', `That pack is not one of ${item.name}'s`);
+    if (!rows[0].is_active) throw new AppError('VALIDATION_FAILED', 'That pack is no longer used');
+  }
+  const { rows } = await tx.query<{ id: string }>(
+    `INSERT INTO cl.barcodes (code, item_id, pack_size_id) VALUES ($1, $2, $3)
        ON CONFLICT (code) WHERE is_active DO NOTHING RETURNING id::text`,
-      [input.code, itemId, input.packSizeId ?? null],
-    );
-    const id = rows[0]?.id;
-    if (id === undefined) {
-      const { match } = await lookupBarcode(tx, input.code);
-      const owner = match
-        ? `${match.name} (${match.sku})${match.pack ? `, ${match.pack.name}` : ''}`
-        : 'another item';
-      throw new AppError('BARCODE_IN_USE', `Barcode ${input.code} already belongs to ${owner}`, {
-        owner,
-      });
-    }
-    await changed(
-      tx,
-      who,
-      {
-        action: 'stock.barcode.create',
-        entityType: 'barcode',
-        entityId: id,
-        after: { ...input, itemId },
-      },
-      itemId,
-    );
-    return { id };
-  });
+    [input.code, itemId, input.packSizeId ?? null],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) {
+    const { match } = await lookupBarcode(tx, input.code);
+    const owner = match
+      ? `${match.name} (${match.sku})${match.pack ? `, ${match.pack.name}` : ''}`
+      : 'another item';
+    throw new AppError('BARCODE_IN_USE', `Barcode ${input.code} already belongs to ${owner}`, {
+      owner,
+    });
+  }
+  await changed(
+    tx,
+    who,
+    {
+      action: 'stock.barcode.create',
+      entityType: 'barcode',
+      entityId: id,
+      after: { ...input, itemId },
+    },
+    itemId,
+  );
+  return { id };
 }
 
 export async function deactivateBarcode(

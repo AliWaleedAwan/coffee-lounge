@@ -281,12 +281,24 @@ export class HealthMonitor {
     this.printer = () => printerStatus(db);
   }
 
-  /** What every device's banner says about backups (AT-80): null when all is well. */
+  /**
+   * What every device's banner says (AT-80): backups, and a disk almost full, which comes first
+   * because the database stops saving when it is full (owner's request, Nov 2026). Null when
+   * all is well. A disk only getting low shows on the health page, not on every screen.
+   */
   async backupBanner(): Promise<{
     problem: string | null;
     message: string | null;
     since: string | null;
   }> {
+    const disk = await this.disk.get();
+    if (disk.status === 'critical') {
+      return {
+        problem: 'disk_critical',
+        message: `The disk is almost full (${String(disk.freePercent)} % free). Free up space now: when it is full, sales cannot be saved.`,
+        since: null,
+      };
+    }
     if (!this.backupWatch) return { problem: null, message: null, since: null };
     const b = await this.backupWatch.status();
     return {

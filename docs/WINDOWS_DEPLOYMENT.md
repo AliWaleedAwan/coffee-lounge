@@ -19,6 +19,8 @@ Everything ships inside **one offline installer** (`CoffeeLounge-Setup-x.y.z.exe
 
 Program files are read-only for the service account. The service account can write only to `pgdata`, `logs`, `files` and the backup drive folder.
 
+**Setup wizard (Phase 8 step 8.4):** `CoffeeLounge-Setup.exe` with no options opens a wizard; on a first install it asks for the shop address, the USB key folder, the key passphrase and the owner's password. The owner's recovery code is written to the USB key as `coffee-lounge-owner-recovery-code.txt`. With any option it runs as before.
+
 ## 2. Windows services
 
 | Service | Start type | Depends on | Recovery on failure | Account |
@@ -80,7 +82,7 @@ A 15-year-old iMac may lose its clock setting after power cuts if its internal c
 ## 6. Installation flow (first install)
 
 1. Technician completes H-6, H-7, H-9, H-17, H-18; plugs in printer, scanner, backup drive.
-2. Run installer as `Owner` → prerequisites check (Windows version, free disk ≥ 20 GB, drive `B:` present, port 8080/8443 free).
+2. Run installer as `Owner` → prerequisites check (Windows version, free disk ≥ 10 GB (owner, Nov 2026), drive `B:` present, port 8080/8443 free).
 3. Installs PostgreSQL silently with a generated password (stored encrypted with Windows DPAPI, machine scope), creates `cl_migrator`/`cl_app`/`cl_readonly` roles, applies migrations and seeds.
 4. Generates the shop root CA + server certificate; exports the **root private key** and the **backup decryption key** to the owner's separate USB key, then deletes the CA private key from the PC.
 5. Creates the owner app account and prints a **one-time recovery code** for the owner's safe.
@@ -97,7 +99,7 @@ A 15-year-old iMac may lose its clock setting after power cuts if its internal c
 | Apply | Replace program files → run forward-only migrations (each in a transaction where possible) → start services → health check |
 | Rollback | If health fails: stop services → restore the pre-upgrade dump → reinstall the previous version (kept in `tools\previous\`) → health check → report |
 | Compatibility | Migrations follow expand → migrate → contract across releases, so a rollback within one version is always possible |
-| No auto-update | Electron and services never self-update; updates are delivered as a new installer |
+| Updates | Nothing updates by itself. The updater (`update-agent.mjs`, SYSTEM, every minute, in the administrators-only `update-agent` folder) reports a new version, and installs it when the owner presses Update now on System health. Same setup script, so same refusal with open bills and same rollback. Small updates (1.0.10): a release also publishes each part (app, web, desktop, runtime, pgsql, winsw, setup, meta) as a .tar.gz, with fingerprints signed separately in latest.json; the updater downloads only the parts whose fingerprint differs from `InstallDirparts.json`, rebuilds a full bundle from them and the installed parts, checks every part against its signed fingerprint, and runs the setup script from it, so every program file is still replaced. No parts record, a bad signature, a changed local file or any other surprise uses the full installer. Release: push tag `vX.Y.Z` |
 
 ### 7.1 As built (step 7.4)
 
@@ -134,7 +136,8 @@ Removes services and program files. **Keeps** `C:\ProgramData\CoffeeLounge` (dat
 | Certificate pinning | The chain must lead to the shop root, match the server address, be in date and use no weak signature (SHA-1, MD5). Chromium's own checks still apply; pinning overrides only its "unknown root" verdict |
 | CSP | The server's policy; the app adds the same policy if a server page ever arrives without one. Its own pages carry a stricter one |
 | Server unavailable | Branded screen with what to check and "Try again now"; probes `/health/live` every 3 s and opens the app as soon as it answers. A certificate problem shows "Server not trusted" (do not enter passwords) and is never bypassed. Missing or invalid settings show "Counter app not set up" |
-| Preload API | `window.coffeeLounge = { version, retryNow() }` only. First-run address entry (`setHostAddress` in 02-architecture §2.11) was dropped: the installer writes the settings, so staff cannot point the app elsewhere |
+| Start-up screen (step 8.5) | Installed app on the server PC: at launch and on every probe it reads the Database, Server and Background jobs services with `sc query` and starts a stopped one with `sc start` (database first; 3 tries 15 s apart; never while `maintenance.flag` exists). The installer gives the `Counter` account query and start rights on those three services only, not stop or configure. It opens once Database and Server run; Background jobs are shown but do not hold it back. The Printer row reports only the Windows print service, which the app never starts; the printer itself is on the Health page |
+| Preload API | `window.coffeeLounge = { version, retryNow() }`, plus `onServices` on the app's own local screen only. First-run address entry (`setHostAddress` in 02-architecture §2.11) was dropped: the installer writes the settings, so staff cannot point the app elsewhere |
 | On Windows (step 2.9b, §11) | Packaged with an asar archive and Electron fuses; installed with a logon task for `Counter`, a Start menu shortcut and an Add/Remove Programs entry; checked in CI on Windows |
 
 ## 11. Windows install (step 2.9, as built; proven in CI on Windows Server 2022)

@@ -22,7 +22,7 @@ import { readSetting, shopDateOf } from '../../platform/settings.ts';
 
 export const CONDITIONS = ['new', 'good', 'fair', 'poor'] as const;
 export const ACTIVE_STATUSES = ['in_use', 'in_repair', 'retired'] as const;
-export const DISPOSALS = ['sold', 'scrapped', 'donated', 'lost', 'returned'] as const;
+export const DISPOSALS = ['sold', 'broken', 'lost', 'scrapped', 'donated', 'returned'] as const;
 type Condition = (typeof CONDITIONS)[number];
 type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 

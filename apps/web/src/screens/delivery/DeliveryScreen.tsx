@@ -460,8 +460,22 @@ function Resolve({ d, riders }: { d: DeliveryItem; riders: Rider[] }) {
   );
 }
 
+/** The customer behind a mobile number, from the old POS (owner's request, Nov 2026). */
+async function knownCustomer(mobile: string) {
+  if (mobile.replace(/\D/g, '').length < 10) return null;
+  try {
+    const res = await api<{ customer: { name: string | null; location: string | null } | null }>(
+      `/customers/lookup?mobile=${encodeURIComponent(mobile)}`,
+    );
+    return res.customer;
+  } catch {
+    return null; // a look-up that fails only means typing it in
+  }
+}
+
 function NewDelivery() {
   const writes = useWritesAllowed();
+  const [known, setKnown] = useState<string | null>(null);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -554,9 +568,27 @@ function NewDelivery() {
           value={form.customerPhone}
           onChange={(e) => {
             set('customerPhone')(e.target.value);
+            setKnown(null);
+          }}
+          onBlur={() => {
+            void knownCustomer(form.customerPhone).then((c) => {
+              if (!c) return;
+              setForm((f) => ({
+                ...f,
+                customerName: f.customerName || (c.name ?? ''),
+                address: f.address || (c.location ?? ''),
+              }));
+              setKnown(c.name ?? 'this customer');
+            });
           }}
         />
       </div>
+      {known ? (
+        <p role="status" className="muted">
+          Known customer: {known}. Their name and address are filled in where empty; change them if
+          they differ today.
+        </p>
+      ) : null}
       <Field
         label="Address"
         maxLength={300}

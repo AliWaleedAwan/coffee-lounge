@@ -28,6 +28,7 @@ interface RoundRow {
   submitted_at: Date;
   quoted_total: string;
   after_bill_request: boolean;
+  preparing: boolean;
   escalated_at: Date | null;
   decided_at: Date | null;
   decision_reason: string | null;
@@ -65,7 +66,10 @@ interface ModRow {
 async function loadRounds(db: Queryable, where: string, params: unknown[]) {
   const { rows: rounds } = await db.query<RoundRow>(
     `SELECT id::text, session_id::text, round_no, round_ref, source, status, submitted_at, quoted_total::text,
-            after_bill_request, escalated_at, decided_at, decision_reason, submitted_by_guest_token_id::text
+            after_bill_request,
+            EXISTS (SELECT 1 FROM cl.kitchen_tickets k
+                     WHERE k.round_id = order_rounds.id AND k.started_at IS NOT NULL) AS preparing,
+            escalated_at, decided_at, decision_reason, submitted_by_guest_token_id::text
        FROM cl.order_rounds WHERE ${where} ORDER BY submitted_at, order_rounds.id`,
     params,
   );
@@ -127,6 +131,7 @@ function roundView(r: RoundRow, lines: LineRow[], mods: ModRow[]) {
     submittedAt: r.submitted_at.toISOString(),
     quotedTotal: r.quoted_total,
     afterBillRequest: r.after_bill_request,
+    preparing: r.preparing,
     escalated: r.escalated_at !== null,
     decidedAt: r.decided_at?.toISOString() ?? null,
     reason: r.decision_reason,

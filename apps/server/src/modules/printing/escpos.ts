@@ -50,6 +50,9 @@ function encode(text: string): number[] {
   return bytes;
 }
 
+/** Opens a drawer on the printer's RJ11 port: ESC p, pin 2, 50 ms on, 500 ms off (step 8.7). */
+export const DRAWER_PULSE = Buffer.from([ESC, 0x70, 0, 25, 250]);
+
 export type Align = 'left' | 'center' | 'right';
 
 /** One printed line as the paper shows it: for on-screen previews (receipt design). */
@@ -59,12 +62,29 @@ export interface PreviewLine {
   bold: boolean;
   wide: boolean;
   tall: boolean;
+  /** How many times wider and taller than normal: 1 to 4. */
+  scaleX: number;
+  scaleY: number;
+}
+
+/** A 1-bit picture (rows of bytes, top bit left, 1 = black), printed as a raster image. */
+export interface RasterImage {
+  width: number;
+  height: number;
+  data: Buffer;
 }
 
 export class EscPos {
   private readonly out: number[] = [ESC, 0x40, ESC, 0x74, 0]; // initialise; code page 0 = CP437
   private readonly shown: PreviewLine[] = [];
-  private state = { align: 'left' as Align, bold: false, wide: false, tall: false };
+  private state = {
+    align: 'left' as Align,
+    bold: false,
+    wide: false,
+    tall: false,
+    scaleX: 1,
+    scaleY: 1,
+  };
 
   line(text = ''): this {
     this.out.push(...encode(text), LF);
@@ -78,11 +98,21 @@ export class EscPos {
     return this;
   }
 
-  /** Double width and/or height (GS !). */
-  size(double: { width?: boolean; height?: boolean }): this {
-    this.out.push(GS, 0x21, (double.width ? 0x10 : 0) | (double.height ? 0x01 : 0));
-    this.state.wide = Boolean(double.width);
-    this.state.tall = Boolean(double.height);
+  /** Larger text, up to four times (GS !); `true` is double. */
+  size(by: { width?: boolean | number; height?: boolean | number }): this {
+    const times = (v: boolean | number | undefined) => (v === true ? 2 : !v ? 1 : v);
+    const x = times(by.width);
+    const y = times(by.height);
+    this.out.push(GS, 0x21, ((x - 1) << 4) | (y - 1));
+    Object.assign(this.state, { wide: x > 1, tall: y > 1, scaleX: x, scaleY: y });
+    return this;
+  }
+
+  /** A picture (GS v 0). Not in `preview()`: the screen draws it from the same bits. */
+  raster(image: RasterImage): this {
+    const rowBytes = Math.ceil(image.width / 8);
+    this.out.push(GS, 0x76, 0x30, 0, rowBytes & 0xff, rowBytes >> 8);
+    this.out.push(image.height & 0xff, image.height >> 8, ...image.data, LF);
     return this;
   }
 

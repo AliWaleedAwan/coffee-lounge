@@ -8,7 +8,10 @@ export {
 export { bestPromotion, discountedPrice, localMoment, type PromotionRule } from './promotions.ts';
 export {
   createCategory,
+  changePrice,
   createItem,
+  updateItem,
+  createItemIn,
   createModifierGroup,
   loadPromotionRules,
   readMenu,

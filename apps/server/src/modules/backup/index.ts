@@ -24,3 +24,4 @@ export {
   restoreDump,
   type PreparedRestore,
 } from './restore.ts';
+export { LiveWal, pruneLiveWal } from './live-wal.ts';

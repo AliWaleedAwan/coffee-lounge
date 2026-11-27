@@ -12,7 +12,13 @@ import { CheckField, SelectField, TextAreaField } from '../../components/Field.t
 import { useWritesAllowed } from '../../connection/ConnectionBanner.tsx';
 
 type Align = 'left' | 'center' | 'right';
-type Size = 'normal' | 'wide' | 'big';
+type Size = 'normal' | 'wide' | 'big' | 'x3' | 'x4';
+
+export interface Logo {
+  width: number;
+  height: number;
+  data: string;
+}
 
 export interface ReceiptBlock {
   text: string;
@@ -25,6 +31,7 @@ export interface ReceiptLayout {
   header: ReceiptBlock[];
   footer: ReceiptBlock[];
   shopNameSize: Size;
+  logo?: Logo;
   showContact: boolean;
   showCashier: boolean;
 }
@@ -42,22 +49,108 @@ interface PreviewLine {
   bold: boolean;
   wide: boolean;
   tall: boolean;
+  scaleX: number;
+  scaleY: number;
 }
 
 const KEY = ['settings', 'receipt-design'] as const;
 const PATH = '/settings/receipt-design';
 const MAX_BLOCKS = 10;
 
-const SIZES = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'wide', label: 'Wide (double width)' },
-  { value: 'big', label: 'Big (double width and height)' },
-];
+const SIZES: Size[] = ['normal', 'wide', 'big', 'x3', 'x4'];
+const LOGO_WIDTH = 256;
 const ALIGNS = [
   { value: 'left', label: 'Left' },
   { value: 'center', label: 'Centre' },
   { value: 'right', label: 'Right' },
 ];
+
+/** A−/A+ like a word processor: the printer's own text sizes, smallest to largest. */
+function SizeStepper({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: Size;
+  onChange: (size: Size) => void;
+}) {
+  const at = SIZES.indexOf(value);
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <div className="stepper" role="group" aria-label={label}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-label={`Smaller: ${label}`}
+          disabled={at <= 0}
+          onClick={() => {
+            onChange(SIZES[at - 1] ?? value);
+          }}
+        >
+          A−
+        </button>
+        <span aria-live="polite">{at + 1}</span>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-label={`Larger: ${label}`}
+          disabled={at >= SIZES.length - 1}
+          onClick={() => {
+            onChange(SIZES[at + 1] ?? value);
+          }}
+        >
+          A+
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The picture as the thermal printer can print it: black or white dots, at most 256 across. */
+async function toLogo(file: File): Promise<Logo> {
+  const bitmap = await createImageBitmap(file);
+  const width = Math.min(LOGO_WIDTH, bitmap.width) & ~7;
+  const height = Math.min(300, Math.max(1, Math.round((bitmap.height * width) / bitmap.width)));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('This browser cannot read pictures');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  const px = ctx.getImageData(0, 0, width, height).data;
+  const rowBytes = width / 8;
+  const bits = new Uint8Array(rowBytes * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const light = 0.3 * (px[i] ?? 0) + 0.59 * (px[i + 1] ?? 0) + 0.11 * (px[i + 2] ?? 0);
+      if (light < 128)
+        bits[y * rowBytes + (x >> 3)] = (bits[y * rowBytes + (x >> 3)] ?? 0) | (0x80 >> (x & 7));
+    }
+  }
+  return { width, height, data: btoa(String.fromCharCode(...bits)) };
+}
+
+function logoUrl(logo: Logo): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = logo.width;
+  canvas.height = logo.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const bits = atob(logo.data);
+  const rowBytes = Math.ceil(logo.width / 8);
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < logo.height; y++) {
+    for (let x = 0; x < logo.width; x++) {
+      if (bits.charCodeAt(y * rowBytes + (x >> 3)) & (0x80 >> (x & 7))) ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  return canvas.toDataURL();
+}
 
 const newBlock = (): ReceiptBlock => ({ text: '', align: 'center', bold: false, size: 'normal' });
 
@@ -145,12 +238,44 @@ function Designer({
       <div className="stack">
         <section className="card stack" aria-labelledby="rd-top">
           <h2 id="rd-top">Top of the receipt</h2>
-          <SelectField
+          <div className="field">
+            <label htmlFor="rd-logo">Logo</label>
+            <input
+              id="rd-logo"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                void toLogo(file).then((logo) => {
+                  change({ logo });
+                });
+              }}
+            />
+            {layout.logo ? (
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setDone(null);
+                    setLayout(
+                      Object.fromEntries(
+                        Object.entries(layout).filter(([k]) => k !== 'logo'),
+                      ) as unknown as ReceiptLayout,
+                    );
+                  }}
+                >
+                  Remove logo
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <SizeStepper
             label="Shop name size"
             value={layout.shopNameSize}
-            options={SIZES}
-            onChange={(v) => {
-              change({ shopNameSize: v as Size });
+            onChange={(shopNameSize) => {
+              change({ shopNameSize });
             }}
           />
           <CheckField
@@ -195,6 +320,9 @@ function Designer({
               change({ footer });
             }}
           />
+          <p className="muted">
+            Every receipt ends with a fixed line: Powered by Eerel. www.eerel.com 03284147552
+          </p>
         </section>
         {save.isError ? (
           <div role="alert" className="banner banner-danger">
@@ -252,7 +380,9 @@ function Designer({
             {messageOf(preview.error)}
           </div>
         ) : null}
-        {preview.data ? <Paper width={preview.data.width} lines={preview.data.lines} /> : null}
+        {preview.data ? (
+          <Paper width={preview.data.width} lines={preview.data.lines} logo={layout.logo} />
+        ) : null}
       </aside>
     </div>
   );
@@ -303,12 +433,11 @@ function Blocks({
                 set(i, { align: v as Align });
               }}
             />
-            <SelectField
+            <SizeStepper
               label="Size"
               value={b.size}
-              options={SIZES}
-              onChange={(v) => {
-                set(i, { size: v as Size });
+              onChange={(size) => {
+                set(i, { size });
               }}
             />
             <CheckField
@@ -369,7 +498,15 @@ function Blocks({
 }
 
 /** The paper: a monospace column `width` characters wide; wide text takes two cells a character. */
-function Paper({ width, lines }: { width: number; lines: PreviewLine[] }) {
+function Paper({
+  width,
+  lines,
+  logo,
+}: {
+  width: number;
+  lines: PreviewLine[];
+  logo: Logo | undefined;
+}) {
   return (
     <div
       className="receipt-paper"
@@ -377,6 +514,7 @@ function Paper({ width, lines }: { width: number; lines: PreviewLine[] }) {
       aria-label="Receipt preview"
       style={{ width: `calc(${String(width)}ch + 2 * var(--space-3))` }}
     >
+      {logo ? <img className="receipt-logo" src={logoUrl(logo)} alt="Logo" /> : null}
       {lines.map((l, i) => (
         <div
           key={i}
@@ -385,10 +523,10 @@ function Paper({ width, lines }: { width: number; lines: PreviewLine[] }) {
             textAlign: l.align,
             fontWeight: l.bold ? 700 : 400,
             // Half as many characters, each twice as wide: the line still spans the paper.
-            width: `${String(l.wide ? Math.floor(width / 2) : width)}ch`,
-            transform: `scale(${l.wide ? 2 : 1}, ${l.tall ? 2 : 1})`,
+            width: `${String(Math.floor(width / l.scaleX))}ch`,
+            transform: `scale(${String(l.scaleX)}, ${String(l.scaleY)})`,
             transformOrigin: 'top left',
-            marginBottom: l.tall ? '1.25em' : undefined,
+            marginBottom: l.scaleY > 1 ? `${String((l.scaleY - 1) * 1.25)}em` : undefined,
           }}
         >
           {l.text || ' '}

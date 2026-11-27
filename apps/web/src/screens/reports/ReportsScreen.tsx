@@ -14,6 +14,7 @@ import { Link, useSearchParams } from 'react-router';
 import { API_BASE, api, messageOf } from '../../api/client.ts';
 import { permissionSet, useMe } from '../../auth/session.ts';
 import { Field, SelectField } from '../../components/Field.tsx';
+import { Chart3D, type ChartKind } from './Chart3D.tsx';
 import { Loading } from '../../components/Loading.tsx';
 import { EmailsPanel } from './EmailsPanel.tsx';
 
@@ -112,6 +113,8 @@ function preset(name: string): { from: string; to: string } {
       return { from: shift(t, -1), to: shift(t, -1) };
     case 'week':
       return { from: shift(t, -weekday), to: t };
+    case 'last-14':
+      return { from: shift(t, -13), to: t };
     case 'month':
       return { from: monthStart, to: t };
     case 'last-month': {
@@ -147,74 +150,55 @@ export function ReportsScreen() {
   };
   return (
     <>
-      <h1>Reports</h1>
-      <div className="tabs" role="tablist" aria-label="Reports">
-        {overview ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-overview"
-            aria-selected={open === null}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo(null);
-            }}
-          >
-            Overview
-          </button>
-        ) : null}
-        {overview ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-day-end"
-            aria-selected={open === 'day-end'}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo('day-end');
-            }}
-          >
-            Day-end
-          </button>
-        ) : null}
+      <div className="report-head">
+        <h1>{open === 'emails' ? 'E-mail reports' : 'Reports'}</h1>
         {schedules ? (
-          <button
-            type="button"
-            role="tab"
-            id="reports-tab-emails"
-            aria-selected={open === 'emails'}
-            aria-controls="reports-panel"
-            onClick={() => {
-              goTo('emails');
-            }}
-          >
-            E-mails
-          </button>
-        ) : null}
-        {items
-          .filter((r) => !r.drillOnly)
-          .map((r) => (
+          open === 'emails' ? (
             <button
-              key={r.key}
               type="button"
-              role="tab"
-              id={`reports-tab-${r.key}`}
-              aria-selected={open === r.key}
-              aria-controls="reports-panel"
+              className="btn btn-ghost"
               onClick={() => {
-                goTo(r.key);
+                goTo(null);
               }}
             >
-              {r.title}
+              Back to reports
             </button>
-          ))}
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                goTo('emails');
+              }}
+            >
+              ✉ E-mail reports
+            </button>
+          )
+        ) : null}
+      </div>
+      <div className="report-picker" hidden={open === 'emails'}>
+        <SelectField
+          label="Report"
+          value={open ?? 'overview'}
+          options={[
+            ...(overview
+              ? [
+                  { value: 'overview', label: 'Overview' },
+                  { value: 'day-end', label: 'Day-end' },
+                ]
+              : []),
+            ...items.filter((r) => !r.drillOnly).map((r) => ({ value: r.key, label: r.title })),
+            // Reached from another report: shown, so the box says where you are.
+            ...(entry?.drillOnly ? [{ value: entry.key, label: entry.title }] : []),
+          ]}
+          onChange={(v) => {
+            goTo(v === 'overview' ? null : v);
+          }}
+        />
       </div>
       <div
         id="reports-panel"
-        role="tabpanel"
-        {...(entry?.drillOnly
-          ? { 'aria-label': entry.title }
-          : { 'aria-labelledby': `reports-tab-${open ?? 'overview'}` })}
+        aria-label={entry?.title ?? (open === null ? 'Overview' : open)}
         className="stack"
       >
         {catalog.isPending ? null : open === null ? (
@@ -240,44 +224,53 @@ function PeriodPicker({
   value: { from: string; to: string };
   onChange: (p: { from: string; to: string }) => void;
 }) {
+  const keys = ['today', 'yesterday', 'week', 'last-14', 'month', 'last-month'] as const;
+  const current = keys.find((k) => {
+    const p = preset(k);
+    return p.from === value.from && p.to === value.to;
+  });
+  const [custom, setCustom] = useState(false);
   return (
-    <div className="row" role="group" aria-label="Period">
-      {[
-        ['today', 'Today'],
-        ['yesterday', 'Yesterday'],
-        ['week', 'This week'],
-        ['month', 'This month'],
-        ['last-month', 'Last month'],
-      ].map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => {
-            onChange(preset(key ?? 'today'));
-          }}
-        >
-          {label}
-        </button>
-      ))}
-      <Field
-        label="From"
-        type="date"
-        value={value.from}
-        max={value.to}
-        onChange={(e) => {
-          onChange({ ...value, from: e.target.value });
+    <div className="row" role="group" aria-label="Dates">
+      <SelectField
+        label="Period"
+        value={custom || !current ? 'custom' : current}
+        options={[
+          { value: 'today', label: 'Today' },
+          { value: 'yesterday', label: 'Yesterday' },
+          { value: 'week', label: 'This week' },
+          { value: 'last-14', label: 'Last 14 days' },
+          { value: 'month', label: 'This month' },
+          { value: 'last-month', label: 'Last month' },
+          { value: 'custom', label: 'Choose dates…' },
+        ]}
+        onChange={(v) => {
+          setCustom(v === 'custom');
+          if (v !== 'custom') onChange(preset(v));
         }}
       />
-      <Field
-        label="To"
-        type="date"
-        value={value.to}
-        min={value.from}
-        onChange={(e) => {
-          onChange({ ...value, to: e.target.value });
-        }}
-      />
+      {custom || !current ? (
+        <>
+          <Field
+            label="From"
+            type="date"
+            value={value.from}
+            max={value.to}
+            onChange={(e) => {
+              onChange({ ...value, from: e.target.value });
+            }}
+          />
+          <Field
+            label="To"
+            type="date"
+            value={value.to}
+            min={value.from}
+            onChange={(e) => {
+              onChange({ ...value, to: e.target.value });
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -287,7 +280,8 @@ function OverviewPanel({
 }: {
   onOpen: (report: string, extra?: Record<string, string>) => void;
 }) {
-  const [period, setPeriod] = useState(() => preset('today'));
+  // A trend needs more than one day to show anything.
+  const [period, setPeriod] = useState(() => preset('last-14'));
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(period.from) &&
     /^\d{4}-\d{2}-\d{2}$/.test(period.to) &&
@@ -341,6 +335,7 @@ function OverviewPanel({
           <div className="row overview-row">
             <Chart
               title="Net sales by day"
+              initial="line"
               rows={o.byDay.map((d) => ({ label: d.date, value: Number(d.net_sales) }))}
               onOpen={() => {
                 onOpen('sales-by-day', range);
@@ -348,6 +343,7 @@ function OverviewPanel({
             />
             <Chart
               title="Sales by hour"
+              initial="column"
               rows={o.byHour.map((h) => ({ label: h.hour, value: Number(h.sales) }))}
               onOpen={() => {
                 onOpen('sales-by-hour', range);
@@ -355,6 +351,11 @@ function OverviewPanel({
             />
           </div>
           <div className="row overview-row">
+            <Chart
+              title="Share of sales by item"
+              initial="pie"
+              rows={o.topItems.map((i) => ({ label: i.item, value: Number(i.net_sales) }))}
+            />
             <section className="card stack" aria-labelledby="top-items">
               <h2 id="top-items">Top items by sales</h2>
               <ItemList rows={o.topItems} showMargin={o.topByMargin !== null} />
@@ -439,54 +440,23 @@ function ItemList({
   );
 }
 
-/** A plain bar chart with its numbers beside it (P6-5): readable on screen, on paper and by screen readers. */
+/** A chart the reader can change, with its numbers beneath (P6-5). */
 function Chart({
   title,
   rows,
+  initial,
   onOpen,
 }: {
   title: string;
   rows: { label: string; value: number }[];
-  onOpen: () => void;
+  initial: ChartKind;
+  onOpen?: () => void;
 }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
-  const width = 28;
-  const height = 120;
   const busy = rows.filter((r) => r.value !== 0);
   return (
     <section className="card stack chart" aria-label={title}>
       <h2>{title}</h2>
-      <svg
-        role="img"
-        aria-label={`${title}: ${busy.length === 0 ? 'nothing yet' : busy.map((r) => `${r.label} Rs ${r.value.toFixed(0)}`).join(', ')}`}
-        viewBox={`0 0 ${String(rows.length * width)} ${String(height + 16)}`}
-        className="chart-svg"
-      >
-        {rows.map((r, i) => {
-          const h = Math.round((r.value / max) * height);
-          return (
-            <g key={r.label}>
-              <rect
-                x={i * width + 4}
-                y={height - h}
-                width={width - 8}
-                height={h}
-                className="chart-bar"
-              />
-              {rows.length <= 31 && i % Math.ceil(rows.length / 8) === 0 ? (
-                <text
-                  x={i * width + width / 2}
-                  y={height + 12}
-                  textAnchor="middle"
-                  className="chart-label"
-                >
-                  {r.label.length > 5 ? r.label.slice(8) : r.label.slice(0, 2)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-      </svg>
+      <Chart3D title={title} rows={rows} initial={initial} />
       <details>
         <summary>Numbers</summary>
         <table className="data">
@@ -500,7 +470,7 @@ function Chart({
           </tbody>
         </table>
       </details>
-      <div>
+      <div hidden={!onOpen}>
         <button type="button" className="btn btn-ghost" onClick={onOpen}>
           Open the report<span className="visually-hidden"> {title}</span>
         </button>

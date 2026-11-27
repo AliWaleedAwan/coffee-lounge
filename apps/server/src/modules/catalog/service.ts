@@ -246,8 +246,9 @@ async function insertVariant(
   return id;
 }
 
-export async function createItem(
-  pool: pg.Pool,
+/** The item, inside a transaction the caller holds (modules/products). */
+export async function createItemIn(
+  tx: Tx,
   who: Who,
   input: ItemInput & { variants: VariantInput[] },
 ): Promise<{ id: string; variantIds: string[] }> {
@@ -255,45 +256,51 @@ export async function createItem(
     throw new AppError('VALIDATION_FAILED', 'An item needs at least one size or variant');
   const defaults = input.variants.filter((v) => v.isDefault).length;
   if (defaults > 1) throw new AppError('VALIDATION_FAILED', 'Only one variant can be the default');
+  const { rows: cat } = await tx.query(
+    'SELECT 1 FROM cl.menu_categories WHERE id = $1 AND archived_at IS NULL',
+    [input.categoryId],
+  );
+  if (cat.length === 0)
+    throw new AppError('VALIDATION_FAILED', 'That category does not exist or is archived');
+  const { rows } = await tx.query<{ id: string }>(
+    `INSERT INTO cl.menu_items (category_id, name, description, dietary_tags, allow_dine_in,
+                                allow_takeaway, allow_delivery, sort)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text`,
+    [
+      input.categoryId,
+      input.name,
+      input.description ?? null,
+      input.dietaryTags ?? [],
+      input.allowDineIn ?? true,
+      input.allowTakeaway ?? true,
+      input.allowDelivery ?? true,
+      input.sort ?? 0,
+    ],
+  );
+  const id = rows[0]?.id ?? '';
+  const variantIds: string[] = [];
+  for (const [i, v] of input.variants.entries()) {
+    variantIds.push(
+      await insertVariant(tx, who, id, v, defaults === 0 ? i === 0 : v.isDefault === true),
+    );
+  }
+  await setItemModifierGroups(tx, id, input.modifierGroupIds ?? []);
+  await changed(
+    tx,
+    who,
+    { action: 'menu.item.create', entityType: 'menu_item', entityId: id, after: input },
+    { type: 'menu.changed', version: 1 },
+  );
+  return { id, variantIds };
+}
+
+export async function createItem(
+  pool: pg.Pool,
+  who: Who,
+  input: ItemInput & { variants: VariantInput[] },
+): Promise<{ id: string; variantIds: string[] }> {
   try {
-    return await withTransaction(pool, async (tx) => {
-      const { rows: cat } = await tx.query(
-        'SELECT 1 FROM cl.menu_categories WHERE id = $1 AND archived_at IS NULL',
-        [input.categoryId],
-      );
-      if (cat.length === 0)
-        throw new AppError('VALIDATION_FAILED', 'That category does not exist or is archived');
-      const { rows } = await tx.query<{ id: string }>(
-        `INSERT INTO cl.menu_items (category_id, name, description, dietary_tags, allow_dine_in,
-                                    allow_takeaway, allow_delivery, sort)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text`,
-        [
-          input.categoryId,
-          input.name,
-          input.description ?? null,
-          input.dietaryTags ?? [],
-          input.allowDineIn ?? true,
-          input.allowTakeaway ?? true,
-          input.allowDelivery ?? true,
-          input.sort ?? 0,
-        ],
-      );
-      const id = rows[0]?.id ?? '';
-      const variantIds: string[] = [];
-      for (const [i, v] of input.variants.entries()) {
-        variantIds.push(
-          await insertVariant(tx, who, id, v, defaults === 0 ? i === 0 : v.isDefault === true),
-        );
-      }
-      await setItemModifierGroups(tx, id, input.modifierGroupIds ?? []);
-      await changed(
-        tx,
-        who,
-        { action: 'menu.item.create', entityType: 'menu_item', entityId: id, after: input },
-        { type: 'menu.changed', version: 1 },
-      );
-      return { id, variantIds };
-    });
+    return await withTransaction(pool, (tx) => createItemIn(tx, who, input));
   } catch (error) {
     friendly(error, {
       menu_variants_item_id_name_key: 'Two variants of one item cannot have the same name',

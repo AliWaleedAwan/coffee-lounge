@@ -2,7 +2,7 @@
  * The signed-in frame: top bar (shop, user, Switch user, Log out), connection banner,
  * navigation built from permissions, and the live-update stream.
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, use, type ReactNode } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api, ApiError } from '../api/client.ts';
@@ -75,6 +75,50 @@ export function RequireSession() {
   return <FullScreenMessage title="Loading…" />;
 }
 
+/** Demo only (a loaded demo, docs/phase-8/DEMO.md): become another role with one click. */
+function DemoSwitch({ me }: { me: Me }) {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const demo = useQuery({
+    queryKey: ['demo'],
+    queryFn: ({ signal }) =>
+      api<{ active: boolean; people: { username: string; name: string; role: string }[] }>(
+        '/demo',
+        { signal },
+      ),
+  });
+  const swap = useMutation({
+    mutationFn: (username: string) =>
+      api<undefined>('/demo/switch', { method: 'POST', body: { username } }),
+    onSuccess: () => {
+      client.clear();
+      void navigate('/', { replace: true });
+    },
+  });
+  if (!demo.data?.active) return null;
+  const known = demo.data.people.some((p) => p.username === me.user.username);
+  return (
+    <label className="demo-switch">
+      <span className="chip chip-warning">Demo</span>
+      <span className="visually-hidden">Switch to role</span>
+      <select
+        value={known ? me.user.username : ''}
+        disabled={swap.isPending}
+        onChange={(e) => {
+          swap.mutate(e.target.value);
+        }}
+      >
+        {known ? null : <option value="">{me.user.name}</option>}
+        {demo.data.people.map((p) => (
+          <option key={p.username} value={p.username}>
+            {p.role}: {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function Shell({ me }: { me: Me }) {
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -95,6 +139,7 @@ function Shell({ me }: { me: Me }) {
         <span className="brand-mark">{branding.shopName}</span>
         <span className="chip chip-info">{me.device.name}</span>
         <span className="topbar-spacer" />
+        <DemoSwitch me={me} />
         <span className="topbar-user">
           {me.user.name} · {roleLabel(me)}
         </span>

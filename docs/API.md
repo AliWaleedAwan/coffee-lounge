@@ -201,6 +201,12 @@ Permission column refers to [RBAC.md](RBAC.md). **[I]** = Idempotency-Key requir
 | `POST /modifier-groups/{groupId}/options` | `menu.manage` | Adds a choice to a group |
 | `GET /printers/status` | `kitchen.read` | Per active printer: `ok`, `retrying` or `needs_attention`, open and uncertain job counts, the last error; `kitchenPrinterMissing` (feeds the printer banner) |
 | `GET /printers`, `POST /printers`, `PATCH /printers/{id}` | `printers.manage` | Printers (`spooler` with the Windows queue name, or `tcp` with `host:port`), 80 or 58 mm, with the stations and their printer |
+| `GET /printers/detect` | `printers.manage` | The Windows print queues the counter PC finds, `{supported, queues: [{name, driver, port}], problem?}` (step 8.6) |
+| `GET /system/update`, `POST /system/update`, `POST /system/update/check` | `system.update` | Version, any new version, and the updater's state; ask the updater to install it (it verifies the signature itself) |
+| `POST /imports/old-pos/preview`, `POST /imports/old-pos/apply` | `settings.manage` | The old POS's export (gzip or JSON, as sent): products, customers and sales history. Preview runs the import and undoes it; apply is safe to repeat |
+| `GET /customers?q=`, `GET /customers/lookup?mobile=` | `delivery.create` | Customers known from the old POS: search by name or number; the one behind a mobile, for the delivery form |
+| `GET /reports/old-pos?from=&to=` | `reports.sales` | The old POS's paid bills by shop day and its best sellers; history only |
+| `GET /drawer`, `POST /printers/{id}/drawer/open` | `drawer.open` | The till printer with a drawer switched on, or null; send the pulse now, never queued, audited (step 8.7). `PATCH /printers/{id}` takes `drawerEnabled`, `drawerOnCash` |
 | `PUT /stations/{stationId}/printer` | `printers.manage` | `{printerId \| null}`: where kitchen tickets print |
 | `PUT /tills/{tillId}/printer` | `printers.manage` | `{printerId \| null}`: where receipts print (step 3.7); `GET /printers` lists the tills |
 | `POST /printers/{id}/test` | `printers.manage` | Queue a test page (W-4) |
@@ -322,6 +328,18 @@ What the shop pays that is not stock (FINANCE_REPORTING.md §3: ingredients are 
 | `POST /expenses/{id}/correct` **[I]** | `expenses.manage` | `{reason, …the fields of POST /expenses}`: voids it and records the new one in one transaction, the new one naming the one it replaces; the attached bill carries over (AT-23). Returns `{voidedNo, id, expenseNo, businessDate}` (201) |
 | `PUT /expenses/{id}/attachment` | `expenses.manage` | The bill itself as the body, `Content-Type` `image/jpeg`, `image/png` or `application/pdf`, at most 5 MB; its real type is read from its first bytes (`400` otherwise). Kept under `FILES_DIR` (P5-3), the database holds path, type, size and SHA-256; a replaced file stays on disk and both are in the audit. Only while recorded (`409` once voided) |
 | `GET /expenses/{id}/attachment` | `expenses.read` | The file with its type, `X-Content-Type-Options: nosniff`, a sandboxing CSP and `no-store`; `404` when none, missing on disk or not matching its SHA-256 |
+
+### 5.11a Demo (only where a demo is loaded; docs/phase-8/DEMO.md)
+
+`GET /demo` (device) `{active, people}`. `POST /demo/switch` (device) `{username}`, made-up people only. `POST /demo/wipe` (owner) `{confirm: "DELETE"}`, once. Customer: `GET /demo/tables`. Elsewhere: 404, or an empty list. Assets also gain `POST /assets/categories` `{add?, remove?}` (`assets.manage`).
+
+### 5.11b New product (Phase 8 step 8.1)
+
+`POST /products` [I] (`inventory.items_manage`): `{barcode, name, categoryId, sku?, baseUom?, price?, lowThreshold?, trackExpiry?, opening?: {qty, unitCost, expiryDate?}}`. One transaction: inventory item, barcode, menu item with one size, one-to-one recipe, and stock tracking on if `opening` is given. Without `opening` the recipe stays a draft, to activate on Menu → Recipes after stock is received. Without `price`, or without `menu.price_change`, the menu item is saved not on sale (P8-3). `opening` needs `inventory.opening_balance` or `inventory.receive`. A code already in use: 409 `BARCODE_IN_USE`.
+
+Step 8.2: `GET /products/by-item/{id}` (`inventory.read`) `{soldAs}`. `POST /products/by-item/{id}/price` (`menu.price_change`) `{price, reason}`, which also puts it on sale. `POST /inventory/lots/{id}/expiry` (`inventory.items_manage`) `{expiryDate, reason}`, audited.
+
+Step 8.3: `GET /products/sell-scan?code=` (`orders.create`) `{variantId, problem}`.
 
 ### 5.12 Asset register (Phase 5 step 5.4)
 

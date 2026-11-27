@@ -16,6 +16,7 @@ interface PickupTicket {
   ticketNo: string;
   where: string;
   acceptedAt: string;
+  started: boolean;
   uncollected: boolean;
   lines: {
     orderLineId: string;
@@ -49,6 +50,11 @@ export function PickupScreen() {
     mutationFn: (ticketId: string) =>
       api(`/tickets/${ticketId}/reprint`, { method: 'POST', body: {} }),
   });
+  const start = useMutation({
+    mutationFn: (ticketId: string) =>
+      api(`/tickets/${ticketId}/start`, { method: 'POST', body: {} }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['pickup'] }),
+  });
   const tickets = queue.data?.tickets ?? [];
   return (
     <>
@@ -77,6 +83,20 @@ export function PickupScreen() {
                 <span className="muted">
                   {t.ticketNo} · {time.format(new Date(t.acceptedAt))}
                 </span>
+                {t.started ? (
+                  <span className="chip chip-info">Preparing</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={!writes || start.isPending}
+                    onClick={() => {
+                      start.mutate(t.id);
+                    }}
+                  >
+                    Accept and start <span className="visually-hidden">ticket {t.ticketNo}</span>
+                  </button>
+                )}
                 {t.uncollected ? (
                   <span className="chip chip-danger">Waiting over 30 min</span>
                 ) : null}

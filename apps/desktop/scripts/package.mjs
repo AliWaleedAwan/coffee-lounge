@@ -25,12 +25,13 @@ const [appPath] = await packager({
   appVersion: manifest.version,
   electronVersion: manifest.devDependencies.electron,
   asar: true,
+  icon: join(dir, 'assets', 'icon.ico'),
   // The app has no runtime dependencies: nothing from node_modules belongs in it.
   prune: false,
   overwrite: true,
   // Only dist/, static/ and package.json are the app.
   ignore: [
-    /^\/(node_modules|src|test|e2e|scripts|out|test-results|playwright-report)(\/|$)/,
+    /^\/(node_modules|src|test|e2e|scripts|assets|out|test-results|playwright-report)(\/|$)/,
     /^\/(tsconfig.*|playwright\.config\.ts)$/,
   ],
   win32metadata: {

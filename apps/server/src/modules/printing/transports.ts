@@ -131,6 +131,15 @@ export function tcpTransport(
 
 export const RAWPRINT_SCRIPT = join(SERVER_ROOT, 'assets', 'rawprint.ps1');
 
+/** Windows PowerShell by its full path: a PC's PATH may have lost the Windows folders. */
+export const WINDOWS_POWERSHELL = join(
+  process.env['SystemRoot'] ?? 'C:\\Windows',
+  'System32',
+  'WindowsPowerShell',
+  'v1.0',
+  'powershell.exe',
+);
+
 export function spoolerTransport(
   options: { timeoutMs?: number; script?: string; powershell?: string } = {},
 ): Transport {
@@ -145,7 +154,7 @@ export function spoolerTransport(
       }
       return new Promise<SendResult>((resolve) => {
         const child = spawn(
-          options.powershell ?? 'powershell.exe',
+          options.powershell ?? WINDOWS_POWERSHELL,
           [
             '-NoProfile',
             '-NonInteractive',

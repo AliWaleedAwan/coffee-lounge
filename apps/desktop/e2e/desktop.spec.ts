@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:https';
+import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +20,8 @@ import {
 } from '@playwright/test';
 import { makePki, type Pki } from '../test/pki.ts';
 
-const DESKTOP_DIR = fileURLToPath(new URL('..', import.meta.url));
+// No trailing backslash: in a folder with a space, Windows would read it as an escaped quote.
+const DESKTOP_DIR = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const SERVER_DIR = fileURLToPath(new URL('../../server', import.meta.url));
 const PORT = 18543;
 const ORIGIN = `https://127.0.0.1:${String(PORT)}`;
@@ -155,6 +157,115 @@ test('server down: branded screen, then the app opens by itself when the server 
       timeout: 5_000,
     });
   } finally {
+    await app.close();
+    await server?.stop();
+  }
+});
+
+/** Pretend Windows services for the start-up screen (step 8.5). */
+function services(name: string, states: Record<string, string>): string {
+  const file = join(work, `${name}-services.json`);
+  writeFileSync(
+    file,
+    JSON.stringify({
+      'postgresql-x64-17': 'running',
+      'coffeelounge-api': 'running',
+      'coffeelounge-worker': 'running',
+      Spooler: 'running',
+      ...states,
+    }),
+  );
+  return file;
+}
+
+test('8.5: a stopped service is started, shown by name, and the app opens by itself', async () => {
+  const file = services('stopped', {
+    'postgresql-x64-17': 'stopped',
+    'coffeelounge-api': 'stopped',
+  });
+  const { app, page, profile } = await launch(shopConfig(), { CL_SC_STATE_FILE: file });
+  let server: Server | undefined;
+  try {
+    await expect(page.getByRole('heading', { name: 'Starting Coffee Lounge' })).toBeVisible();
+    const list = page.getByRole('list', { name: 'Status' });
+    for (const label of ['Database', 'Server', 'Background jobs', 'Printer']) {
+      await expect(list.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect
+      .poll(() => JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>, {
+        timeout: 15_000,
+      })
+      .toMatchObject({ 'postgresql-x64-17': 'running', 'coffeelounge-api': 'running' });
+    const log = readFileSync(join(profile, 'desktop.log'), 'utf8');
+    expect(log).toContain('service start requested');
+
+    server = await startServer(pki.leafFile, pki.leafKeyFile);
+    await expect(page.getByRole('heading', { name: 'Register this device' })).toBeVisible({
+      timeout: 15_000,
+    });
+    // Server pages never get the local screen's bridge.
+    expect(
+      await page.evaluate(() =>
+        Object.keys((globalThis as { coffeeLounge?: object }).coffeeLounge ?? {}),
+      ),
+    ).not.toContain('onServices');
+  } finally {
+    await app.close();
+    await server?.stop();
+  }
+});
+
+test('8.5: a service this account may not start says what to do, in plain words', async () => {
+  const file = services('denied', { 'coffeelounge-api': 'denied' });
+  const { app, page } = await launch(shopConfig(), { CL_SC_STATE_FILE: file });
+  try {
+    await expect(page.getByText(/may not start server\. Call the technician/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try again now' })).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+test('8.5: everything running goes straight to the app', async () => {
+  const server = await startServer(pki.leafFile, pki.leafKeyFile);
+  const file = services('fine', {});
+  const { app, page, profile } = await launch(shopConfig(), { CL_SC_STATE_FILE: file });
+  try {
+    await expect(page.getByRole('heading', { name: 'Register this device' })).toBeVisible();
+    expect(readFileSync(join(profile, 'desktop.log'), 'utf8')).not.toContain('local:starting');
+  } finally {
+    await app.close();
+    await server.stop();
+  }
+});
+
+test('a server that takes the connection but never answers does not leave a white window', async () => {
+  test.setTimeout(120_000);
+  // Seen on a real laptop after an update: the server was still starting.
+  const sockets = new Set<Socket>();
+  const silent = createServer((s) => {
+    sockets.add(s);
+  });
+  await new Promise<void>((resolve) => silent.listen(PORT, '127.0.0.1', resolve));
+  const { app, page } = await launch(shopConfig());
+  let server: Server | undefined;
+  try {
+    await expect(page.getByRole('heading', { name: 'Server unavailable' })).toBeVisible({
+      timeout: 30_000,
+    });
+    for (const s of sockets) s.destroy();
+    await new Promise<void>((resolve) =>
+      silent.close(() => {
+        resolve();
+      }),
+    );
+    server = await startServer(pki.leafFile, pki.leafKeyFile);
+    await expect(page.getByRole('heading', { name: 'Register this device' })).toBeVisible({
+      timeout: 30_000,
+    });
+  } finally {
+    for (const s of sockets) s.destroy();
+    silent.close();
     await app.close();
     await server?.stop();
   }

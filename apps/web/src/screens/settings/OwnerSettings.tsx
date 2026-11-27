@@ -79,7 +79,7 @@ export function OwnerSettings() {
     <>
       <BrandingForm branding={settings.data.branding} />
       {hours ? <Hours setting={hours} /> : null}
-      <section className="stack" aria-labelledby="thresholds">
+      <section className="card stack" aria-labelledby="thresholds">
         <h2 id="thresholds">Thresholds and lists</h2>
         <p className="muted">
           Expense categories are kept on <Link to="/expenses">Expenses</Link> → Categories.
@@ -99,6 +99,21 @@ export function OwnerSettings() {
   );
 }
 
+/** Idle logout choices; the saved value is always offered, even if it is not one of them. */
+function logoutChoices(current: number) {
+  const minutes = [2, 5, 10, 15, 30, 60, 120, 240, 480, 720];
+  if (current > 0 && !minutes.includes(current)) minutes.push(current);
+  return [
+    ...minutes
+      .sort((a, b) => a - b)
+      .map((m) => ({
+        value: String(m),
+        label: m < 60 ? `${String(m)} minutes` : `${String(m / 60)} hour${m === 60 ? '' : 's'}`,
+      })),
+    { value: '0', label: 'Never' },
+  ];
+}
+
 function SettingRow({ setting }: { setting: Setting }) {
   const writes = useWritesAllowed();
   const mayFinancial = permissionSet(useSignedIn()).has('settings.financial');
@@ -110,15 +125,17 @@ function SettingRow({ setting }: { setting: Setting }) {
   const save = useSave(() => {
     setSaved(true);
   });
-  const kind = isList
-    ? 'list'
-    : typeof setting.value === 'boolean'
-      ? 'boolean'
-      : typeof setting.value === 'number'
-        ? 'number'
-        : setting.key === 'billing.cash_rounding_unit'
-          ? 'rounding'
-          : 'text';
+  const kind = setting.key.startsWith('security.logout_')
+    ? 'logout'
+    : isList
+      ? 'list'
+      : typeof setting.value === 'boolean'
+        ? 'boolean'
+        : typeof setting.value === 'number'
+          ? 'number'
+          : setting.key === 'billing.cash_rounding_unit'
+            ? 'rounding'
+            : 'text';
   const parsed: unknown =
     kind === 'list'
       ? value
@@ -127,7 +144,7 @@ function SettingRow({ setting }: { setting: Setting }) {
           .filter((line) => line !== '')
       : kind === 'boolean'
         ? value === 'true'
-        : kind === 'number'
+        : kind === 'number' || kind === 'logout'
           ? Number(value)
           : value;
   const changed = JSON.stringify(parsed) !== JSON.stringify(setting.value);
@@ -144,7 +161,13 @@ function SettingRow({ setting }: { setting: Setting }) {
     return (
       <p>
         <strong>{setting.label}:</strong>{' '}
-        {Array.isArray(setting.value) ? setting.value.join(', ') : String(setting.value)}{' '}
+        {Array.isArray(setting.value)
+          ? setting.value.join(', ')
+          : setting.key.startsWith('security.logout_')
+            ? setting.value === 0
+              ? 'never'
+              : `${String(setting.value)} minutes`
+            : String(setting.value)}{' '}
         <span className="muted">
           · {setting.editable ? 'the owner changes this' : setting.hint}
         </span>
@@ -175,6 +198,13 @@ function SettingRow({ setting }: { setting: Setting }) {
           onChange={(c) => {
             setValue(String(c));
           }}
+        />
+      ) : kind === 'logout' ? (
+        <SelectField
+          label={setting.label}
+          value={value}
+          options={logoutChoices(Number(setting.value))}
+          onChange={setValue}
         />
       ) : kind === 'rounding' ? (
         <SelectField

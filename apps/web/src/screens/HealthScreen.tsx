@@ -5,6 +5,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { api, messageOf } from '../api/client.ts';
+import { UpdateCard } from './UpdateCard.tsx';
 
 export interface SystemHealth {
   api: 'ok' | 'degraded';
@@ -165,6 +166,7 @@ export function HealthScreen() {
   return (
     <>
       <h1>System health</h1>
+      <UpdateCard />
       {health.isError ? (
         <div role="alert" className="banner banner-danger">
           {messageOf(health.error)}

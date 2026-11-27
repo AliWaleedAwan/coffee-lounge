@@ -36,6 +36,8 @@ export interface ManagedPrinter {
   supportsStatus: boolean;
   canCut: boolean;
   isActive: boolean;
+  drawerEnabled: boolean;
+  drawerOnCash: boolean;
   version: number;
 }
 
@@ -71,6 +73,22 @@ export function useManagedPrinters() {
         tills: { id: string; name: string; printerId: string | null }[];
       }>('/printers', { signal }),
     meta: TOPICS,
+  });
+}
+
+export type QueueDetection =
+  | { supported: false; queues: [] }
+  | {
+      supported: true;
+      queues: { name: string; driver: string; port: string }[];
+      problem?: string;
+    };
+
+/** The Windows printers the counter PC finds (step 8.6). */
+export function useDetectedQueues() {
+  return useQuery({
+    queryKey: ['printers', 'detect'],
+    queryFn: ({ signal }) => api<QueueDetection>('/printers/detect', { signal }),
   });
 }
 
