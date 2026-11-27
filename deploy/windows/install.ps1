@@ -454,7 +454,8 @@ if (Test-Path $backupPub) {
   # by PostgreSQL's account, and read and cleared by the worker after a fresh base backup.
   $gapDir = Join-Path $DataDir 'wal-gap'
   New-Item -ItemType Directory -Force -Path $gapDir | Out-Null
-  Set-RestrictedAcl -Path $gapDir -Modify @($PgAccount, 'NT SERVICE\coffeelounge-worker') -Read @('NT SERVICE\coffeelounge-api')
+  # The services' own accounts exist only once they are created (7c); PostgreSQL's does now.
+  Set-RestrictedAcl -Path $gapDir -Modify @($PgAccount)
   $gapFile = Join-Path $gapDir 'gap.log'
   $envLines = Get-Content $envFile | Where-Object { $_ -notlike 'BACKUP_WAL_GAP_FILE=*' }
   Set-Content -Path $envFile -Encoding ASCII -Value ($envLines + "BACKUP_WAL_GAP_FILE=$gapFile")
@@ -536,6 +537,8 @@ $agentDir = Join-Path $DataDir 'update-agent'
 New-Item -ItemType Directory -Force -Path $updateDir, $agentDir | Out-Null
 Set-RestrictedAcl -Path $updateDir -Modify @('NT SERVICE\coffeelounge-api')
 Set-RestrictedAcl -Path $agentDir
+$gapDir = Join-Path $DataDir 'wal-gap'
+if (Test-Path $gapDir) { Set-RestrictedAcl -Path $gapDir -Modify @($PgAccount, 'NT SERVICE\coffeelounge-worker') -Read @('NT SERVICE\coffeelounge-api') }
 $updaterTask = 'Coffee Lounge updater'
 $updaterRunning = (Get-ScheduledTask -TaskName $updaterTask -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Running' })
 foreach ($f in @('setup\update-agent.mjs', 'setup\update-public.pem', 'runtime\node.exe')) {
